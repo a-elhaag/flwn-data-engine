@@ -1,0 +1,165 @@
+import os
+import sys
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+os.environ.setdefault("DATA_API_KEY", "test-data-key")
+os.environ.setdefault("AZURE_FOUNDRY_ENDPOINT", "https://example.invalid")
+os.environ.setdefault("AZURE_FOUNDRY_KEY", "test-foundry-key")
+
+from fastapi.testclient import TestClient
+from qdrant_client import QdrantClient
+
+from flwn_data import vector_store
+from main import app
+
+
+class MemoryApiTests(unittest.TestCase):
+    def setUp(self):
+        self.qdrant = QdrantClient(":memory:")
+        self.addCleanup(self.qdrant.close)
+        for mock_patch in (
+            patch("flwn_data.vector_store._client", return_value=self.qdrant),
+            patch("flwn_data.vector_store.EMBEDDING_SIZE", 3),
+            patch("flwn_data.memory_steward._embed", return_value=[1.0, 0.0, 0.0]),
+            patch("flwn_data.memory_steward._chat", return_value="remembered fact"),
+        ):
+            mock_patch.start()
+            self.addCleanup(mock_patch.stop)
+        self.client = TestClient(app, headers={"X-Data-API-Key": "test-data-key"})
+        self.client.__enter__()
+        self.addCleanup(self.client.__exit__, None, None, None)
+
+    def remember(self, workspace):
+        response = self.client.post(
+            f"/workspaces/{workspace}/memories",
+            json={
+                "text": "raw text",
+                "source": "chat",
+                "agent": "planner",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["point_id"]
+
+    def recall(self, workspace):
+        return self.client.post(
+            f"/workspaces/{workspace}/memories/recall",
+            json={
+                "query": "fact",
+                "agent": "reviewer",
+                "limit": 5,
+            },
+        )
+
+    def test_round_trip_and_workspace_isolation(self):
+        point_id = self.remember("team-a")
+        other_id = self.remember("team-b")
+        self.assertEqual(
+            [point["id"] for point in self.recall("team-a").json()], [point_id]
+        )
+        self.assertEqual(
+            [point["id"] for point in self.recall("team-b").json()], [other_id]
+        )
+        point = self.qdrant.retrieve("memory", ids=[point_id])[0]
+        self.assertEqual(point.payload["recall_count"], 1)
+        self.assertIsNotNone(point.payload["last_recalled_at"])
+        self.assertEqual(
+            self.client.delete(f"/workspaces/team-b/memories/{point_id}").status_code,
+            204,
+        )
+        self.assertEqual(len(self.recall("team-a").json()), 1)
+        self.client.delete(f"/workspaces/team-a/memories/{point_id}")
+        self.assertEqual(self.recall("team-a").json(), [])
+
+    def test_cleanup_preserves_other_workspaces_and_recalled_memories(self):
+        old_id = self.remember("team-a")
+        live_id = self.remember("team-a")
+        other_id = self.remember("team-b")
+        self.qdrant.set_payload(
+            "memory",
+            {"timestamp": time.time() - 60 * 86400},
+            points=[old_id, live_id, other_id],
+        )
+        vector_store.touch(live_id, "team-a", time.time())
+        with patch("flwn_data.memory_steward._chat", return_value="no"):
+            response = self.client.post(
+                "/workspaces/team-a/sprint-completed", json={"retention_days": 30}
+            )
+        self.assertEqual(response.json(), {"deleted": 1})
+        self.assertEqual(
+            {
+                point.id
+                for point in self.qdrant.retrieve(
+                    "memory", ids=[old_id, live_id, other_id]
+                )
+            },
+            {live_id, other_id},
+        )
+
+    def test_authentication_and_input_validation(self):
+        body = {"query": "fact", "agent": "planner"}
+        for key in ("", "wrong"):
+            response = self.client.post(
+                "/workspaces/team-a/memories/recall",
+                json=body,
+                headers={"X-Data-API-Key": key},
+            )
+            self.assertEqual(response.status_code, 401)
+        self.assertEqual(
+            self.client.post("/workspaces/%20/memories/recall", json=body).status_code,
+            422,
+        )
+        for limit in (0, 101):
+            self.assertEqual(
+                self.client.post(
+                    "/workspaces/team-a/memories/recall", json={**body, "limit": limit}
+                ).status_code,
+                422,
+            )
+        self.assertEqual(
+            self.client.post(
+                "/workspaces/team-a/memories/recall", json={**body, "query": " "}
+            ).status_code,
+            422,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/workspaces/team-a/memories/cleanup", json={"retention_days": -1}
+            ).status_code,
+            422,
+        )
+        for workspace in ("", " "):
+            with self.assertRaises(TypeError):
+                vector_store.search([1.0, 0.0, 0.0], workspace, 5)
+
+    def test_ai_adapter_round_trip(self):
+        ai_path = str(Path(__file__).resolve().parents[2] / "flwn-ai-engine")
+        with patch.object(sys, "path", [ai_path, *sys.path]):
+            from agents.memory_steward.memory_steward import MemorySteward
+            from config import settings as ai_settings
+
+        def request(method, url, **kwargs):
+            return self.client.request(
+                method, url, headers=kwargs["headers"], json=kwargs["json"]
+            )
+
+        with patch.object(
+            ai_settings, "DATA_BASE_URL", "http://testserver"
+        ), patch.object(ai_settings, "DATA_API_KEY", "test-data-key"), patch(
+            "httpx.request", side_effect=request
+        ):
+            memory = MemorySteward("team-a")
+            point_id = memory.remember("text", "chat", "planner")
+            self.assertEqual(memory.recall("fact", "reviewer")[0].id, point_id)
+            self.assertEqual(MemorySteward("team-b").recall("fact", "reviewer"), [])
+            self.assertEqual(memory.run_cleanup(), 0)
+            self.assertEqual(memory.on_sprint_completed(), 0)
+            memory.forget(point_id)
+            self.assertEqual(memory.recall("fact", "reviewer"), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
