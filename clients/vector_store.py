@@ -6,7 +6,7 @@ import uuid
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
-from flwn_data.config import settings
+from config import settings
 
 COLLECTION = "memory"
 EMBEDDING_SIZE = 1536

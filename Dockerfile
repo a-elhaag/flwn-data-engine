@@ -2,7 +2,10 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY flwn_data ./flwn_data
-COPY main.py .
+COPY main.py config.py .
+COPY api ./api
+COPY memory ./memory
+COPY retrieval ./retrieval
+COPY clients ./clients
 EXPOSE 8002
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]

@@ -12,7 +12,7 @@ os.environ.setdefault("AZURE_FOUNDRY_KEY", "test-foundry-key")
 from fastapi.testclient import TestClient
 from qdrant_client import QdrantClient
 
-from flwn_data import vector_store
+from clients import vector_store
 from main import app
 
 
@@ -21,10 +21,10 @@ class MemoryApiTests(unittest.TestCase):
         self.qdrant = QdrantClient(":memory:")
         self.addCleanup(self.qdrant.close)
         for mock_patch in (
-            patch("flwn_data.vector_store._client", return_value=self.qdrant),
-            patch("flwn_data.vector_store.EMBEDDING_SIZE", 3),
-            patch("flwn_data.memory_steward._embed", return_value=[1.0, 0.0, 0.0]),
-            patch("flwn_data.memory_steward._chat", return_value="remembered fact"),
+            patch("clients.vector_store._client", return_value=self.qdrant),
+            patch("clients.vector_store.EMBEDDING_SIZE", 3),
+            patch("clients.inference.embed", return_value=[1.0, 0.0, 0.0]),
+            patch("clients.inference.chat", return_value="remembered fact"),
         ):
             mock_patch.start()
             self.addCleanup(mock_patch.stop)
@@ -74,6 +74,26 @@ class MemoryApiTests(unittest.TestCase):
         self.client.delete(f"/workspaces/team-a/memories/{point_id}")
         self.assertEqual(self.recall("team-a").json(), [])
 
+    def test_recall_preserves_recency_ranking_and_limit(self):
+        old_id = self.remember("team-a")
+        recent_id = self.remember("team-a")
+        now = time.time()
+        self.qdrant.set_payload(
+            "memory", {"timestamp": now - 30 * 86400}, points=[old_id]
+        )
+        self.qdrant.set_payload("memory", {"timestamp": now}, points=[recent_id])
+        with patch("retrieval.search.time.time", return_value=now):
+            response = self.client.post(
+                "/workspaces/team-a/memories/recall",
+                json={"query": "fact", "agent": "reviewer", "limit": 1},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([point["id"] for point in response.json()], [recent_id])
+        self.assertAlmostEqual(response.json()[0]["score"], 1.0)
+        old, recent = self.qdrant.retrieve("memory", ids=[old_id, recent_id])
+        self.assertEqual(old.payload["recall_count"], 0)
+        self.assertEqual(recent.payload["recall_count"], 1)
+
     def test_cleanup_preserves_other_workspaces_and_recalled_memories(self):
         old_id = self.remember("team-a")
         live_id = self.remember("team-a")
@@ -84,7 +104,7 @@ class MemoryApiTests(unittest.TestCase):
             points=[old_id, live_id, other_id],
         )
         vector_store.touch(live_id, "team-a", time.time())
-        with patch("flwn_data.memory_steward._chat", return_value="no"):
+        with patch("clients.inference.chat", return_value="no"):
             response = self.client.post(
                 "/workspaces/team-a/sprint-completed", json={"retention_days": 30}
             )
@@ -137,28 +157,29 @@ class MemoryApiTests(unittest.TestCase):
 
     def test_ai_adapter_round_trip(self):
         ai_path = str(Path(__file__).resolve().parents[2] / "flwn-ai-engine")
-        with patch.object(sys, "path", [ai_path, *sys.path]):
+        with patch.object(sys, "path", [ai_path, *sys.path]), patch.dict(sys.modules):
+            sys.modules.pop("config", None)
             from agents.memory_steward.memory_steward import MemorySteward
             from config import settings as ai_settings
 
-        def request(method, url, **kwargs):
-            return self.client.request(
-                method, url, headers=kwargs["headers"], json=kwargs["json"]
-            )
+            def request(method, url, **kwargs):
+                return self.client.request(
+                    method, url, headers=kwargs["headers"], json=kwargs["json"]
+                )
 
-        with patch.object(
-            ai_settings, "DATA_BASE_URL", "http://testserver"
-        ), patch.object(ai_settings, "DATA_API_KEY", "test-data-key"), patch(
-            "httpx.request", side_effect=request
-        ):
-            memory = MemorySteward("team-a")
-            point_id = memory.remember("text", "chat", "planner")
-            self.assertEqual(memory.recall("fact", "reviewer")[0].id, point_id)
-            self.assertEqual(MemorySteward("team-b").recall("fact", "reviewer"), [])
-            self.assertEqual(memory.run_cleanup(), 0)
-            self.assertEqual(memory.on_sprint_completed(), 0)
-            memory.forget(point_id)
-            self.assertEqual(memory.recall("fact", "reviewer"), [])
+            with patch.object(
+                ai_settings, "DATA_BASE_URL", "http://testserver"
+            ), patch.object(ai_settings, "DATA_API_KEY", "test-data-key"), patch(
+                "httpx.request", side_effect=request
+            ):
+                memory = MemorySteward("team-a")
+                point_id = memory.remember("text", "chat", "planner")
+                self.assertEqual(memory.recall("fact", "reviewer")[0].id, point_id)
+                self.assertEqual(MemorySteward("team-b").recall("fact", "reviewer"), [])
+                self.assertEqual(memory.run_cleanup(), 0)
+                self.assertEqual(memory.on_sprint_completed(), 0)
+                memory.forget(point_id)
+                self.assertEqual(memory.recall("fact", "reviewer"), [])
 
 
 if __name__ == "__main__":

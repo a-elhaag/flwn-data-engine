@@ -4,8 +4,28 @@ FastAPI data layer. Owns Memory Steward, Qdrant access, memory compression,
 embeddings, recall ranking, and cleanup. AI engine owns orchestration and Decision
 Ledger; backend remains NestJS. Neither needs direct Qdrant credentials.
 
-This migration implements memory only, not the diagram's PostgreSQL API, ingestion
-worker, Redis queue, extraction pipeline, hybrid search, or reranking.
+## Organization
+
+- `main.py`: application startup and router registration.
+- `config.py`: environment settings.
+- `api/routes.py`: HTTP contracts, authentication, validation, and health endpoints.
+- `memory/steward.py`: extraction of facts/decisions from supplied workspace
+  information, memory persistence, and cleanup. Source text is not limited to chats
+  or transcripts; callers must supply it.
+- `retrieval/search.py`: query rewriting, vector search, recency ranking, and recall
+  tracking.
+- `clients/`: Qdrant storage, shared chat/embedding inference, retries/rate limiting,
+  and dependency readiness checks.
+- `tests/`: API and AI-adapter behavior checks.
+
+Current flow: supplied information -> Memory Steward -> embedding -> Qdrant;
+query -> retrieval -> ranked memories. The existing MemorySteward recall method
+remains a facade for retrieval, preserving the API contract.
+
+The target architecture adds PostgreSQL as the source of truth, a transactional
+outbox/NOTIFY auto-vectorizer, and hybrid retrieval with reranking. These are not
+implemented here. There is no Redis queue or automatic ingestion of all workspace
+information, and no placeholder modules for these future features.
 
 ## Run
 
