@@ -41,6 +41,14 @@ API: `http://localhost:8002`; OpenAPI: `/openapi.json`; interactive docs: `/docs
 Qdrant must already be running at `QDRANT_URL`; service startup ensures the existing
 `memory` collection and workspace payload index. AI engine never starts Qdrant.
 
+Qdrant environments:
+
+- **Cloud/prod:** own managed Qdrant deployment. Set `QDRANT_URL` and `QDRANT_API_KEY`.
+- **Local dev:** `bash run.sh qdrant` starts a light container (`docker-compose.yml`)
+  at `http://localhost:6333`, the default `QDRANT_URL`. No API key needed.
+- **Tests:** in-memory Qdrant, no container.
+- PostgreSQL is out of scope for now; memory still goes straight to Qdrant.
+
 ```sh
 bash run.sh test
 bash run.sh memory_steward
