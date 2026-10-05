@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py config.py .
+COPY main.py config.py mcp_server.py ./
 COPY api ./api
 COPY memory ./memory
 COPY retrieval ./retrieval
