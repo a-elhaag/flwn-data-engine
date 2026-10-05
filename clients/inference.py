@@ -40,6 +40,25 @@ def embed(text: str) -> list[float]:
     )
 
 
+EMBED_BATCH_SIZE = 16
+
+
+def embed_many(texts: list[str]) -> list[list[float]]:
+    """Embed texts in provider-sized batches, preserving input order."""
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), EMBED_BATCH_SIZE):
+        batch = texts[start : start + EMBED_BATCH_SIZE]
+        data = call_with_retries(
+            lambda batch=batch: embeddings_client()
+            .embed(input=batch, model=settings.EMBEDDING_DEPLOYMENT)
+            .data,
+            description="embeddings_client.embed_many",
+            limiter=_foundry_rate_limiter,
+        )
+        vectors.extend(item.embedding for item in sorted(data, key=lambda d: d.index))
+    return vectors
+
+
 def chat(task: str, prompt: str) -> str:
     def call() -> str:
         return (

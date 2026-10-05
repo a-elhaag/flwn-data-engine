@@ -8,7 +8,11 @@ Ledger; backend remains NestJS. Neither needs direct Qdrant credentials.
 
 - `main.py`: application startup and router registration.
 - `config.py`: environment settings.
-- `api/routes.py`: HTTP contracts, authentication, validation, and health endpoints.
+- `api/routes.py`: HTTP contracts, validation, and health endpoints.
+- `api/auth.py`, `api/tokens.py`: service key and workspace-locked agent tokens.
+- `mcp_server.py`: MCP tools for agents, mounted at `/mcp`.
+- `memory/vectorizer.py`: compress + embed seam (reused by the future outbox worker).
+- `memory/prompts.py`: hardened prompts and strict JSON parsing.
 - `memory/steward.py`: extraction of facts/decisions from supplied workspace
   information, memory persistence, and cleanup. Source text is not limited to chats
   or transcripts; callers must supply it.
@@ -41,6 +45,14 @@ API: `http://localhost:8002`; OpenAPI: `/openapi.json`; interactive docs: `/docs
 Qdrant must already be running at `QDRANT_URL`; service startup ensures the existing
 `memory` collection and workspace payload index. AI engine never starts Qdrant.
 
+Qdrant environments:
+
+- **Cloud/prod:** own managed Qdrant deployment. Set `QDRANT_URL` and `QDRANT_API_KEY`.
+- **Local dev:** `bash run.sh qdrant` starts a light container (`docker-compose.yml`)
+  at `http://localhost:6333`, the default `QDRANT_URL`. No API key needed.
+- **Tests:** in-memory Qdrant, no container.
+- PostgreSQL is out of scope for now; memory still goes straight to Qdrant.
+
 ```sh
 bash run.sh test
 bash run.sh memory_steward
@@ -50,7 +62,12 @@ Tests use in-memory Qdrant and mocked inference. `memory_steward` performs live
 Qdrant and embedding readiness checks. Run separately with local and cloud
 `QDRANT_URL`/`QDRANT_API_KEY` values before deployment; keys stay in environment.
 
-## Contract
+## Docs
+
+- [`docs/MEMORY_API.md`](docs/MEMORY_API.md): REST routes, auth, behavior, limits.
+- [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and agent usage guide.
+
+## Contract (original routes; see docs for the full set)
 
 Protected endpoints require `X-Data-API-Key` matching `DATA_API_KEY`:
 

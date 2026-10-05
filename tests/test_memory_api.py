@@ -1,59 +1,15 @@
-import os
 import sys
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ.setdefault("DATA_API_KEY", "test-data-key")
-os.environ.setdefault("AZURE_FOUNDRY_ENDPOINT", "https://example.invalid")
-os.environ.setdefault("AZURE_FOUNDRY_KEY", "test-foundry-key")
-
-from fastapi.testclient import TestClient
-from qdrant_client import QdrantClient
+from harness import MemoryHarness  # sets test env; import before app modules
 
 from clients import vector_store
-from main import app
 
 
-class MemoryApiTests(unittest.TestCase):
-    def setUp(self):
-        self.qdrant = QdrantClient(":memory:")
-        self.addCleanup(self.qdrant.close)
-        for mock_patch in (
-            patch("clients.vector_store._client", return_value=self.qdrant),
-            patch("clients.vector_store.EMBEDDING_SIZE", 3),
-            patch("clients.inference.embed", return_value=[1.0, 0.0, 0.0]),
-            patch("clients.inference.chat", return_value="remembered fact"),
-        ):
-            mock_patch.start()
-            self.addCleanup(mock_patch.stop)
-        self.client = TestClient(app, headers={"X-Data-API-Key": "test-data-key"})
-        self.client.__enter__()
-        self.addCleanup(self.client.__exit__, None, None, None)
-
-    def remember(self, workspace):
-        response = self.client.post(
-            f"/workspaces/{workspace}/memories",
-            json={
-                "text": "raw text",
-                "source": "chat",
-                "agent": "planner",
-            },
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-        return response.json()["point_id"]
-
-    def recall(self, workspace):
-        return self.client.post(
-            f"/workspaces/{workspace}/memories/recall",
-            json={
-                "query": "fact",
-                "agent": "reviewer",
-                "limit": 5,
-            },
-        )
-
+class MemoryApiTests(MemoryHarness):
     def test_round_trip_and_workspace_isolation(self):
         point_id = self.remember("team-a")
         other_id = self.remember("team-b")
@@ -104,11 +60,10 @@ class MemoryApiTests(unittest.TestCase):
             points=[old_id, live_id, other_id],
         )
         vector_store.touch(live_id, "team-a", time.time())
-        with patch("clients.inference.chat", return_value="no"):
-            response = self.client.post(
-                "/workspaces/team-a/sprint-completed", json={"retention_days": 30}
-            )
-        self.assertEqual(response.json(), {"deleted": 1})
+        response = self.client.post(
+            "/workspaces/team-a/sprint-completed", json={"retention_days": 30}
+        )
+        self.assertEqual(response.json()["deleted"], 1)
         self.assertEqual(
             {
                 point.id
@@ -175,6 +130,16 @@ class MemoryApiTests(unittest.TestCase):
                 memory = MemorySteward("team-a")
                 point_id = memory.remember("text", "chat", "planner")
                 self.assertEqual(memory.recall("fact", "reviewer")[0].id, point_id)
+                self.assertEqual(memory.open(point_id)["raw_text"], "text")
+                self.assertEqual(memory.browse(limit=5)["items"][0]["id"], point_id)
+                self.assertEqual(memory.revise(point_id, "new")["text"], "new")
+                self.assertTrue(memory.anchor(point_id)["pinned"])
+                self.assertEqual(memory.pulse()["pinned"], 1)
+                (batch,) = memory.ingest([{"text": "b", "source": "chat", "agent": "p"}])
+                self.assertFalse(batch["deduplicated"])
+                self.assertEqual(memory.sweep(dry_run=True)["dry_run"], True)
+                self.assertEqual(memory.organize(dry_run=True)["clusters"], 0)
+                memory.forget(batch["point_id"])
                 self.assertEqual(MemorySteward("team-b").recall("fact", "reviewer"), [])
                 self.assertEqual(memory.run_cleanup(), 0)
                 self.assertEqual(memory.on_sprint_completed(), 0)
