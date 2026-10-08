@@ -16,9 +16,10 @@ Needs `AZURE_STORAGE_ACCOUNT_URL`; without it every file route returns `503`.
    ```
 
    Returns `201` with `file_id`, `upload_url`, `method` (`PUT`), `headers` and `expires_at`.
-2. **Send the bytes.** `PUT` them to `upload_url` with exactly the returned headers
-   (`x-ms-blob-type: BlockBlob` and the `Content-Type`). The link works for one blob, for
-   `UPLOAD_URL_TTL_SECONDS` (default 15 minutes), over HTTPS, and cannot read or list anything.
+2. **Send the bytes.** `PUT` them in **one request** to `upload_url` with exactly the returned
+   headers (`x-ms-blob-type`, `x-ms-version`, `Content-Type`). The link works for one blob, for
+   `UPLOAD_URL_TTL_SECONDS` (default 15 minutes), over HTTPS. It can create the blob but never
+   replace it, read it, lease it or upload it in blocks.
 3. **Complete.** `POST /workspaces/{ws}/files/{id}/complete`. The service checks the blob exists
    and that its size matches `size_bytes` and the limit for the kind. On success the file is
    `ready`. On a mismatch the blob is deleted, the file is marked `failed` and the call returns
@@ -55,16 +56,19 @@ characters), and the database refuses any path outside the file's own workspace.
 ## Size limits
 
 report 5 MB, image and voice note 25 MB, PDF, document and other 100 MB, audio 500 MB, video
-2000 MB, recording 4000 MB. Signed links cannot enforce a size, so `complete` does. For very large
-files a client should upload in blocks using the same link.
+2000 MB, recording 4000 MB. Signed links cannot enforce a size, so `complete` does. Every upload
+is a single request: Azure allows up to 5000 MiB per request for the pinned `x-ms-version`, but
+uploads above 25 MB have not been tested here, and there is no resumable upload.
 
 ## Security
 
 - The storage account has no public access and no account keys (shared-key access is disabled).
 - Links are signed with a user delegation key from the service's Entra identity, which needs the
   **Storage Blob Data Contributor** role on the account.
-- The upload link stays valid until it expires, so `complete` records the verified blob's ETag
-  and every download re-checks it. A blob rewritten after verification is quarantined, not served.
+- The upload link has **create-only** permission. Verified on live Azure: a link that also has
+  `write` can overwrite the blob, take a lease and break the service's lease, so a file could be
+  swapped after `complete` checked it. With create only, Azure refuses an overwrite (403
+  `UnauthorizedBlobOverwrite`), a lease and a block upload, so verified bytes are the bytes served.
 - Meeting recordings (`kind: recording` or `source: meeting`) can only be registered with the
   service key, so they cannot be created outside a consented meeting.
 - Deleted blobs stay recoverable in Azure for 7 days.

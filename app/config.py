@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     AZURE_FOUNDRY_KEY: str
     MEMORY_CHAT_DEPLOYMENT: str = "gpt-6-luna"
     EMBEDDING_DEPLOYMENT: str = "embed-v-4-0"
+    RERANK_DEPLOYMENT: str = "Cohere-rerank-v4.0-pro"
 
     # Workspace-scoped agent tokens (REST bearer + MCP). Blank disables them.
     MEMORY_TOKEN_SECRET: str = ""

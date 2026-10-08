@@ -14,7 +14,6 @@ class FakeBlobs:
     def __init__(self):
         self.stored: dict[tuple[str, str], BlobInfo] = {}
         self.deleted: list[tuple[str, str]] = []
-        self.frozen: set[tuple[str, str]] = set()  # blobs under a lease
         self.fail_deletes = False
 
     def upload_url(self, container, path, ttl):
@@ -26,17 +25,10 @@ class FakeBlobs:
     def info(self, container, path):
         return self.stored.get((container, path))
 
-    def freeze(self, container, path):
-        info = self.stored.get((container, path))
-        if info:
-            self.frozen.add((container, path))
-        return info
-
     def delete(self, container, path):
         if self.fail_deletes:
             raise RuntimeError("storage is down")
         self.deleted.append((container, path))
-        self.frozen.discard((container, path))
         self.stored.pop((container, path), None)
 
     def upload(self, ticket, size, content_type="application/octet-stream"):  # noqa: E501
@@ -44,8 +36,8 @@ class FakeBlobs:
         container, path = (
             ticket["upload_url"].split("https://fake.blob/")[1].split("?")[0].split("/", 1)
         )
-        if (container, path) in self.frozen:  # Azure answers 412 LeaseIdMissing
-            raise PermissionError("blob is leased: a write needs the lease id")
+        if (container, path) in self.stored:  # Azure: 403 UnauthorizedBlobOverwrite
+            raise PermissionError("a create-only link cannot replace an existing blob")
         self.stored[(container, path)] = BlobInfo(size, content_type)
         return container, path
 
@@ -190,23 +182,30 @@ class FilesApiTests(MemoryHarness):
         elsewhere = agent(self.team_b, tokens.AGENT_SCOPES)
         self.assertEqual(self.client.post(path, json=body, headers=elsewhere).status_code, 403)
 
-    def test_a_verified_file_cannot_be_overwritten_through_the_upload_link(self):
+    def test_an_uploaded_file_cannot_be_replaced_through_the_upload_link(self):
         ticket = self.start().json()
         container, path = self.blobs.upload(ticket, 4096)
+        with self.assertRaises(PermissionError):  # not even before completion
+            self.blobs.upload(ticket, 3_000_000_000)
         base = f"/workspaces/{self.team_a}/files/{ticket['file_id']}"
         self.assertEqual(self.client.post(f"{base}/complete").status_code, 200)
-
-        with self.assertRaises(PermissionError):  # the still-valid upload link is now useless
+        with self.assertRaises(PermissionError):
             self.blobs.upload(ticket, 3_000_000_000)
         self.assertEqual(self.blobs.stored[(container, path)].size, 4096)
         self.assertEqual(self.client.get(f"{base}/download").status_code, 200)
 
-    def test_a_stale_freeze_from_an_interrupted_attempt_does_not_block_completion(self):
+    def test_a_rejected_upload_can_be_retried_with_the_same_link(self):
         ticket = self.start().json()
-        container, path = self.blobs.upload(ticket, 4096)
-        self.blobs.frozen.add((container, path))  # a crash left the lease behind
-        done = self.client.post(f"/workspaces/{self.team_a}/files/{ticket['file_id']}/complete")
-        self.assertEqual(done.status_code, 200)
+        self.blobs.upload(ticket, 9999)  # wrong size announced
+        base = f"/workspaces/{self.team_a}/files/{ticket['file_id']}"
+        self.assertEqual(self.client.post(f"{base}/complete").status_code, 422)
+        self.blobs.upload(ticket, 4096)  # the rejected blob was deleted, so the link works again
+        self.assertEqual(self.client.post(f"{base}/complete").json()["status"], "ready")
+
+    def test_the_upload_ticket_pins_the_headers_a_large_upload_needs(self):
+        headers = self.start().json()["headers"]
+        self.assertEqual(headers["x-ms-blob-type"], "BlockBlob")
+        self.assertGreaterEqual(headers["x-ms-version"], "2019-12-12")
 
     def test_delete_that_fails_in_storage_leaves_the_file_to_retry(self):
         ticket = self.start().json()

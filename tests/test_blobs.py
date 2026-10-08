@@ -32,11 +32,12 @@ def query(url: str) -> dict[str, str]:
 
 
 class BlobStorageTest(unittest.TestCase):
-    def test_upload_link_can_only_create_and_write_one_blob_over_https(self):
+    def test_upload_link_can_create_but_never_overwrite_lease_or_write_blocks(self):
         url = storage().upload_url("chat-media", "ws/f1/note.opus", ttl=900)
         params = query(url)
         self.assertEqual(urlparse(url).path, "/chat-media/ws/f1/note.opus")
-        self.assertEqual(params["sp"], "cw")  # create + write: no read, no delete, no list
+        # create only. Verified live: adding `w` lets the holder overwrite, lease and break leases.
+        self.assertEqual(params["sp"], "c")
         self.assertEqual(params["sr"], "b")  # one blob, not a container
         self.assertEqual(params["spr"], "https")
         expiry = datetime.fromisoformat(params["se"].replace("Z", "+00:00"))

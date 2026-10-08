@@ -4,7 +4,7 @@ import logging
 
 from sqlalchemy import text
 
-from app.clients.inference import embeddings_client
+from app.clients import inference
 from app.config import settings
 from app.db import session
 from app.storage import blobs
@@ -32,7 +32,7 @@ def health_check() -> dict[str, bool]:
         except Exception as exc:
             logger.warning("health_check: storage unreachable: %s", exc)
     try:
-        embeddings_client().embed(input=["ping"], model=settings.EMBEDDING_DEPLOYMENT)
+        inference.embed("ping")
         status["foundry"] = True
     except Exception as exc:
         logger.warning("health_check: foundry unreachable: %s", exc)

@@ -24,6 +24,8 @@ from app.storage.blobs import BlobStorage
 from app.storage.errors import FileNotFound, InvalidReference, UploadIncomplete, UploadRejected
 
 MB = 1024 * 1024
+# Single-request uploads over 256 MiB need this service version or later (limit 5000 MiB).
+STORAGE_API_VERSION = "2023-11-03"
 DEFAULT_LIMIT = 100 * MB
 # Largest accepted size per kind. SAS uploads cannot enforce a size, so `complete` checks it.
 LIMITS = {
@@ -177,7 +179,11 @@ class FileService:
             file_id=str(file_id),
             upload_url=self.storage.upload_url(container, path, ttl),
             method="PUT",
-            headers={"x-ms-blob-type": "BlockBlob", "Content-Type": content_type},
+            headers={
+                "x-ms-blob-type": "BlockBlob",
+                "x-ms-version": STORAGE_API_VERSION,
+                "Content-Type": content_type,
+            },
             expires_at=datetime.now(UTC) + timedelta(seconds=ttl),
         )
 
@@ -188,8 +194,8 @@ class FileService:
             row = self._row(session, file_id)
             if row.status == "ready":
                 return _record(row)
-            # Freeze first, then read: nothing can change the bytes after this point.
-            info = self.storage.freeze(row.container, row.blob_path)
+            # The upload link cannot overwrite, so the bytes read here are the bytes served.
+            info = self.storage.info(row.container, row.blob_path)
             if info is None:
                 raise UploadIncomplete("the file has not been uploaded yet")
             limit = LIMITS.get(row.kind, DEFAULT_LIMIT)
