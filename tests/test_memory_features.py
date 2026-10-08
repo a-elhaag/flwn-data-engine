@@ -2,13 +2,16 @@ import json
 import threading
 import time
 import unittest
+import uuid
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from harness import TOKEN_SECRET, MemoryHarness, unit
 
 from app.api import tokens
 from app.config import settings
+from app.memory.recall import fuse
 from app.memory.steward import MemorySteward
 
 DAY = 86400
@@ -391,6 +394,123 @@ class StewardFeatureTests(MemoryHarness):
                 ).status_code,
                 401,
             )
+
+
+class FusionTests(unittest.TestCase):
+    def rows(self, *names):
+        return {name: SimpleNamespace(id=uuid.uuid4(), name=name) for name in names}
+
+    def test_a_memory_in_both_lists_beats_one_in_a_single_list(self):
+        r = self.rows("both", "vector_only", "keyword_only")
+        fused = fuse([r["vector_only"], r["both"]], [r["keyword_only"], r["both"]])
+        self.assertEqual(fused[0].name, "both")
+        self.assertEqual({row.name for row in fused}, {"both", "vector_only", "keyword_only"})
+
+    def test_each_memory_appears_once_and_empty_input_is_fine(self):
+        r = self.rows("a", "b")
+        self.assertEqual([row.name for row in fuse([r["a"], r["b"]], [r["a"]])], ["a", "b"])
+        self.assertEqual(fuse([], []), [])
+
+
+class HybridRecallTests(MemoryHarness):
+    """Recall merges meaning and exact words, reranks, then weighs recency and use."""
+
+    def store(self, fact, axis, source="chat"):
+        """Remember `fact`, embedded along one axis so its similarity to a query is controlled."""
+        self.chat.replies["memory_steward.compress"] = json.dumps({"fact": fact, "importance": 3})
+        with patch("app.clients.inference.embed", return_value=unit(axis)):
+            response = self.client.post(
+                f"/workspaces/{self.team_a}/memories",
+                json={"text": fact, "source": source, "agent": "planner"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["point_id"]
+
+    def recall_ids(self, query="PROJ-4821", limit=5, **body):
+        self.chat.replies["memory_steward.query_rewrite"] = query  # keep the query as written
+        response = self.client.post(
+            f"/workspaces/{self.team_a}/memories/recall",
+            json={"query": query, "agent": "reviewer", "limit": limit, **body},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def test_keyword_search_finds_an_exact_term_the_embedding_cannot(self):
+        wanted = self.store("Login bug PROJ-4821 breaks the mobile app", axis=1)
+        self.store("The team lunch is on Friday", axis=2)
+        self.store("Sprint planning moved to Thursday", axis=3)
+        # the query vector (axis 0) is equally far from every memory: only the words tell them apart
+        results = self.recall_ids("PROJ-4821")
+        self.assertEqual(results[0]["id"], wanted)
+
+    def test_the_reranker_decides_the_order_and_its_score_is_returned(self):
+        for fact in ("alpha note", "beta note", "gamma note"):
+            self.store(fact, axis=0)  # identical similarity: only the reranker separates them
+
+        def fake_rerank(query, documents, top_n=None):
+            weights = {"alpha": 0.2, "beta": 0.9, "gamma": 0.5}
+            scored = [
+                (i, next(w for k, w in weights.items() if k in d)) for i, d in enumerate(documents)
+            ]
+            return sorted(scored, key=lambda pair: pair[1], reverse=True)
+
+        with (
+            patch.object(settings, "MEMORY_RERANK", True),
+            patch("app.clients.inference.rerank", side_effect=fake_rerank),
+        ):
+            results = self.recall_ids("any note")
+        self.assertEqual([r["text"] for r in results], ["beta note", "gamma note", "alpha note"])
+        self.assertEqual([r["score"] for r in results], [0.9, 0.5, 0.2])
+
+    def test_recall_still_works_when_the_reranker_fails(self):
+        for fact in ("alpha note", "beta note"):
+            self.store(fact, axis=0)
+        with (
+            patch.object(settings, "MEMORY_RERANK", True),
+            patch("app.clients.inference.rerank", side_effect=RuntimeError("model unavailable")),
+        ):
+            results = self.recall_ids("any note")
+        self.assertEqual(len(results), 2)
+        self.assertAlmostEqual(results[0]["score"], 1.0)  # fell back to vector similarity
+
+    def test_the_reranker_is_skipped_when_off_or_when_there_is_nothing_to_compare(self):
+        self.store("only memory", axis=0)
+        rerank = Mock(return_value=[(0, 1.0)])
+        with (
+            patch.object(settings, "MEMORY_RERANK", True),
+            patch("app.clients.inference.rerank", rerank),
+        ):
+            self.recall_ids("only memory")  # one candidate
+        rerank.assert_not_called()
+        self.store("second memory", axis=0)
+        with (
+            patch.object(settings, "MEMORY_RERANK", False),
+            patch("app.clients.inference.rerank", rerank),
+        ):
+            self.recall_ids("memory")  # switched off
+        rerank.assert_not_called()
+
+    def test_source_filter_applies_to_keyword_hits_too(self):
+        decision = self.store("Decision about PROJ-9 scope", axis=1, source="decision")
+        chat = self.store("Chatter about PROJ-9 scope", axis=2, source="chat")
+        self.assertEqual(
+            [r["id"] for r in self.recall_ids("PROJ-9", sources=["decision"])], [decision]
+        )
+        self.assertEqual([r["id"] for r in self.recall_ids("PROJ-9", sources=["chat"])], [chat])
+
+    def test_superseded_memories_are_not_found_by_words_either(self):
+        old = self.store("Use Redis for the cache PROJ-7", axis=1)
+        new = self.store("Use Postgres for the cache PROJ-7", axis=1)
+        self.set_memory(old, status="superseded", superseded_by=new)
+        self.assertEqual([r["id"] for r in self.recall_ids("PROJ-7")], [new])
+
+    def test_workspaces_stay_separate_for_keyword_search(self):
+        self.store("Secret roadmap PROJ-5555", axis=1)
+        response = self.client.post(
+            f"/workspaces/{self.team_b}/memories/recall",
+            json={"query": "PROJ-5555", "agent": "x"},
+        )
+        self.assertEqual(response.json(), [])
 
 
 MCP_HEADERS = {"Accept": "application/json, text/event-stream"}

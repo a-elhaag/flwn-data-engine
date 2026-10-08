@@ -61,6 +61,7 @@ class MemoryHarness(unittest.TestCase):
             ),
             patch("app.clients.inference.chat", side_effect=self.chat),
             patch.object(settings, "MEMORY_DEDUP_THRESHOLD", 1.1),
+            patch.object(settings, "MEMORY_RERANK", False),  # tests that want it turn it on
             patch.object(settings, "MEMORY_TOKEN_SECRET", TOKEN_SECRET),
         ):
             mock_patch.start()

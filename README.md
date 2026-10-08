@@ -111,8 +111,8 @@ Container Apps), which are not provisioned.
 
 ## Known gaps
 
-- Recall is vector search plus ranking. Keyword search (the `tsv` column exists) and a reranker
-  are not wired in yet.
+- Recall is hybrid (vector + keyword) with a reranker, but there is no relevance cut-off yet: it
+  always returns the best few, even when none is a good match.
 - Files are stored and served, but not yet parsed, chunked or embedded for search.
 - Writes embed synchronously; there is no background worker.
 - Task, project and workspace CRUD endpoints are not built; the tables exist.

@@ -59,9 +59,14 @@ Browse pages by id; `next_cursor` is the last id of the page. Limits: text 1-100
   the JSON format the reply is stored as the fact with importance 3.
 - **Dedup.** A new fact with cosine similarity >= `MEMORY_DEDUP_THRESHOLD` to an existing
   memory refreshes that memory instead of storing a copy.
-- **Ranking.** `similarity x (0.5 + 0.5 x recency) x (1 + 0.1 x ln(1 + recalls))`. Recency
-  halves every `RECENCY_HALF_LIFE_DAYS` from the last use (store or recall). Pinned memories
-  never age. Superseded memories are excluded.
+- **Recall.** Vector search and keyword search each return candidates and are merged by
+  reciprocal rank fusion, so an exact term (a ticket id, a name) is found even when the embedding
+  misses it. A Cohere reranker then scores up to `RECALL_CANDIDATES` (30) candidates against the
+  query. If the reranker is off (`MEMORY_RERANK=false`) or fails, vector similarity is used.
+- **Ranking.** `relevance x (0.5 + 0.5 x recency) x (1 + 0.1 x ln(1 + recalls))`, where relevance
+  is the reranker's score (or cosine similarity without it). Recency halves every
+  `RECENCY_HALF_LIFE_DAYS` from the last use (store or recall). Pinned memories never age.
+  Superseded memories are excluded. The returned `score` is the relevance.
 - **Query rewrite.** One LLM call per recall; falls back to the raw query on any error. Turn
   off with `MEMORY_QUERY_REWRITE=false`.
 - **Sweep.** Considers active, unpinned, never-recalled memories older than the retention.
@@ -86,8 +91,10 @@ and several replicas never lose a count. A memory's `source` is stored as `sourc
 
 ## Known limits
 
-- Search is vector similarity plus ranking. The table has a `tsv` full-text column for keyword
-  search, which recall does not use yet.
+- Keyword search uses the `simple` text-search configuration (no stemming, works for mixed
+  languages); it matches whole words, not word parts.
+- Without the reranker, ordering uses vector similarity only, which can rank a near-miss above
+  an exact match (the reranker is what fixes that).
 - With many workspaces in one HNSW index, a filtered search can return fewer rows than asked.
   Recall raises `hnsw.ef_search` and uses iterative scans when pgvector supports them (0.8+).
 - Writes embed synchronously, inside the request.

@@ -146,6 +146,43 @@ class MemoryStore:
         tune_vector_search(self.session, limit)
         return [(row, float(score)) for row, score in self.session.execute(query)]
 
+    def keyword_search(
+        self, query: str, limit: int, sources: list[str] | None = None
+    ) -> list[Memory]:
+        """Memories whose text matches the query's words, best match first.
+
+        Finds what embeddings miss: ticket ids, names, exact phrases. The 'simple' text-search
+        configuration does no stemming, so it works for mixed languages.
+        """
+        tsquery = func.websearch_to_tsquery("simple", query)
+        statement = (
+            select(Memory)
+            .where(
+                Memory.workspace_id == self.workspace_id,
+                Memory.status != "superseded",
+                Memory.tsv.op("@@")(tsquery),
+            )
+            .order_by(func.ts_rank_cd(Memory.tsv, tsquery).desc(), Memory.id)
+            .limit(limit)
+        )
+        if sources:
+            statement = statement.where(Memory.source_type.in_(sources))
+        return list(self.session.scalars(statement))
+
+    def similarities(self, embedding: list[float], ids: list[uuid.UUID]) -> dict[uuid.UUID, float]:
+        """Cosine similarity of the given memories to a vector (for hits the vector search missed)."""
+        if not ids:
+            return {}
+        distance = Memory.embedding.cosine_distance(embedding)
+        rows = self.session.execute(
+            select(Memory.id, (1 - distance).label("score")).where(
+                Memory.workspace_id == self.workspace_id,
+                Memory.id.in_(ids),
+                Memory.embedding.is_not(None),
+            )
+        )
+        return {memory_id: float(score) for memory_id, score in rows}
+
     def page(
         self,
         limit: int,

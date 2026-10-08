@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     MEMORY_DEDUP_THRESHOLD: float = 0.97
     MEMORY_ORGANIZE_THRESHOLD: float = 0.88
     MEMORY_QUERY_REWRITE: bool = True
+    MEMORY_RERANK: bool = True  # rerank recall candidates with the Cohere model
+    RECALL_CANDIDATES: int = 30  # most candidates sent to the reranker (cost and latency)
     RECENCY_HALF_LIFE_DAYS: float = 14.0
     SWEEP_SCAN_CAP: int = 5000
     SWEEP_BATCH_SIZE: int = 20
