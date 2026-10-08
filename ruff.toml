@@ -1,0 +1,13 @@
+line-length = 100
+target-version = "py312"
+extend-exclude = ["docs"]
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # the formatter wraps code; long comments and strings are left alone
+
+[lint.isort]
+known-first-party = ["app"]
+
+[lint.per-file-ignores]
+"tests/*" = ["E402"]  # tests set environment variables before importing the app

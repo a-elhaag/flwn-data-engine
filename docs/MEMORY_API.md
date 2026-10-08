@@ -1,7 +1,9 @@
 # Memory Steward REST API
 
 Base URL: the data engine (default `http://localhost:8002`). Interactive docs at `/docs`.
-Every memory route is scoped by `{workspace_id}` in the path.
+Every memory route is scoped by `{workspace_id}` in the path. Workspace ids are UUIDs of rows
+in the `workspaces` table: a malformed id is `422`, and writing to a workspace that does not
+exist is `404`. Reading an unknown workspace returns nothing (it does not reveal which ids exist).
 
 ## Authentication
 
@@ -13,15 +15,17 @@ Every memory route is scoped by `{workspace_id}` in the path.
 Mint agent tokens with `POST /auth/tokens` (service key only):
 
 ```json
-{"workspace_id": "team-a", "subject": "planner", "scopes": ["memory:read", "memory:write"], "ttl_seconds": 3600}
+{"workspace_id": "8c1f0a52-5a8e-4b76-9d0e-3a1b6f2c7d11", "subject": "planner", "scopes": ["memory:read", "memory:write"], "ttl_seconds": 3600}
 ```
 
-Scopes: `memory:read`, `memory:write`, `memory:delete`. Max TTL: `MEMORY_TOKEN_MAX_TTL_SECONDS`.
+Scopes: `memory:read`, `memory:write`, `memory:delete`, and for files `files:read`,
+`files:write`, `files:delete` (see [FILES_API.md](FILES_API.md)). Default: all six. Max TTL:
+`MEMORY_TOKEN_MAX_TTL_SECONDS`.
 Requires `MEMORY_TOKEN_SECRET` (32+ chars). Maintenance and admin routes accept the service
 key only.
 
 Status codes: `401` bad/missing credentials or expired token, `403` token for another
-workspace or missing scope or service-only route, `404` memory not found in this workspace,
+workspace or missing scope or service-only route, `404` memory not found in this workspace or workspace does not exist,
 `409` maintenance already running for the workspace, `422` validation, `503` readiness.
 
 ## Routes
@@ -43,9 +47,9 @@ workspace or missing scope or service-only route, `404` memory not found in this
 | DELETE | `/workspaces/{ws}/memories?confirm={ws}` | service | Purge the whole workspace | - |
 | POST | `/auth/tokens` | service | Mint agent token | - |
 | GET | `/healthz` | none | Liveness | - |
-| GET | `/readyz` | service | Qdrant + Foundry readiness | - |
+| GET | `/readyz` | service | Database (with pgvector), Foundry and storage readiness | - |
 
-Limits: text 1-100000 chars, recall `limit` 1-100, batch 1-50, retention 1-36500 days.
+Browse pages by id; `next_cursor` is the last id of the page. Limits: text 1-100000 chars, recall `limit` 1-100, batch 1-50, retention 1-36500 days.
 
 ## Behavior
 
@@ -66,15 +70,24 @@ Limits: text 1-100000 chars, recall `limit` 1-100, batch 1-50, retention 1-36500
 - **Organize.** Finds clusters of near-duplicates (>= `MEMORY_ORGANIZE_THRESHOLD`) and asks
   the LLM: distinct, duplicate, update, or merge. Losers are marked `superseded`, never
   deleted directly. Pinned memories are never superseded.
-- **Exclusive maintenance.** Sweep and organize hold a per-workspace lock (in-process);
-  a second call returns 409. With several replicas, schedule maintenance from one caller.
+- **Exclusive maintenance.** Sweep and organize take a per-workspace Postgres advisory lock,
+  so a second call from any process or replica returns 409. Postgres drops the lock if the
+  process dies, so a crash never leaves it stuck.
 - **Untrusted text.** Memory text is wrapped as data in every prompt and tag look-alikes are
   stripped.
 
+## Storage
+
+Memories are rows in the `memories` table (kind `fact`), with the embedding in a `vector(1536)`
+column and a HNSW cosine index. Recall counters are one atomic `UPDATE`, so concurrent recalls
+and several replicas never lose a count. A memory's `source` is stored as `source_type` and its
+`agent` as `agent_name`. Superseded memories stay in the table until a sweep purges them.
+
 ## Known limits
 
-- Recall counters are read-modify-write guarded by a process-local lock; counts can
-  under-count across replicas.
-- Writes embed synchronously. Durable async vectorizing arrives with the PostgreSQL outbox;
-  `memory/vectorizer.py` is the seam it will reuse.
-- Tested against in-memory Qdrant only, not a live Qdrant server.
+- Search is vector similarity plus ranking. The table has a `tsv` full-text column for keyword
+  search, which recall does not use yet.
+- With many workspaces in one HNSW index, a filtered search can return fewer rows than asked.
+  Recall raises `hnsw.ef_search` and uses iterative scans when pgvector supports them (0.8+).
+- Writes embed synchronously, inside the request.
+- The model dimension must match `vector(1536)` (the `embed-v-4-0` default).

@@ -1,107 +1,119 @@
 # Flwn Data Engine
 
-FastAPI data layer. Owns Memory Steward, Qdrant access, memory compression,
-embeddings, recall ranking, and cleanup. AI engine owns orchestration and Decision
-Ledger; backend remains NestJS. Neither needs direct Qdrant credentials.
+The data layer behind Flwn: a FastAPI service that owns the Postgres database, the
+**Memory Steward** (team memory with recall, cleanup and consolidation), and **file storage**
+on Azure Blob. The Go backend and the AI engine are callers; neither touches the database or
+storage directly.
 
-## Organization
+## How it fits together
 
-- `main.py`: application startup and router registration.
-- `config.py`: environment settings.
-- `api/routes.py`: HTTP contracts, validation, and health endpoints.
-- `api/auth.py`, `api/tokens.py`: service key and workspace-locked agent tokens.
-- `mcp_server.py`: MCP tools for agents, mounted at `/mcp`.
-- `memory/vectorizer.py`: compress + embed seam (reused by the future outbox worker).
-- `memory/prompts.py`: hardened prompts and strict JSON parsing.
-- `memory/steward.py`: extraction of facts/decisions from supplied workspace
-  information, memory persistence, and cleanup. Source text is not limited to chats
-  or transcripts; callers must supply it.
-- `retrieval/search.py`: query rewriting, vector search, recency ranking, and recall
-  tracking.
-- `clients/`: Qdrant storage, shared chat/embedding inference, retries/rate limiting,
-  and dependency readiness checks.
-- `tests/`: API and AI-adapter behavior checks.
-
-Current flow: supplied information -> Memory Steward -> embedding -> Qdrant;
-query -> retrieval -> ranked memories. The existing MemorySteward recall method
-remains a facade for retrieval, preserving the API contract.
-
-The target architecture adds PostgreSQL as the source of truth, a transactional
-outbox/NOTIFY auto-vectorizer, and hybrid retrieval with reranking. These are not
-implemented here. There is no Redis queue or automatic ingestion of all workspace
-information, and no placeholder modules for these future features.
-
-## Run
-
-Set environment variables using `.env.example`, then:
-
-```sh
-uv venv
-uv pip install -r requirements.txt
-bash run.sh
+```
+Go backend ─┐                      ┌─ PostgreSQL + pgvector   (source of truth, memory, vectors)
+            ├─ REST / MCP ─ app ───┤
+AI engine ──┘                      └─ Azure Blob Storage      (files, voice notes, recordings, reports)
+                                        │
+                                        └─ Azure AI Foundry   (chat + embeddings)
 ```
 
-API: `http://localhost:8002`; OpenAPI: `/openapi.json`; interactive docs: `/docs`.
-Qdrant must already be running at `QDRANT_URL`; service startup ensures the existing
-`memory` collection and workspace payload index. AI engine never starts Qdrant.
+- **One database.** Workspaces, projects, tasks, docs, chat and memory live in Postgres. Memory
+  vectors are a column (`pgvector`), so a memory and its embedding commit together.
+- **Workspace isolation twice.** Every query filters by workspace, and the session sets the
+  workspace so Postgres row-level security rejects anything the filter missed. This only works if
+  the app connects as a role without `BYPASSRLS` (see Configuration).
+- **Bytes never pass through the API.** Uploads and downloads use short-lived signed links.
 
-Qdrant environments:
+## Project structure
 
-- **Cloud/prod:** own managed Qdrant deployment. Set `QDRANT_URL` and `QDRANT_API_KEY`.
-- **Local dev:** `bash run.sh qdrant` starts a light container (`docker-compose.yml`)
-  at `http://localhost:6333`, the default `QDRANT_URL`. No API key needed.
-- **Tests:** in-memory Qdrant, no container.
-- PostgreSQL is out of scope for now; memory still goes straight to Qdrant.
-
-```sh
-bash run.sh test
-bash run.sh memory_steward
+```
+app/
+  main.py              application factory
+  config.py            settings from the environment
+  api/                 HTTP layer
+    routes/            memory.py, files.py, system.py (health, token minting)
+    schemas.py         request and response bodies
+    deps.py            shared dependencies and required permissions
+    auth.py, tokens.py service key and workspace-locked agent tokens
+    errors.py          domain errors mapped to HTTP statuses
+  mcp_tools/           MCP server for agents, mounted at /mcp
+  memory/              Memory Steward
+    steward.py         write, read, revise, sweep, organize
+    store.py           every SQL statement for memories
+    recall.py          query rewrite, search, ranking
+    prompts.py         hardened prompts and strict JSON parsing
+    vectorizer.py      compress + embed
+  storage/             Azure Blob: blobs.py (signed links), files.py (file registry)
+  clients/             Foundry inference, retries and rate limiting, readiness checks
+  db/                  schema
+    models/            SQLAlchemy models by domain
+    sql/               functions, triggers, row-level security
+    install.py         creates the schema (no migration history, see below)
+    session.py         engine, workspace-scoped sessions, advisory locks
+    erd.py             draws the schema as an interactive graph
+tests/                 unit and database tests
+docs/                  API and design documents
+infra/provision.sh     the Azure resources, as code
+.github/workflows/     CI
 ```
 
-Tests use in-memory Qdrant and mocked inference. `memory_steward` performs live
-Qdrant and embedding readiness checks. Run separately with local and cloud
-`QDRANT_URL`/`QDRANT_API_KEY` values before deployment; keys stay in environment.
+## Run it
+
+```sh
+uv venv && uv pip install -r requirements-dev.txt
+cp .env.example .env          # fill in DATA_API_KEY and the Foundry settings
+bash run.sh postgres          # local Postgres with pgvector (Docker)
+bash run.sh install           # create the schema
+bash run.sh                   # API on http://localhost:8002 (docs at /docs)
+```
+
+Other commands: `bash run.sh test`, `bash run.sh lint`, `bash run.sh ready` (live dependency
+check), `bash run.sh erd` (rebuild `docs/schema-graph.html`).
+
+### Database: no migrations
+
+The database was created fresh, so the models are the schema. `python -m app.db.install` creates
+whatever is missing and is safe to re-run; `--reset` drops every table first (development only).
+When the schema must change on a database that holds real data, add Alembic then.
+
+## Configuration
+
+See `.env.example`. The settings that matter most:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | What the API connects as. **Must not be a superuser or `BYPASSRLS` role**, or workspace isolation is silently off. Azure's admin role has `BYPASSRLS`. |
+| `DATABASE_ADMIN_URL` | Used only to install the schema; may be the admin role. |
+| `AZURE_STORAGE_ACCOUNT_URL` | Enables the file routes. Access is by Entra ID, no keys. |
+| `AZURE_FOUNDRY_*`, `EMBEDDING_DEPLOYMENT` | Chat and embedding models. |
+| `MEMORY_TOKEN_SECRET` | 32+ characters. Enables agent tokens and `/mcp`. |
+
+Create the least-privilege role with `APP_DB_PASSWORD=... python -m app.db.install --app-role flwn_app`.
+
+## Azure
+
+`infra/provision.sh` records how the resources were created: resource group `flwn-data-engine`
+in UAE North, PostgreSQL Flexible Server (Burstable B1ms, about $19/month), and a storage account
+with private containers `workspace-files`, `chat-media`, `meeting-recordings` and
+`agent-reports`, 7-day soft delete, and recordings moved to the Cool tier after 30 days.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push and pull request: lint and format check, the test
+suite against a pgvector Postgres service, then a Docker build with a health-check smoke test.
+Deployment is not automated yet: it needs a container registry and a host (for example Azure
+Container Apps), which are not provisioned.
 
 ## Docs
 
-- [`docs/MEMORY_API.md`](docs/MEMORY_API.md): REST routes, auth, behavior, limits.
-- [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and agent usage guide.
+- [`docs/MEMORY_API.md`](docs/MEMORY_API.md): memory routes, auth, behavior, limits.
+- [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and the agent usage guide.
+- [`docs/FILES_API.md`](docs/FILES_API.md): file upload, download and storage layout.
+- [`docs/schema-graph.html`](docs/schema-graph.html): the database as an interactive graph.
 
-## Contract (original routes; see docs for the full set)
+## Known gaps
 
-Protected endpoints require `X-Data-API-Key` matching `DATA_API_KEY`:
-
-| Method | Path                                             | Body / result                                  |
-| ------ | ------------------------------------------------ | ---------------------------------------------- |
-| POST   | `/workspaces/{workspace_id}/memories`            | `text`, `source`, `agent` -> `point_id`        |
-| POST   | `/workspaces/{workspace_id}/memories/recall`     | `query`, `agent`, `limit` -> ranked memories   |
-| DELETE | `/workspaces/{workspace_id}/memories/{point_id}` | Workspace-scoped deletion; 204                 |
-| POST   | `/workspaces/{workspace_id}/memories/cleanup`    | `retention_days` -> `deleted`                  |
-| POST   | `/workspaces/{workspace_id}/sprint-completed`    | `retention_days` -> `deleted`                  |
-| GET    | `/readyz`                                        | Qdrant + Foundry readiness; 503 if unavailable |
-| GET    | `/healthz`                                       | Public process liveness only                   |
-
-Limits: recall 1-100; retention 1-36500 days; nonblank workspace IDs and text.
-Authentication is service-to-service, not end-user authorization. Trusted callers
-must authorize workspace membership before choosing workspace IDs. Keep this API
-on a private network and use TLS between services outside local development.
-
-## Migration and Rollback
-
-1. Deploy data engine against the **same Qdrant endpoint** previously used by AI.
-   Retain collection `memory`, 1536-dimensional cosine vectors, UUIDs, and payloads.
-   No export, deletion, re-embedding, or collection rename is needed.
-2. Give data engine its own inference and Qdrant credentials. Set AI engine's
-   `DATA_BASE_URL` and `DATA_API_KEY` to this service. Start data service first.
-3. Verify readiness and workspace-scoped remember/recall against local and cloud.
-   Existing AI versions may continue reading the unchanged collection during rollout.
-4. After switching all callers, remove Qdrant credentials from AI runtime secrets.
-   Old `.env` files are ignored by new AI configuration, not edited automatically.
-
-Rollback: redeploy previous AI version with its previous Qdrant/inference secrets.
-Stored data remains compatible. Never run destructive rollback scripts.
-
-Run one data-service worker/replica while recall counters use a process-local lock.
-Mixed-version or multi-process writers can lose counter increments. Cleanup retains
-the existing 1000-candidate batch cap. Writes are not retried by AI adapter:
-timeouts may mean committed writes, so automatic retries could duplicate memories.
+- Recall is vector search plus ranking. Keyword search (the `tsv` column exists) and a reranker
+  are not wired in yet.
+- Files are stored and served, but not yet parsed, chunked or embedded for search.
+- Writes embed synchronously; there is no background worker.
+- Task, project and workspace CRUD endpoints are not built; the tables exist.
+- Uploads do not record who uploaded: tokens carry a workspace, not a member.

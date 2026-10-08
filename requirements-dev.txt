@@ -1,0 +1,3 @@
+-r requirements.txt
+ruff>=0.8
+alembic>=1.14  # schema drift check in tests (compare_metadata); not used at runtime
