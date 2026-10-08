@@ -1,45 +1,12 @@
 import unittest
 import uuid
 
+from fakes import FakeBlobs
 from harness import MemoryHarness
 
 from app.api import tokens
-from app.storage.blobs import BlobInfo, get_storage
+from app.storage.blobs import get_storage
 from app.storage.files import MB, container_for, safe_name
-
-
-class FakeBlobs:
-    """Stands in for BlobStorage: records calls and returns predictable links."""
-
-    def __init__(self):
-        self.stored: dict[tuple[str, str], BlobInfo] = {}
-        self.deleted: list[tuple[str, str]] = []
-        self.fail_deletes = False
-
-    def upload_url(self, container, path, ttl):
-        return f"https://fake.blob/{container}/{path}?sig=upload&ttl={ttl}"
-
-    def download_url(self, container, path, ttl, filename=None):
-        return f"https://fake.blob/{container}/{path}?sig=read&ttl={ttl}&name={filename}"
-
-    def info(self, container, path):
-        return self.stored.get((container, path))
-
-    def delete(self, container, path):
-        if self.fail_deletes:
-            raise RuntimeError("storage is down")
-        self.deleted.append((container, path))
-        self.stored.pop((container, path), None)
-
-    def upload(self, ticket, size, content_type="application/octet-stream"):  # noqa: E501
-        """What the client does: PUT the bytes to the ticket's URL."""
-        container, path = (
-            ticket["upload_url"].split("https://fake.blob/")[1].split("?")[0].split("/", 1)
-        )
-        if (container, path) in self.stored:  # Azure: 403 UnauthorizedBlobOverwrite
-            raise PermissionError("a create-only link cannot replace an existing blob")
-        self.stored[(container, path)] = BlobInfo(size, content_type)
-        return container, path
 
 
 class FileHelpersTest(unittest.TestCase):

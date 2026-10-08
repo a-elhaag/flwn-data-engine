@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     MEMORY_CHAT_DEPLOYMENT: str = "gpt-6-luna"
     EMBEDDING_DEPLOYMENT: str = "embed-v-4-0"
     RERANK_DEPLOYMENT: str = "Cohere-rerank-v4.0-pro"
+    PARSE_DEPLOYMENT: str = "Cohere-parse-v5"  # reads images and scanned pages (image input only)
+    PARSE_INTERVAL_SECONDS: float = 10.0  # the deployment's quota is tiny: about one page per 10s
 
     # Workspace-scoped agent tokens (REST bearer + MCP). Blank disables them.
     MEMORY_TOKEN_SECRET: str = ""
@@ -24,6 +26,15 @@ class Settings(BaseSettings):
     AZURE_STORAGE_ACCOUNT_URL: str = ""
     UPLOAD_URL_TTL_SECONDS: int = 900
     DOWNLOAD_URL_TTL_SECONDS: int = 300
+
+    # File indexing: extract text from uploaded files, chunk, embed, make them searchable.
+    FILE_INDEXING: bool = True  # run the background worker (needs AZURE_STORAGE_ACCOUNT_URL)
+    INDEX_MAX_BYTES: int = 50 * 1024 * 1024  # larger files are skipped, not indexed
+    INDEX_MAX_PAGES: int = 500
+    INDEX_MAX_CHUNKS: int = 2000
+    INDEX_MAX_SCANNED_PAGES: int = 10  # pages of one scanned PDF sent to the (slow) Parse model
+    INDEX_POLL_SECONDS: int = 5
+    INDEX_STUCK_MINUTES: int = 15  # an `indexing` claim older than this is taken over
 
     # Memory behavior.
     MEMORY_DEDUP_THRESHOLD: float = 0.97

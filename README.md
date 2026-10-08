@@ -41,7 +41,13 @@ app/
     recall.py          query rewrite, search, ranking
     prompts.py         hardened prompts and strict JSON parsing
     vectorizer.py      compress + embed
-  storage/             Azure Blob: blobs.py (signed links), files.py (file registry)
+  storage/             Azure Blob and file search
+    blobs.py           signed links, upload checks
+    files.py           file registry
+    indexer.py         background worker: extract, chunk, embed
+    extract.py         text, PDF (pypdf), scans and images (Parse)
+    chunking.py        structure-aware chunks with page and heading citations
+    search.py          hybrid search over file chunks
   clients/             Foundry inference, retries and rate limiting, readiness checks
   db/                  schema
     models/            SQLAlchemy models by domain
@@ -113,6 +119,6 @@ Container Apps), which are not provisioned.
 
 - Recall is hybrid (vector + keyword) with a reranker, but there is no relevance cut-off yet: it
   always returns the best few, even when none is a good match.
-- Files are stored and served, but not yet parsed, chunked or embedded for search.
+- File search has no relevance cut-off yet: it returns the best few chunks even when none matches. Audio and video are stored but not transcribed.
 - Writes embed synchronously; there is no background worker.
 - Task, project and workspace CRUD endpoints are not built; the tables exist.

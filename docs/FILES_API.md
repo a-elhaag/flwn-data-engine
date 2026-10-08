@@ -45,6 +45,50 @@ Status codes: `404` unknown file or workspace, `409` not uploaded yet (complete,
 not configured. The service key may call every route; agent tokens need the scope and their own
 workspace.
 
+## Searching inside files
+
+Once a file is verified, a background worker reads it, splits it into chunks, embeds them, and
+stores them, so the contents can be searched. The file's `index_status` shows where it is:
+`pending`, `indexing`, `done`, `failed` or `skipped` (with `index_error` saying why, or noting a
+partial read), and `chunk_count` says how many chunks it produced.
+
+`POST /workspaces/{ws}/files/search` (scope `files:read`) takes `{query, limit, kind?, project_id?}`
+and returns the best chunks, each citing its file, page (PDFs) and heading path (Markdown):
+
+```json
+[{"file_id": "...", "file_name": "handbook.pdf", "page": 2, "heading_path": null,
+  "text": "Refund policy: customers may cancel within 30 days...", "score": 0.91}]
+```
+
+The same search is available to agents as the MCP tool `files_search`. Search combines meaning
+and exact words, then reranks the results, the same way memory recall does. Only live, verified,
+fully indexed files are searched; deleting a file removes its chunks at once.
+`POST /workspaces/{ws}/files/{id}/reindex` queues a file again (after a failure).
+
+| What is uploaded | How it is read |
+| --- | --- |
+| Text, Markdown, JSON, YAML, CSV, source code | Decoded; Markdown headings become heading paths |
+| PDF with a text layer | Read page by page (`pypdf`); a chunk never spans pages |
+| Scanned PDF (no text layer) | Each page rendered to an image and read by the Cohere Parse model |
+| Image (PNG, JPEG, WebP, GIF, BMP, TIFF) | Read by the Cohere Parse model, tables included |
+| Audio, video, recordings, other types | Not indexed (`skipped`, with the reason) |
+
+**Chat and meeting files are never indexed.** They can belong to a private channel or meeting, and
+search would show their contents to the whole workspace. They need channel-level access control
+first.
+
+Limits: files over `INDEX_MAX_BYTES` (50 MB) or `INDEX_MAX_PAGES` (500) are skipped; at most
+`INDEX_MAX_CHUNKS` (2000) chunks are kept (the rest is noted in `index_error`). The Parse model has a
+very small quota (about one page per 10 seconds), so only the first `INDEX_MAX_SCANNED_PAGES` (10)
+pages of a scan are read, and images and scans index slowly. Raising the Parse deployment's capacity
+in Azure lifts that.
+
+The worker runs inside the API process when `FILE_INDEXING=true` and storage is configured. Work is
+queued in the database (`FOR UPDATE SKIP LOCKED`), so several replicas can run workers without
+repeating a file, a restart loses nothing, and a claim left by a crashed worker is taken over after
+`INDEX_STUCK_MINUTES` (15). Extracted text from user files is untrusted: results are data, not
+instructions.
+
 ## Where things go
 
 | Container | Holds | Chosen when |

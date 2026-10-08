@@ -5,24 +5,27 @@ row and a short-lived upload link; the client sends the bytes straight to Azure;
 checks the blob really arrived and is not too large, then marks the file ready.
 """
 
+import builtins
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 import psycopg
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
 from app.db import events
 from app.db.models.files import File
 from app.db.models.identity import Workspace
+from app.db.models.memory import Chunk
 from app.db.session import session_for
 from app.memory.errors import WorkspaceNotFound
-from app.storage import blobs
+from app.storage import blobs, indexer
 from app.storage.blobs import BlobStorage
 from app.storage.errors import FileNotFound, InvalidReference, UploadIncomplete, UploadRejected
+from app.storage.search import FileHit, search_files
 
 MB = 1024 * 1024
 # Single-request uploads over 256 MiB need this service version or later (limit 5000 MiB).
@@ -81,6 +84,9 @@ class FileRecord:
     created_at: datetime
     duration_ms: int | None = None
     error: str | None = None
+    index_status: str = "none"  # none, pending, indexing, done, failed, skipped
+    chunk_count: int = 0
+    index_error: str | None = None  # why it was skipped or failed, or a note about a partial read
 
 
 @dataclass
@@ -110,6 +116,9 @@ def _record(row: File) -> FileRecord:
         created_at=row.created_at,
         duration_ms=row.duration_ms,
         error=row.error,
+        index_status=row.index_status,
+        chunk_count=row.chunk_count,
+        index_error=row.index_error,
     )
 
 
@@ -220,9 +229,14 @@ class FileService:
                 row.size_bytes = info.size
                 row.content_type = info.content_type or row.content_type
                 self._log(session, row.id, "uploaded", size_bytes=info.size)
+                row.index_status, row.index_error = indexer.plan(
+                    row.source, row.content_type, row.name
+                )
             record = _record(row)
         if problem:
             raise UploadRejected(problem)
+        if record.index_status == "pending":
+            indexer.wake()
         return record
 
     def get(self, file_id: str) -> FileRecord:
@@ -274,4 +288,29 @@ class FileService:
             row = self._row(session, file_id)
             self.storage.delete(row.container, row.blob_path)
             row.deleted_at = datetime.now(UTC)
+            session.execute(
+                delete(Chunk).where(Chunk.source_type == "file", Chunk.source_id == row.id)
+            )
             self._log(session, row.id, "deleted")
+
+    def reindex(self, file_id: str) -> FileRecord:
+        """Queue a ready file for indexing again (after a failure, or a change in the extractors)."""
+        with session_for(self.workspace_id) as session:
+            row = self._row(session, file_id)
+            if row.status != "ready":
+                raise UploadIncomplete(f"the file is {row.status}, not ready")
+            row.index_status, row.index_error = indexer.plan(row.source, row.content_type, row.name)
+            self._log(session, row.id, "reindex_requested")
+            record = _record(row)
+        if record.index_status == "pending":
+            indexer.wake()
+        return record
+
+    def search(
+        self,
+        query: str,
+        limit: int = 5,
+        kind: str | None = None,
+        project_id: uuid.UUID | None = None,
+    ) -> builtins.list[FileHit]:  # `list` is a method of this class
+        return search_files(self.workspace_id, query, limit, kind, project_id)

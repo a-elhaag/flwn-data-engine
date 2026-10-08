@@ -17,5 +17,9 @@ class UploadIncomplete(Exception):
     """The client has not uploaded the bytes yet."""
 
 
+class Unindexable(Exception):
+    """The file cannot be turned into searchable text. The message says why; it is not a failure."""
+
+
 class InvalidReference(Exception):
     """The folder, project or team does not exist in this workspace."""

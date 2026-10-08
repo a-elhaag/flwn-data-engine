@@ -39,16 +39,20 @@ def _retry_after(exc: httpx.HTTPStatusError) -> float | None:
 
 
 def call_with_retries[Result](
-    fn: Callable[[], Result], description: str, limiter: RateLimiter
+    fn: Callable[[], Result],
+    description: str,
+    limiter: RateLimiter,
+    attempts: int = MAX_ATTEMPTS,
+    backoff: float = 1.0,
 ) -> Result:
     """Run `fn`, retrying timeouts, connection errors and 429/5xx answers with backoff.
 
     Any other HTTP error (a bad request, a rejected key) is raised at once: retrying cannot help.
     """
     last_exc: Exception = RuntimeError(f"{description}: no attempts made")
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         limiter.acquire()
-        wait = 2 ** (attempt - 1)
+        wait = backoff * 2 ** (attempt - 1)
         try:
             return fn()
         except httpx.HTTPStatusError as exc:
@@ -59,8 +63,8 @@ def call_with_retries[Result](
             wait = _retry_after(exc) or wait
         except httpx.TransportError as exc:  # timeouts, refused connections, dropped streams
             last_exc = exc
-        if attempt < MAX_ATTEMPTS:
+        if attempt < attempts:
             logger.warning("%s failed, retrying in %ss: %s", description, wait, last_exc)
             time.sleep(wait)
-    logger.error("%s failed after %d attempts: %s", description, MAX_ATTEMPTS, last_exc)
+    logger.error("%s failed after %d attempts: %s", description, attempts, last_exc)
     raise last_exc

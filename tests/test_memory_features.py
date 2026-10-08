@@ -551,6 +551,7 @@ class McpTests(MemoryHarness):
                 "memory_ingest",
                 "memory_anchor",
                 "memory_pulse",
+                "files_search",
             },
         )
         for tool in response.json()["result"]["tools"]:

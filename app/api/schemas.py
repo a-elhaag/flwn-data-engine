@@ -84,6 +84,13 @@ FileKind = Literal[
 ]
 
 
+class SearchFilesRequest(BaseModel):
+    query: Annotated[str, Field(min_length=1, max_length=2000, pattern=r"\S")]
+    limit: int = Field(default=5, ge=1, le=50)
+    kind: FileKind | None = None
+    project_id: UUID | None = None
+
+
 class StartUploadRequest(BaseModel):
     kind: FileKind
     name: Annotated[str, Field(min_length=1, max_length=255, pattern=r"\S")]

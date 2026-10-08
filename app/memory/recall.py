@@ -76,7 +76,7 @@ def _rewrite(query: str) -> str:
         return query
 
 
-def _relevance(
+def relevance(
     query: str, rows: list[Memory], similarity: dict[uuid.UUID, float]
 ) -> dict[uuid.UUID, float]:
     """How relevant each candidate is: the reranker's score, else cosine similarity."""
@@ -108,10 +108,10 @@ def recall(
         similarity = {row.id: score for row, score in by_meaning}
         missing = [row.id for row in candidates if row.id not in similarity]
         similarity.update(store.similarities(vector, missing))
-        relevance = _relevance(rewritten, candidates, similarity)
+        scores = relevance(rewritten, candidates, similarity)
         ranked = sorted(
             candidates,
-            key=lambda row: rank_score(row, relevance.get(row.id, 0.0), now),
+            key=lambda row: rank_score(row, scores.get(row.id, 0.0), now),
             reverse=True,
         )[:limit]
         store.touch([row.id for row in ranked], now)
@@ -121,7 +121,7 @@ def recall(
                 text=row.text,
                 source=row.source_type or "",
                 agent=row.agent_name or "",
-                score=relevance.get(row.id, 0.0),
+                score=scores.get(row.id, 0.0),
             )
             for row in ranked
         ]

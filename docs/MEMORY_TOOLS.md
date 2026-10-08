@@ -25,6 +25,7 @@ Client config (Claude Code style):
 | `memory_anchor` | write | Pin so cleanup never deletes it | `pinned=false` releases |
 | `memory_forget` | delete | Delete one memory | destructive; missing id is fine |
 | `memory_pulse` | read | Counts and health snapshot | |
+| `files_search` | files:read | Search inside uploaded files (PDFs, documents, scans, images) | `query`, `limit` (1-20); results cite file, page and heading |
 
 Not exposed to agents (service key, REST only): sweep, organize, purge, sprint closeout.
 Each tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so

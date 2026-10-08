@@ -16,7 +16,7 @@ from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
 from app.config import settings
-from app.storage.errors import StorageNotConfigured
+from app.storage.errors import StorageNotConfigured, Unindexable
 
 # One container per kind of content, so lifecycle and access rules can differ.
 WORKSPACE_FILES = "workspace-files"
@@ -91,6 +91,16 @@ class BlobStorage:
         except ResourceNotFoundError:
             return None
         return BlobInfo(props.size, props.content_settings.content_type)
+
+    def download(self, container: str, path: str, max_bytes: int) -> bytes:
+        """Read a blob into memory, refusing anything larger than max_bytes before downloading."""
+        blob = self._client.get_blob_client(container, path)
+        size = blob.get_blob_properties().size
+        if size > max_bytes:
+            raise Unindexable(
+                f"{size // (1024 * 1024)} MB is over the {max_bytes // (1024 * 1024)} MB indexing limit"
+            )
+        return blob.download_blob().readall()
 
     def delete(self, container: str, path: str) -> None:
         try:

@@ -5,6 +5,7 @@ Blob path convention: {workspace_id}/{area}/.../{file_id}/{name}. The container 
 """
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import ARRAY, BigInteger, CheckConstraint, Index, SmallInteger, func, text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -85,6 +86,13 @@ class File(IdPk, Tenant, Stamps, SoftDelete, Base):
     waveform: Mapped[list[int] | None] = mapped_column(ARRAY(SmallInteger))  # ~64 peaks
     status: Mapped[str] = mapped_column(server_default="uploading")
     error: Mapped[str | None]
+    # Search indexing: none -> pending -> indexing -> done | failed | skipped. The `pending` rows
+    # are the work queue; workers claim them with FOR UPDATE SKIP LOCKED.
+    index_status: Mapped[str] = mapped_column(server_default="none")
+    index_error: Mapped[str | None]
+    index_started_at: Mapped[datetime | None]
+    indexed_at: Mapped[datetime | None]
+    chunk_count: Mapped[int] = mapped_column(server_default="0")
     metadata_: Mapped[dict] = mapped_column("metadata", server_default=EMPTY_JSON)
 
     __table_args__ = (
@@ -92,6 +100,7 @@ class File(IdPk, Tenant, Stamps, SoftDelete, Base):
         one_of("kind", *FILE_KINDS),
         one_of("source", "workspace", "chat", "meeting", "agent", "import"),
         one_of("status", "uploading", "scanning", "processing", "ready", "failed", "quarantined"),
+        one_of("index_status", "none", "pending", "indexing", "done", "failed", "skipped"),
         # a file's blob must live under its own workspace's prefix
         CheckConstraint(
             "position((workspace_id::text || '/') in blob_path) = 1", name="blob_in_workspace"
@@ -102,6 +111,12 @@ class File(IdPk, Tenant, Stamps, SoftDelete, Base):
         tfk("uploaded_by", "members", "set null"),
         Index("uq_files_container_blob_path", "container", "blob_path", unique=True),
         Index("ix_files_workspace_id_kind_created_at", "workspace_id", "kind", "created_at"),
+        Index(
+            "ix_files_index_queue",
+            "index_status",
+            "index_started_at",
+            postgresql_where=text("index_status in ('pending', 'indexing')"),
+        ),
         Index("ix_files_folder_id", "folder_id", postgresql_where=text("folder_id is not null")),
         Index("ix_files_project_id", "project_id", postgresql_where=text("project_id is not null")),
         Index(
