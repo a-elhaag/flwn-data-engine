@@ -11,9 +11,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
+from azure.storage.blob import (
+    BlobLeaseClient,
+    BlobSasPermissions,
+    BlobServiceClient,
+    generate_blob_sas,
+)
 
 from app.config import settings
 from app.storage.errors import StorageNotConfigured
@@ -32,7 +37,6 @@ KEY_REFRESH_BEFORE = timedelta(minutes=30)
 class BlobInfo:
     size: int
     content_type: str | None
-    etag: str = ""  # changes whenever the blob is rewritten
 
 
 class BlobStorage:
@@ -84,13 +88,44 @@ class BlobStorage:
             props = self._client.get_blob_client(container, path).get_blob_properties()
         except ResourceNotFoundError:
             return None
-        return BlobInfo(props.size, props.content_settings.content_type, props.etag)
+        return BlobInfo(props.size, props.content_settings.content_type)
+
+    def freeze(self, container: str, path: str) -> BlobInfo | None:
+        """Lock the blob against any further write, then read it. None if it does not exist.
+
+        Upload links stay valid until they expire, so without this a client could rewrite a file
+        after it was verified. An infinite lease blocks every write that does not carry the lease
+        id, which no client has. The lease is taken BEFORE reading, so what is read is final.
+        """
+        blob = self._client.get_blob_client(container, path)
+        lease = BlobLeaseClient(blob)
+        try:
+            lease.acquire(lease_duration=-1)
+        except ResourceNotFoundError:
+            return None
+        except HttpResponseError as exc:
+            if exc.error_code != "LeaseAlreadyPresent":
+                raise
+            lease.break_lease(0)  # left by an interrupted attempt: take it over, then re-read
+            lease.acquire(lease_duration=-1)
+        props = blob.get_blob_properties()
+        return BlobInfo(props.size, props.content_settings.content_type)
 
     def delete(self, container: str, path: str) -> None:
+        """Delete the blob, breaking the freeze lease first if there is one."""
+        blob = self._client.get_blob_client(container, path)
         try:
-            self._client.get_blob_client(container, path).delete_blob()
+            blob.delete_blob()
         except ResourceNotFoundError:
-            pass  # already gone
+            return
+        except HttpResponseError as exc:
+            if exc.error_code != "LeaseIdMissing":
+                raise
+            BlobLeaseClient(blob).break_lease(0)
+            try:
+                blob.delete_blob()
+            except ResourceNotFoundError:
+                pass
 
 
 @lru_cache

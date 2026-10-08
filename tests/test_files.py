@@ -14,6 +14,8 @@ class FakeBlobs:
     def __init__(self):
         self.stored: dict[tuple[str, str], BlobInfo] = {}
         self.deleted: list[tuple[str, str]] = []
+        self.frozen: set[tuple[str, str]] = set()  # blobs under a lease
+        self.fail_deletes = False
 
     def upload_url(self, container, path, ttl):
         return f"https://fake.blob/{container}/{path}?sig=upload&ttl={ttl}"
@@ -24,8 +26,17 @@ class FakeBlobs:
     def info(self, container, path):
         return self.stored.get((container, path))
 
+    def freeze(self, container, path):
+        info = self.stored.get((container, path))
+        if info:
+            self.frozen.add((container, path))
+        return info
+
     def delete(self, container, path):
+        if self.fail_deletes:
+            raise RuntimeError("storage is down")
         self.deleted.append((container, path))
+        self.frozen.discard((container, path))
         self.stored.pop((container, path), None)
 
     def upload(self, ticket, size, content_type="application/octet-stream"):  # noqa: E501
@@ -33,7 +44,9 @@ class FakeBlobs:
         container, path = (
             ticket["upload_url"].split("https://fake.blob/")[1].split("?")[0].split("/", 1)
         )
-        self.stored[(container, path)] = BlobInfo(size, content_type, etag=uuid.uuid4().hex)
+        if (container, path) in self.frozen:  # Azure answers 412 LeaseIdMissing
+            raise PermissionError("blob is leased: a write needs the lease id")
+        self.stored[(container, path)] = BlobInfo(size, content_type)
         return container, path
 
 
@@ -177,18 +190,39 @@ class FilesApiTests(MemoryHarness):
         elsewhere = agent(self.team_b, tokens.AGENT_SCOPES)
         self.assertEqual(self.client.post(path, json=body, headers=elsewhere).status_code, 403)
 
-    def test_a_blob_rewritten_after_verification_is_quarantined_not_served(self):
+    def test_a_verified_file_cannot_be_overwritten_through_the_upload_link(self):
+        ticket = self.start().json()
+        container, path = self.blobs.upload(ticket, 4096)
+        base = f"/workspaces/{self.team_a}/files/{ticket['file_id']}"
+        self.assertEqual(self.client.post(f"{base}/complete").status_code, 200)
+
+        with self.assertRaises(PermissionError):  # the still-valid upload link is now useless
+            self.blobs.upload(ticket, 3_000_000_000)
+        self.assertEqual(self.blobs.stored[(container, path)].size, 4096)
+        self.assertEqual(self.client.get(f"{base}/download").status_code, 200)
+
+    def test_a_stale_freeze_from_an_interrupted_attempt_does_not_block_completion(self):
+        ticket = self.start().json()
+        container, path = self.blobs.upload(ticket, 4096)
+        self.blobs.frozen.add((container, path))  # a crash left the lease behind
+        done = self.client.post(f"/workspaces/{self.team_a}/files/{ticket['file_id']}/complete")
+        self.assertEqual(done.status_code, 200)
+
+    def test_delete_that_fails_in_storage_leaves_the_file_to_retry(self):
         ticket = self.start().json()
         self.blobs.upload(ticket, 4096)
         base = f"/workspaces/{self.team_a}/files/{ticket['file_id']}"
-        self.assertEqual(self.client.post(f"{base}/complete").status_code, 200)
-        self.assertEqual(self.client.get(f"{base}/download").status_code, 200)
+        self.client.post(f"{base}/complete")
 
-        self.blobs.upload(ticket, 3_000_000_000)  # the still-valid upload link overwrites it
-        refused = self.client.get(f"{base}/download")
-        self.assertEqual(refused.status_code, 422)
-        self.assertEqual(self.row(ticket["file_id"])["status"], "quarantined")
-        self.assertEqual(self.client.get(f"{base}/download").status_code, 409)  # stays blocked
+        self.blobs.fail_deletes = True
+        with self.assertRaises(RuntimeError):
+            self.client.delete(base)
+        self.assertEqual(self.client.get(base).status_code, 200)  # still there, not half-deleted
+        self.assertIsNone(self.row(ticket["file_id"])["deleted_at"])
+
+        self.blobs.fail_deletes = False
+        self.assertEqual(self.client.delete(base).status_code, 204)
+        self.assertEqual(self.client.get(base).status_code, 404)
 
     def test_only_the_service_can_register_meeting_recordings(self):
         def agent(scopes):

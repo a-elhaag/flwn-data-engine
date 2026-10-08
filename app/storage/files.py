@@ -5,7 +5,6 @@ row and a short-lived upload link; the client sends the bytes straight to Azure;
 checks the blob really arrived and is not too large, then marks the file ready.
 """
 
-import logging
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -23,8 +22,6 @@ from app.memory.errors import WorkspaceNotFound
 from app.storage import blobs
 from app.storage.blobs import BlobStorage
 from app.storage.errors import FileNotFound, InvalidReference, UploadIncomplete, UploadRejected
-
-logger = logging.getLogger(__name__)
 
 MB = 1024 * 1024
 DEFAULT_LIMIT = 100 * MB
@@ -191,7 +188,8 @@ class FileService:
             row = self._row(session, file_id)
             if row.status == "ready":
                 return _record(row)
-            info = self.storage.info(row.container, row.blob_path)
+            # Freeze first, then read: nothing can change the bytes after this point.
+            info = self.storage.freeze(row.container, row.blob_path)
             if info is None:
                 raise UploadIncomplete("the file has not been uploaded yet")
             limit = LIMITS.get(row.kind, DEFAULT_LIMIT)
@@ -204,9 +202,6 @@ class FileService:
                 self.storage.delete(row.container, row.blob_path)
             else:
                 row.status, row.error = "ready", None
-                # The upload link stays valid until it expires, so the bytes could be replaced
-                # after this check. Remember the verified version and compare when serving.
-                row.metadata_ = {**row.metadata_, "etag": info.etag}
                 row.size_bytes = info.size
                 row.content_type = info.content_type or row.content_type
             record = _record(row)
@@ -244,18 +239,11 @@ class FileService:
             return FilePage(items=[_record(row) for row in session.scalars(query)])
 
     def download_link(self, file_id: str) -> DownloadLink:
-        changed = False
         with session_for(self.workspace_id) as session:
             row = self._row(session, file_id)
             if row.status != "ready":
                 raise UploadIncomplete(f"the file is {row.status}, not ready")
             container, path, name = row.container, row.blob_path, row.name
-            info = self.storage.info(container, path)
-            if info is None or info.etag != row.metadata_.get("etag"):
-                changed = True
-                row.status, row.error = "quarantined", "the file changed after it was verified"
-        if changed:
-            raise UploadRejected("the file changed after it was verified and was quarantined")
         ttl = settings.DOWNLOAD_URL_TTL_SECONDS
         return DownloadLink(
             url=self.storage.download_url(container, path, ttl, filename=safe_name(name)),
@@ -263,12 +251,10 @@ class FileService:
         )
 
     def delete(self, file_id: str) -> None:
-        """Hide the file now and remove its bytes. Azure keeps deleted blobs for 7 days."""
+        """Remove the bytes first, then hide the row. If storage fails the call fails and the
+        file stays visible, so a retry finishes the job; a deleted file never lingers in storage.
+        Azure keeps deleted blobs for 7 days."""
         with session_for(self.workspace_id) as session:
             row = self._row(session, file_id)
+            self.storage.delete(row.container, row.blob_path)
             row.deleted_at = datetime.now(UTC)
-            container, path = row.container, row.blob_path
-        try:
-            self.storage.delete(container, path)
-        except Exception:
-            logger.exception("file %s hidden but its blob could not be deleted", file_id)
