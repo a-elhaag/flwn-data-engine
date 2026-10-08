@@ -307,7 +307,10 @@ class StewardFeatureTests(MemoryHarness):
         )
         ok = self.client.post("/auth/tokens", json=body)
         self.assertEqual(ok.status_code, 200)
-        self.assertEqual(tokens.verify(ok.json()["token"]).workspace_id, self.team_a)
+        claims = tokens.verify(ok.json()["token"])
+        self.assertEqual(claims.workspace_id, self.team_a)
+        # asking for nothing grants read access only: never write or delete
+        self.assertEqual(claims.scopes, {tokens.SCOPE_READ, tokens.SCOPE_FILES_READ})
         for bad in (
             {"ttl_seconds": 10**9},
             {"scopes": ["memory:admin"]},

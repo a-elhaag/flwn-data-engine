@@ -62,10 +62,14 @@ class OrganizeRequest(BaseModel):
     max_clusters: int = Field(default=50, ge=1, le=500)
 
 
+# A token gets only what is asked for. Without a request it can read, and nothing else.
+DEFAULT_SCOPES = sorted({tokens.SCOPE_READ, tokens.SCOPE_FILES_READ})
+
+
 class TokenRequest(BaseModel):
     workspace_id: UUID
     subject: NonBlank = "agent"
-    scopes: list[str] = sorted(tokens.AGENT_SCOPES)
+    scopes: list[str] = Field(default_factory=lambda: list(DEFAULT_SCOPES))
     ttl_seconds: int = Field(default=3600, ge=1)
 
 

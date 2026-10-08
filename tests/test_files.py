@@ -28,12 +28,12 @@ class FakeBlobs:
         self.deleted.append((container, path))
         self.stored.pop((container, path), None)
 
-    def upload(self, ticket, size, content_type="application/octet-stream"):
+    def upload(self, ticket, size, content_type="application/octet-stream"):  # noqa: E501
         """What the client does: PUT the bytes to the ticket's URL."""
         container, path = (
             ticket["upload_url"].split("https://fake.blob/")[1].split("?")[0].split("/", 1)
         )
-        self.stored[(container, path)] = BlobInfo(size, content_type)
+        self.stored[(container, path)] = BlobInfo(size, content_type, etag=uuid.uuid4().hex)
         return container, path
 
 
@@ -176,6 +176,37 @@ class FilesApiTests(MemoryHarness):
         self.assertEqual(self.client.post(path, json=body, headers=writer).status_code, 201)
         elsewhere = agent(self.team_b, tokens.AGENT_SCOPES)
         self.assertEqual(self.client.post(path, json=body, headers=elsewhere).status_code, 403)
+
+    def test_a_blob_rewritten_after_verification_is_quarantined_not_served(self):
+        ticket = self.start().json()
+        self.blobs.upload(ticket, 4096)
+        base = f"/workspaces/{self.team_a}/files/{ticket['file_id']}"
+        self.assertEqual(self.client.post(f"{base}/complete").status_code, 200)
+        self.assertEqual(self.client.get(f"{base}/download").status_code, 200)
+
+        self.blobs.upload(ticket, 3_000_000_000)  # the still-valid upload link overwrites it
+        refused = self.client.get(f"{base}/download")
+        self.assertEqual(refused.status_code, 422)
+        self.assertEqual(self.row(ticket["file_id"])["status"], "quarantined")
+        self.assertEqual(self.client.get(f"{base}/download").status_code, 409)  # stays blocked
+
+    def test_only_the_service_can_register_meeting_recordings(self):
+        def agent(scopes):
+            token, _ = tokens.mint(self.team_a, scopes, "agent", 600)
+            return {"Authorization": f"Bearer {token}", "X-Data-API-Key": ""}
+
+        path = f"/workspaces/{self.team_a}/files"
+        recording = {
+            "kind": "recording",
+            "name": "m.webm",
+            "content_type": "video/webm",
+            "size_bytes": 10,
+        }
+        writer = agent({tokens.SCOPE_FILES_WRITE})
+        self.assertEqual(self.client.post(path, json=recording, headers=writer).status_code, 403)
+        from_meeting = {**recording, "kind": "video", "source": "meeting"}
+        self.assertEqual(self.client.post(path, json=from_meeting, headers=writer).status_code, 403)
+        self.assertEqual(self.client.post(path, json=recording).status_code, 201)  # service key
 
     def test_file_routes_report_missing_storage_configuration(self):
         self.client.app.dependency_overrides.clear()

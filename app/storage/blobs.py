@@ -32,6 +32,7 @@ KEY_REFRESH_BEFORE = timedelta(minutes=30)
 class BlobInfo:
     size: int
     content_type: str | None
+    etag: str = ""  # changes whenever the blob is rewritten
 
 
 class BlobStorage:
@@ -83,7 +84,7 @@ class BlobStorage:
             props = self._client.get_blob_client(container, path).get_blob_properties()
         except ResourceNotFoundError:
             return None
-        return BlobInfo(props.size, props.content_settings.content_type)
+        return BlobInfo(props.size, props.content_settings.content_type, props.etag)
 
     def delete(self, container: str, path: str) -> None:
         try:

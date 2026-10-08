@@ -19,7 +19,8 @@ Mint agent tokens with `POST /auth/tokens` (service key only):
 ```
 
 Scopes: `memory:read`, `memory:write`, `memory:delete`, and for files `files:read`,
-`files:write`, `files:delete` (see [FILES_API.md](FILES_API.md)). Default: all six. Max TTL:
+`files:write`, `files:delete` (see [FILES_API.md](FILES_API.md)). Default when `scopes` is omitted: `memory:read` and `files:read` only; request write and
+delete scopes explicitly. Max TTL:
 `MEMORY_TOKEN_MAX_TTL_SECONDS`.
 Requires `MEMORY_TOKEN_SECRET` (32+ chars). Maintenance and admin routes accept the service
 key only.

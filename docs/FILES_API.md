@@ -63,6 +63,10 @@ files a client should upload in blocks using the same link.
 - The storage account has no public access and no account keys (shared-key access is disabled).
 - Links are signed with a user delegation key from the service's Entra identity, which needs the
   **Storage Blob Data Contributor** role on the account.
+- The upload link stays valid until it expires, so `complete` records the verified blob's ETag
+  and every download re-checks it. A blob rewritten after verification is quarantined, not served.
+- Meeting recordings (`kind: recording` or `source: meeting`) can only be registered with the
+  service key, so they cannot be created outside a consented meeting.
 - Deleted blobs stay recoverable in Azure for 7 days.
 - Browser uploads straight to Azure need a CORS rule on the storage account for the web app's
   origin. That is not set yet because the origin is not known.

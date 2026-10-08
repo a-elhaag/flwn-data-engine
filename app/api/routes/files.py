@@ -3,8 +3,9 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
+from app.api.auth import Principal
 from app.api.deps import FILES_DELETE, FILES_READ, FILES_WRITE, Files
 from app.api.schemas import FileKind, StartUploadRequest
 from app.storage.files import DownloadLink, FilePage, FileRecord, UploadTicket
@@ -12,10 +13,15 @@ from app.storage.files import DownloadLink, FilePage, FileRecord, UploadTicket
 router = APIRouter(prefix="/workspaces/{workspace_id}/files")
 
 
-@router.post("", status_code=201, dependencies=[FILES_WRITE])
-def start_upload(request: StartUploadRequest, files: Files) -> UploadTicket:
+@router.post("", status_code=201)
+def start_upload(
+    request: StartUploadRequest, files: Files, principal: Annotated[Principal, FILES_WRITE]
+) -> UploadTicket:
     """Returns a short-lived URL. PUT the bytes to it with the returned headers, then call
-    `complete`."""
+    `complete`. Meeting recordings can only be registered by the trusted backend (service key),
+    because they must come from a meeting where everyone consented."""
+    if (request.kind == "recording" or request.source == "meeting") and not principal.service:
+        raise HTTPException(status_code=403, detail="Recordings are created by the meeting service")
     return files.start_upload(**request.model_dump())
 
 

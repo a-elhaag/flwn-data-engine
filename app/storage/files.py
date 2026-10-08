@@ -204,6 +204,9 @@ class FileService:
                 self.storage.delete(row.container, row.blob_path)
             else:
                 row.status, row.error = "ready", None
+                # The upload link stays valid until it expires, so the bytes could be replaced
+                # after this check. Remember the verified version and compare when serving.
+                row.metadata_ = {**row.metadata_, "etag": info.etag}
                 row.size_bytes = info.size
                 row.content_type = info.content_type or row.content_type
             record = _record(row)
@@ -241,11 +244,18 @@ class FileService:
             return FilePage(items=[_record(row) for row in session.scalars(query)])
 
     def download_link(self, file_id: str) -> DownloadLink:
+        changed = False
         with session_for(self.workspace_id) as session:
             row = self._row(session, file_id)
             if row.status != "ready":
                 raise UploadIncomplete(f"the file is {row.status}, not ready")
             container, path, name = row.container, row.blob_path, row.name
+            info = self.storage.info(container, path)
+            if info is None or info.etag != row.metadata_.get("etag"):
+                changed = True
+                row.status, row.error = "quarantined", "the file changed after it was verified"
+        if changed:
+            raise UploadRejected("the file changed after it was verified and was quarantined")
         ttl = settings.DOWNLOAD_URL_TTL_SECONDS
         return DownloadLink(
             url=self.storage.download_url(container, path, ttl, filename=safe_name(name)),
