@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.memory.errors import (
     ConfirmationRequired,
     MaintenanceBusy,
+    MemberNotFound,
     MemoryNotFound,
     WorkspaceNotFound,
 )
@@ -30,6 +31,9 @@ def _reply(status: int, detail: str | None = None):
 def register(app: FastAPI) -> None:
     app.add_exception_handler(MemoryNotFound, _reply(404, "Memory not found"))
     app.add_exception_handler(WorkspaceNotFound, _reply(404, "Workspace not found"))
+    app.add_exception_handler(
+        MemberNotFound, _reply(422, "Acting member not found in this workspace")
+    )
     app.add_exception_handler(MaintenanceBusy, _reply(409, "Maintenance already running"))
     app.add_exception_handler(
         ConfirmationRequired, _reply(400, "confirm query parameter must equal the workspace id")

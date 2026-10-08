@@ -68,6 +68,7 @@ DEFAULT_SCOPES = sorted({tokens.SCOPE_READ, tokens.SCOPE_FILES_READ})
 
 class TokenRequest(BaseModel):
     workspace_id: UUID
+    member_id: UUID | None = None  # the member the token acts as; recommended
     subject: NonBlank = "agent"
     scopes: list[str] = Field(default_factory=lambda: list(DEFAULT_SCOPES))
     ttl_seconds: int = Field(default=3600, ge=1)

@@ -17,6 +17,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 from starlette.responses import JSONResponse
 
+from app import members
 from app.api import tokens
 from app.api.tokens import Claims
 from app.config import settings
@@ -100,9 +101,15 @@ def _claims(ctx: Context, scope: str) -> Claims:
 async def _run(ctx: Context, scope: str, tool: str, fn: Callable[[MemorySteward], Any]):
     claims = _claims(ctx, scope)
     logger.info("mcp: tool=%s workspace=%s subject=%s", tool, claims.workspace_id, claims.subject)
-    steward = MemorySteward(claims.workspace_id)
+    steward = MemorySteward(claims.workspace_id, actor=claims.member_id)
+
+    def work():
+        if claims.member_id and not members.is_active(claims.workspace_id, claims.member_id):
+            raise PermissionError("Member is not active in this workspace")
+        return fn(steward)
+
     try:
-        return await anyio.to_thread.run_sync(lambda: fn(steward))
+        return await anyio.to_thread.run_sync(work)
     except MemoryNotFound:
         raise ValueError("Memory not found in this workspace") from None
     except WorkspaceNotFound:

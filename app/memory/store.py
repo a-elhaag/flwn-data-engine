@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, undefer
 
 from app.db.models.memory import Memory
 from app.db.session import tune_vector_search
-from app.memory.errors import WorkspaceNotFound
+from app.memory.errors import MemberNotFound, WorkspaceNotFound
 
 
 def to_datetime(timestamp: float) -> datetime:
@@ -52,6 +52,7 @@ class MemoryStore:
         embedding: list[float],
         embedding_model: str,
         now: float,
+        created_by: str | None = None,
     ) -> Memory:
         row = Memory(
             workspace_id=self.workspace_id,
@@ -64,12 +65,15 @@ class MemoryStore:
             embedding=embedding,
             embedding_model=embedding_model,
             created_at=to_datetime(now),
+            created_by=_as_uuid(created_by) if created_by else None,
         )
         self.session.add(row)
         try:
             self.session.flush()
         except IntegrityError as exc:
             if isinstance(exc.orig, psycopg.errors.ForeignKeyViolation):
+                if "created_by" in (exc.orig.diag.constraint_name or ""):
+                    raise MemberNotFound(created_by) from exc
                 raise WorkspaceNotFound(str(self.workspace_id)) from exc
             raise
         return row

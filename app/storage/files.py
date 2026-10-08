@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.config import settings
+from app.db import events
 from app.db.models.files import File
 from app.db.models.identity import Workspace
 from app.db.session import session_for
@@ -113,9 +114,15 @@ def _record(row: File) -> FileRecord:
 
 
 class FileService:
-    def __init__(self, workspace_id: str, storage: BlobStorage):
+    """Files for one workspace. `actor` is the member doing the work, recorded as the uploader."""
+
+    def __init__(self, workspace_id: str, storage: BlobStorage, actor: str | None = None):
         self.workspace_id = str(uuid.UUID(workspace_id))
         self.storage = storage
+        self.actor = str(uuid.UUID(actor)) if actor else None
+
+    def _log(self, session, file_id, action: str, **changes) -> None:
+        events.record(session, self.workspace_id, self.actor, "file", file_id, action, changes)
 
     def _row(self, session, file_id: str | uuid.UUID) -> File:
         row = session.scalars(
@@ -164,6 +171,7 @@ class FileService:
                     folder_id=folder_id,
                     team_id=team_id,
                     project_id=project_id,
+                    uploaded_by=uuid.UUID(self.actor) if self.actor else None,
                 )
             )
             try:
@@ -171,9 +179,10 @@ class FileService:
             except IntegrityError as exc:
                 if isinstance(exc.orig, psycopg.errors.ForeignKeyViolation):
                     raise InvalidReference(
-                        "folder, team or project not found in this workspace"
+                        "folder, team, project or member not found in this workspace"
                     ) from None
                 raise
+            self._log(session, file_id, "created", kind=kind, source=source, size_bytes=size_bytes)
         ttl = settings.UPLOAD_URL_TTL_SECONDS
         return UploadTicket(
             file_id=str(file_id),
@@ -210,6 +219,7 @@ class FileService:
                 row.status, row.error = "ready", None
                 row.size_bytes = info.size
                 row.content_type = info.content_type or row.content_type
+                self._log(session, row.id, "uploaded", size_bytes=info.size)
             record = _record(row)
         if problem:
             raise UploadRejected(problem)
@@ -264,3 +274,4 @@ class FileService:
             row = self._row(session, file_id)
             self.storage.delete(row.container, row.blob_path)
             row.deleted_at = datetime.now(UTC)
+            self._log(session, row.id, "deleted")

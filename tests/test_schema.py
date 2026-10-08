@@ -425,6 +425,26 @@ class SchemaTest(unittest.TestCase):
         ).scalar_one()
         self.assertGreater(after, before)
 
+    def test_removing_a_member_keeps_their_events_but_nothing_else_can_change(self):
+        a = make_workspace(self.conn, "alpha")
+        w = a["workspace_id"]
+        self.conn.execute(
+            insert(T("events")).values(
+                workspace_id=w, actor_id=a["agent"], entity_type="task", action="created"
+            )
+        )
+        # rewriting the record is refused, even for the actor column alone when it names someone else
+        self.raises_integrity(lambda: self.conn.execute(text("update events set action = 'x'")))
+        self.raises_integrity(
+            lambda: self.conn.execute(text("update events set actor_id = :m"), {"m": a["human"]})
+        )
+        # removing the member clears the actor and keeps the event
+        self.conn.execute(text("delete from members where id = :m"), {"m": a["agent"]})
+        row = self.conn.execute(
+            text("select actor_id, action from events where workspace_id = :w"), {"w": w}
+        ).one()
+        self.assertEqual((row.actor_id, row.action), (None, "created"))
+
     def test_deleting_a_workspace_removes_everything(self):
         a = make_workspace(self.conn, "alpha")
         add(

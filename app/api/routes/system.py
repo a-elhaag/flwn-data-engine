@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 
+from app import members
 from app.api import tokens
 from app.api.auth import service_only
 from app.api.schemas import TokenRequest, TokenResponse
@@ -25,9 +26,15 @@ def readyz(response: Response) -> dict[str, bool]:
 
 @router.post("/auth/tokens", dependencies=[Depends(service_only)])
 def mint_token(request: TokenRequest) -> TokenResponse:
+    workspace_id = str(request.workspace_id)
+    member_id = str(request.member_id) if request.member_id else None
+    if member_id and not members.is_active(workspace_id, member_id):
+        raise HTTPException(
+            status_code=422, detail="Member not found or not active in this workspace"
+        )
     try:
         token, expires_at = tokens.mint(
-            str(request.workspace_id), set(request.scopes), request.subject, request.ttl_seconds
+            workspace_id, set(request.scopes), request.subject, request.ttl_seconds, member_id
         )
     except tokens.TokenError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

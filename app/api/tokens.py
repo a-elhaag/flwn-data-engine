@@ -1,7 +1,8 @@
 """Workspace-scoped agent tokens (HS256 JWT).
 
 The workspace lives in the signed token, never in tool arguments, so an agent cannot
-reach another workspace by changing a parameter.
+reach another workspace by changing a parameter. The token can also name the member it acts as
+(`mem`), which is how writes record who did them.
 """
 
 import time
@@ -40,6 +41,7 @@ class Claims:
     scopes: frozenset[str]
     subject: str
     expires_at: int
+    member_id: str | None = None  # the member (human or AI agent) this token acts as
 
 
 def _workspace(value) -> str:
@@ -49,16 +51,30 @@ def _workspace(value) -> str:
         raise TokenError("workspace must be a UUID") from None
 
 
+def _member(value) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(uuid.UUID(str(value)))
+    except ValueError:
+        raise TokenError("member must be a UUID") from None
+
+
 def enabled() -> bool:
     return bool(settings.MEMORY_TOKEN_SECRET)
 
 
 def mint(
-    workspace_id: str, scopes: set[str] | frozenset[str], subject: str, ttl_seconds: int
+    workspace_id: str,
+    scopes: set[str] | frozenset[str],
+    subject: str,
+    ttl_seconds: int,
+    member_id: str | None = None,
 ) -> tuple[str, int]:
     if not enabled():
         raise TokenError("tokens are disabled: MEMORY_TOKEN_SECRET is not set")
     workspace_id = _workspace(workspace_id)
+    member_id = _member(member_id)
     unknown = set(scopes) - AGENT_SCOPES
     if unknown:
         raise TokenError(f"unknown scopes: {sorted(unknown)}")
@@ -66,18 +82,17 @@ def mint(
         raise TokenError(f"ttl_seconds must be 1-{settings.MEMORY_TOKEN_MAX_TTL_SECONDS}")
     now = int(time.time())
     expires_at = now + ttl_seconds
-    token = jwt.encode(
-        {
-            "iss": settings.MEMORY_TOKEN_ISSUER,
-            "sub": subject,
-            "ws": workspace_id,
-            "scope": " ".join(sorted(scopes)),
-            "iat": now,
-            "exp": expires_at,
-        },
-        settings.MEMORY_TOKEN_SECRET,
-        algorithm="HS256",
-    )
+    claims = {
+        "iss": settings.MEMORY_TOKEN_ISSUER,
+        "sub": subject,
+        "ws": workspace_id,
+        "scope": " ".join(sorted(scopes)),
+        "iat": now,
+        "exp": expires_at,
+    }
+    if member_id:
+        claims["mem"] = member_id
+    token = jwt.encode(claims, settings.MEMORY_TOKEN_SECRET, algorithm="HS256")
     return token, expires_at
 
 
@@ -99,4 +114,5 @@ def verify(token: str) -> Claims:
         scopes=frozenset(str(data.get("scope", "")).split()),
         subject=str(data["sub"]),
         expires_at=int(data["exp"]),
+        member_id=_member(data.get("mem")),
     )

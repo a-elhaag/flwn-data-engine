@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from app.clients import inference
 from app.config import settings
+from app.db import events
 from app.db.models.memory import Memory
 from app.db.session import advisory_lock, session_for
 from app.memory import prompts, vectorizer
@@ -111,10 +112,18 @@ def _record(row: Memory, with_raw: bool = False) -> MemoryRecord:
 
 
 class MemorySteward:
-    def __init__(self, workspace_id: str):
+    """Memory for one workspace. `actor` is the member doing the work, recorded on what it writes."""
+
+    def __init__(self, workspace_id: str, actor: str | None = None):
         if not isinstance(workspace_id, str) or not workspace_id.strip():
             raise TypeError("workspace_id is required")
         self.workspace_id = str(uuid.UUID(workspace_id))  # ValueError if it is not a UUID
+        self.actor = str(uuid.UUID(actor)) if actor else None
+
+    def _log(self, store: MemoryStore, entity_id, action: str, **changes) -> None:
+        events.record(
+            store.session, self.workspace_id, self.actor, "memory", entity_id, action, changes
+        )
 
     @contextmanager
     def _store(self):
@@ -150,6 +159,7 @@ class MemorySteward:
             if hits and hits[0][1] >= threshold:
                 existing = hits[0][0]
                 store.refresh(existing, now, prepared.importance)
+                self._log(store, existing.id, "reconfirmed", source=source)
                 logger.info(
                     "remember: workspace=%s duplicate of memory=%s", self.workspace_id, existing.id
                 )
@@ -163,7 +173,9 @@ class MemorySteward:
             embedding=vector,
             embedding_model=settings.EMBEDDING_DEPLOYMENT,
             now=now,
+            created_by=self.actor,
         )
+        self._log(store, row.id, "created", source=source, importance=prepared.importance)
         logger.info("remember: workspace=%s stored memory=%s", self.workspace_id, row.id)
         return StoreResult(str(row.id))
 
@@ -179,6 +191,7 @@ class MemorySteward:
             if row is None:
                 raise MemoryNotFound(point_id)
             store.replace(row, fact, vector, settings.EMBEDDING_DEPLOYMENT)
+            self._log(store, row.id, "updated", fields=["text"])
             return _record(row, with_raw=True)
 
     def anchor(self, point_id: str, pinned: bool = True) -> MemoryRecord:
@@ -187,6 +200,7 @@ class MemorySteward:
             if row is None:
                 raise MemoryNotFound(point_id)
             row.pinned = pinned
+            self._log(store, row.id, "pinned" if pinned else "unpinned")
             return _record(row, with_raw=True)
 
     # -- read ----------------------------------------------------------------
@@ -234,8 +248,10 @@ class MemorySteward:
     # -- delete --------------------------------------------------------------
 
     def forget(self, point_id: str) -> None:
+        memory_id = uuid.UUID(point_id)
         with self._store() as store:
-            store.delete([uuid.UUID(point_id)])
+            if store.delete([memory_id]):  # deleting a missing id is fine, and leaves no event
+                self._log(store, memory_id, "deleted")
 
     def purge(self, confirm: str) -> int:
         """Delete every memory in the workspace. `confirm` must equal the workspace id."""
@@ -243,6 +259,15 @@ class MemorySteward:
             raise ConfirmationRequired("confirm must equal the workspace id")
         with self._store() as store:
             deleted = store.delete_all()
+            events.record(
+                store.session,
+                self.workspace_id,
+                self.actor,
+                "workspace",
+                self.workspace_id,
+                "memories_purged",
+                {"deleted": deleted},
+            )
         logger.warning("purge: workspace=%s deleted=%d", self.workspace_id, deleted)
         return deleted
 
@@ -288,8 +313,18 @@ class MemorySteward:
             if not dry_run and (to_delete or stale_ids):
                 with self._store() as store:
                     # recalled or pinned since selection: leave it alone
-                    store.delete(to_delete, only_unused=True)
-                    store.delete(stale_ids)
+                    removed = store.delete(to_delete, only_unused=True)
+                    purged = store.delete(stale_ids)
+                    if removed or purged:
+                        events.record(
+                            store.session,
+                            self.workspace_id,
+                            self.actor,
+                            "workspace",
+                            self.workspace_id,
+                            "memories_swept",
+                            {"deleted": removed, "superseded_purged": purged},
+                        )
             logger.info(
                 "sweep: workspace=%s deleted=%d superseded_purged=%d dry_run=%s",
                 self.workspace_id,
@@ -334,6 +369,17 @@ class MemorySteward:
                         merged += outcome[1]
                 if cursor is None:
                     break
+            if (superseded or merged) and not dry_run:
+                with self._store() as store:
+                    events.record(
+                        store.session,
+                        self.workspace_id,
+                        self.actor,
+                        "workspace",
+                        self.workspace_id,
+                        "memories_organized",
+                        {"clusters": clusters, "superseded": superseded, "merged": merged},
+                    )
             logger.info(
                 "organize: workspace=%s clusters=%d superseded=%d merged=%d dry_run=%s",
                 self.workspace_id,

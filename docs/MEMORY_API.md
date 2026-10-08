@@ -18,6 +18,22 @@ Mint agent tokens with `POST /auth/tokens` (service key only):
 {"workspace_id": "8c1f0a52-5a8e-4b76-9d0e-3a1b6f2c7d11", "subject": "planner", "scopes": ["memory:read", "memory:write"], "ttl_seconds": 3600}
 ```
 
+## Who is acting
+
+Every write records its author, and every change leaves a row in the audit log (`events`: who,
+what, which thing, when).
+
+- **Agents.** Mint the token for a member: `POST /auth/tokens` accepts `member_id` (an AI agent or
+  a human). The member must be active in that workspace, and is carried in the signed token
+  (`mem`). Without a `member_id` the token still works but records no author.
+- **The trusted backend** (service key) can name the member it acts for, for example the human
+  whose request it is relaying, with the header `X-Acting-Member-Id`.
+- **No impersonation.** The header is honoured only with the service key. An agent's member comes
+  only from its signed token, so an agent cannot act as someone else by sending the header.
+- **Instant revocation.** The member is checked on every request. Suspending or removing a member
+  stops their tokens at once (`403`), with no need to wait for expiry.
+- An unknown, foreign or suspended member in the header is `422`.
+
 Scopes: `memory:read`, `memory:write`, `memory:delete`, and for files `files:read`,
 `files:write`, `files:delete` (see [FILES_API.md](FILES_API.md)). Default when `scopes` is omitted: `memory:read` and `files:read` only; request write and
 delete scopes explicitly. Max TTL:
@@ -26,7 +42,7 @@ Requires `MEMORY_TOKEN_SECRET` (32+ chars). Maintenance and admin routes accept 
 key only.
 
 Status codes: `401` bad/missing credentials or expired token, `403` token for another
-workspace or missing scope or service-only route, `404` memory not found in this workspace or workspace does not exist,
+workspace or missing scope or service-only route or inactive member, `404` memory not found in this workspace or workspace does not exist,
 `409` maintenance already running for the workspace, `422` validation, `503` readiness.
 
 ## Routes

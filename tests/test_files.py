@@ -113,6 +113,34 @@ class FilesApiTests(MemoryHarness):
         self.assertEqual(self.client.get(f"/workspaces/{self.team_a}/files").json()["items"], [])
         self.assertEqual(len(self.blobs.deleted), 1)
 
+    def test_uploads_record_who_uploaded_and_leave_an_audit_trail(self):
+        ana = self.member(self.team_a)
+        headers = {"X-Acting-Member-Id": ana}
+        body = {
+            "kind": "pdf",
+            "name": "spec.pdf",
+            "content_type": "application/pdf",
+            "size_bytes": 2048,
+        }
+        base = f"/workspaces/{self.team_a}/files"
+        ticket = self.client.post(base, json=body, headers=headers).json()
+        self.assertEqual(str(self.row(ticket["file_id"])["uploaded_by"]), ana)
+        self.blobs.upload(ticket, 2048)
+        self.client.post(f"{base}/{ticket['file_id']}/complete", headers=headers)
+        self.client.delete(f"{base}/{ticket['file_id']}", headers=headers)
+        events = self.events(self.team_a, "file")
+        self.assertEqual([e["action"] for e in events], ["created", "uploaded", "deleted"])
+        self.assertEqual({str(e["actor_id"]) for e in events}, {ana})
+
+    def test_an_unknown_acting_member_cannot_be_recorded_as_uploader(self):
+        body = {"kind": "pdf", "name": "a.pdf", "content_type": "application/pdf", "size_bytes": 10}
+        response = self.client.post(
+            f"/workspaces/{self.team_a}/files",
+            json=body,
+            headers={"X-Acting-Member-Id": str(uuid.uuid4())},
+        )
+        self.assertEqual(response.status_code, 422)
+
     def test_files_route_to_the_right_container(self):
         for kind, source, container in (
             ("pdf", "workspace", "workspace-files"),

@@ -116,4 +116,3 @@ Container Apps), which are not provisioned.
 - Files are stored and served, but not yet parsed, chunked or embedded for search.
 - Writes embed synchronously; there is no background worker.
 - Task, project and workspace CRUD endpoints are not built; the tables exist.
-- Uploads do not record who uploaded: tokens carry a workspace, not a member.

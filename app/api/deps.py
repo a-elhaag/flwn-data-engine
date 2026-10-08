@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, allow
@@ -11,14 +11,28 @@ from app.storage.blobs import BlobStorage, get_storage
 from app.storage.files import FileService
 
 
-def steward(workspace_id: WorkspaceId) -> MemorySteward:
-    return MemorySteward(str(workspace_id))
+def _actor(request: Request) -> str | None:
+    """The member acting, set by the permission check that must run before these dependencies.
+
+    If the check has not run, fail loudly: building the service anyway would write records with
+    no author and no error, which is the failure this exists to prevent.
+    """
+    principal = getattr(request.state, "principal", None)
+    if principal is None:
+        raise RuntimeError("route builds a service before its permission check has run")
+    return principal.member_id
+
+
+def steward(request: Request, workspace_id: WorkspaceId) -> MemorySteward:
+    return MemorySteward(str(workspace_id), actor=_actor(request))
 
 
 def files_service(
-    workspace_id: WorkspaceId, storage: Annotated[BlobStorage, Depends(get_storage)]
+    request: Request,
+    workspace_id: WorkspaceId,
+    storage: Annotated[BlobStorage, Depends(get_storage)],
 ) -> FileService:
-    return FileService(str(workspace_id), storage)
+    return FileService(str(workspace_id), storage, actor=_actor(request))
 
 
 Memory = Annotated[MemorySteward, Depends(steward)]

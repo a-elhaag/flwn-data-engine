@@ -88,6 +88,33 @@ class MemoryHarness(unittest.TestCase):
         self.addCleanup(self.sql, "delete from workspaces where id = :i", i=workspace_id)
         return workspace_id
 
+    def member(self, workspace: str, kind: str = "HUMAN", status: str = "active") -> str:
+        """A member of the workspace: a human (with a user account) or an AI agent."""
+        if kind == "AI":
+            sql = (
+                "insert into members (workspace_id, type, name, agent_kind, status)"
+                " values (:w, 'AI', 'Ghost', 'ghost_engineer', :s) returning id"
+            )
+            (row,) = self.sql(sql, w=workspace, s=status)
+        else:
+            email = f"{uuid.uuid4().hex[:10]}@example.com"
+            (user,) = self.sql(
+                "insert into users (email, name) values (:e, 'Test User') returning id", e=email
+            )
+            # members reference the user, so they go first (cleanups run last-in, first-out)
+            self.addCleanup(self.sql, "delete from users where id = :i", i=user["id"])
+            self.addCleanup(self.sql, "delete from members where user_id = :i", i=user["id"])
+            sql = (
+                "insert into members (workspace_id, user_id, type, status)"
+                " values (:w, :u, 'HUMAN', :s) returning id"
+            )
+            (row,) = self.sql(sql, w=workspace, u=user["id"], s=status)
+        return str(row["id"])
+
+    def events(self, workspace: str, entity_type: str | None = None) -> list[dict]:
+        rows = self.sql("select * from events where workspace_id = :w order by id", w=workspace)
+        return [dict(r) for r in rows if entity_type in (None, r["entity_type"])]
+
     def row(self, memory_id: str) -> dict | None:
         rows = self.sql("select * from memories where id = :i", i=memory_id)
         return dict(rows[0]) if rows else None

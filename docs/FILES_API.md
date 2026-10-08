@@ -6,6 +6,10 @@ short-lived signed links, so the bytes go straight between the client and Azure.
 
 Needs `AZURE_STORAGE_ACCOUNT_URL`; without it every file route returns `503`.
 
+Uploads record who uploaded (`uploaded_by`) and leave `created`, `uploaded` and `deleted` events in
+the audit log. The acting member comes from the token, or from `X-Acting-Member-Id` when the
+trusted backend calls (see [MEMORY_API.md](MEMORY_API.md#who-is-acting)).
+
 ## Upload in three steps
 
 1. **Start.** `POST /workspaces/{ws}/files`

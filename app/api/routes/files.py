@@ -15,7 +15,9 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/files")
 
 @router.post("", status_code=201)
 def start_upload(
-    request: StartUploadRequest, files: Files, principal: Annotated[Principal, FILES_WRITE]
+    principal: Annotated[Principal, FILES_WRITE],  # first: it must run before `files` is built
+    request: StartUploadRequest,
+    files: Files,
 ) -> UploadTicket:
     """Returns a short-lived URL. PUT the bytes to it with the returned headers, then call
     `complete`. Meeting recordings can only be registered by the trusted backend (service key),
