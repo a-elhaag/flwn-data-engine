@@ -113,6 +113,7 @@ Container Apps), which are not provisioned.
 
 - [`docs/MEMORY_API.md`](docs/MEMORY_API.md): memory routes, auth, behavior, limits.
 - [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and the agent usage guide.
+- [`docs/AI_ENGINE_UPDATE.md`](docs/AI_ENGINE_UPDATE.md): what the AI engine must update.
 - [`docs/MEETINGS_API.md`](docs/MEETINGS_API.md): meetings, consent, recordings, transcripts.
 - [`docs/FILES_API.md`](docs/FILES_API.md): file upload, download and storage layout.
 - [`docs/schema-graph.html`](docs/schema-graph.html): the database as an interactive graph.
