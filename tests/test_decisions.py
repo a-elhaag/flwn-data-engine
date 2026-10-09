@@ -35,6 +35,9 @@ class DecisionTests(MemoryHarness):
         token, _ = tokens.mint(workspace or self.team_a, scopes, "agent", 600, member)
         return {"Authorization": f"Bearer {token}", **NO_SERVICE_KEY}
 
+    def human(self):
+        return self.agent(tokens.AGENT_SCOPES, member=self.member(self.team_a))
+
     def check(self, action="Disable the legacy endpoint", **extra):
         return self.client.post(self.url("/check"), json={"proposed_action": action} | extra)
 
@@ -138,7 +141,9 @@ class DecisionTests(MemoryHarness):
     def test_superseded_decision_is_kept_but_no_longer_checked(self):
         old = self.record()["decision"]
         new = self.client.post(
-            self.url(f"/{old['id']}/supersede"), json={"title": "Retire the legacy endpoint"}
+            self.url(f"/{old['id']}/supersede"),
+            json={"title": "Retire the legacy endpoint"},
+            headers=self.human(),
         ).json()["decision"]
         self.assertEqual(self.client.get(self.url(f"/{old['id']}")).json()["status"], "superseded")
         self.assertEqual(
@@ -157,15 +162,20 @@ class DecisionTests(MemoryHarness):
 
     def test_superseded_cannot_be_superseded_or_edited(self):
         old = self.record()["decision"]
-        self.client.post(self.url(f"/{old['id']}/supersede"), json={"title": "New"})
-        again = self.client.post(self.url(f"/{old['id']}/supersede"), json={"title": "Newer"})
+        human = self.human()
+        self.client.post(self.url(f"/{old['id']}/supersede"), json={"title": "New"}, headers=human)
+        again = self.client.post(
+            self.url(f"/{old['id']}/supersede"), json={"title": "Newer"}, headers=human
+        )
         self.assertEqual(again.status_code, 409)
-        edit = self.client.patch(self.url(f"/{old['id']}"), json={"title": "x"})
+        edit = self.client.patch(self.url(f"/{old['id']}"), json={"title": "x"}, headers=human)
         self.assertEqual(edit.status_code, 409)
 
     def test_rejecting_a_decision_hides_it_from_recall(self):
         decision = self.record()["decision"]
-        response = self.client.patch(self.url(f"/{decision['id']}"), json={"status": "rejected"})
+        response = self.client.patch(
+            self.url(f"/{decision['id']}"), json={"status": "rejected"}, headers=self.human()
+        )
         self.assertEqual(response.json()["status"], "rejected")
         recalled = self.client.post(
             f"/workspaces/{self.team_a}/memories/recall", json={"query": "q", "agent": "a"}
@@ -225,6 +235,21 @@ class DecisionTests(MemoryHarness):
         self.client.post(self.url(), json={"title": "x"}, headers=headers)
         recorded = [e for e in self.events(self.team_a, "decision") if e["action"] == "recorded"]
         self.assertEqual(str(recorded[0]["actor_id"]), ana)
+
+    def test_agents_cannot_change_or_supersede_decisions(self):
+        decision = self.record()["decision"]
+        bot = self.agent(tokens.AGENT_SCOPES, member=self.member(self.team_a, kind="AI"))
+        for call in (
+            lambda h: self.client.patch(
+                self.url(f"/{decision['id']}"), json={"status": "rejected"}, headers=h
+            ),
+            lambda h: self.client.post(
+                self.url(f"/{decision['id']}/supersede"), json={"title": "x"}, headers=h
+            ),
+        ):
+            self.assertEqual(call(bot).status_code, 403)
+            self.assertEqual(call({}).status_code, 403)  # service key, no acting member
+        self.assertEqual(self.client.get(self.url(f"/{decision['id']}")).json()["status"], "active")
 
     def test_unknown_ids_are_404(self):
         missing = "00000000-0000-4000-8000-000000000000"

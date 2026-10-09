@@ -182,6 +182,13 @@ class DecisionService:
                 ) from None
             raise
 
+    def _require_human(self, session, action: str) -> Member:
+        """Changing or closing the team's decisions is for people: the ledger flags, people decide."""
+        member = session.get(Member, uuid.UUID(self.actor)) if self.actor else None
+        if member is None or member.type != "HUMAN":
+            raise HumanRequired(f"only a human member can {action}")
+        return member
+
     def _get(self, session, decision_id: str) -> tuple[Memory, Decision]:
         row = session.execute(
             _join_decisions(select(Memory, Decision)).where(
@@ -340,6 +347,7 @@ class DecisionService:
                 "a decision becomes superseded only through the supersede call"
             )
         with session_for(self.workspace_id) as session:
+            self._require_human(session, "change a decision")
             memory, decision = self._get(session, decision_id)
             if decision.status == "superseded":
                 raise DecisionStateError("a superseded decision cannot be changed")
@@ -397,6 +405,7 @@ class DecisionService:
         text = render(title, rationale, paths)
         vector = vectorizer.embed_one(text)
         with session_for(self.workspace_id) as session:
+            self._require_human(session, "supersede a decision")
             old_memory, old = self._get(session, decision_id)
             if old.status not in ("active", "proposed"):
                 raise DecisionStateError(f"a {old.status} decision cannot be superseded")
@@ -623,11 +632,7 @@ class DecisionService:
         """A human decides what a flagged conflict means: the work is allowed (accepted), it was a
         false alarm (dismissed), or the work was changed to fit (resolved)."""
         with session_for(self.workspace_id) as session:
-            member = session.get(Member, uuid.UUID(self.actor)) if self.actor else None
-            if member is None or member.type != "HUMAN":
-                raise HumanRequired(
-                    "only a human member can resolve a conflict: the ledger flags, people decide"
-                )
+            member = self._require_human(session, "resolve a conflict")
             row = session.execute(
                 select(DecisionConflict, Memory, Decision)
                 .join(

@@ -18,8 +18,8 @@ from the token or `X-Acting-Member-Id` (see [MEMORY_API.md](MEMORY_API.md#who-is
 | POST | `/workspaces/{ws}/decisions` | write | Record (201). A near-identical active decision is returned with `deduplicated: true` |
 | GET | `/workspaces/{ws}/decisions` | read | Page. `status`, `area`, `team_id`, `project_id`, `q`, `limit`, `offset` |
 | GET | `/workspaces/{ws}/decisions/{id}` | read | One decision (`id` is also its memory id) |
-| PATCH | `/workspaces/{ws}/decisions/{id}` | write | Edit title, rationale, `files_scope`, area, or move between `proposed`, `active`, `rejected` |
-| POST | `/workspaces/{ws}/decisions/{id}/supersede` | write | New decision replaces it; the old one is kept, marked `superseded`, linked (201) |
+| PATCH | `/workspaces/{ws}/decisions/{id}` | write, human member | Edit title, rationale, `files_scope`, area, or move between `proposed`, `active`, `rejected` |
+| POST | `/workspaces/{ws}/decisions/{id}/supersede` | write, human member | New decision replaces it; the old one is kept, marked `superseded`, linked (201) |
 | POST | `/workspaces/{ws}/decisions/check` | read | Does a proposal go against an active decision? |
 | GET | `/workspaces/{ws}/decisions/conflicts` | read | Flagged conflicts. `status`, `decision_id`, `task_id` |
 | POST | `/workspaces/{ws}/decisions/conflicts/{id}/resolve` | write, human member | `accepted`, `dismissed` or `resolved`, with a note |
