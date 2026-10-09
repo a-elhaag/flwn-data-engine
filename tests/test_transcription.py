@@ -38,12 +38,43 @@ class MediaTests(unittest.TestCase):
         ):
             self.assertEqual(media.media_kind(content_type, name), expected, (content_type, name))
 
+    MP4 = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 20
+
     def test_video_without_ffmpeg_is_refused_with_a_reason(self):
         with (
             patch("app.storage.media.shutil.which", return_value=None),
             self.assertRaisesRegex(Unindexable, "ffmpeg"),
         ):
-            media.audio_track(b"x", "a.mp4")
+            media.audio_track(self.MP4, "a.mp4")
+
+    def test_a_playlist_disguised_as_video_never_reaches_ffmpeg(self):
+        playlist = b"#EXTM3U\n#EXT-X-VERSION:3\nhttp://169.254.169.254/latest/meta-data\n"
+        with (
+            patch("app.storage.media.subprocess.run") as run,
+            patch("app.storage.media.shutil.which", return_value="/usr/bin/ffmpeg"),
+            self.assertRaisesRegex(Unindexable, "unsupported video format"),
+        ):
+            media.audio_track(playlist, "evil.mp4")
+        run.assert_not_called()
+
+    def test_ffmpeg_gets_a_forced_demuxer_no_network_and_a_name_it_chose(self):
+        calls = []
+
+        def fake_run(command, **_):
+            calls.append(command)
+            open(command[-1], "wb").write(b"ogg")
+            return type("Done", (), {"returncode": 0})()
+
+        with (
+            patch("app.storage.media.subprocess.run", side_effect=fake_run),
+            patch("app.storage.media.shutil.which", return_value="/usr/bin/ffmpeg"),
+        ):
+            result = media.audio_track(self.MP4, "evil.m3u8")
+        self.assertEqual(result, (b"ogg", "audio.ogg", "audio/ogg"))
+        (command,) = calls
+        self.assertEqual(command[command.index("-protocol_whitelist") + 1], "file")
+        self.assertEqual(command[command.index("-f") + 1], "mov,mp4,m4a,3gp,3g2,mj2")
+        self.assertTrue(command[command.index("-i") + 1].endswith("input.bin"))
 
 
 class SpeechClientTests(unittest.TestCase):

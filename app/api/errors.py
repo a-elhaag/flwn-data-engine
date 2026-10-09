@@ -9,6 +9,12 @@ from app.decisions.errors import (
     DecisionStateError,
     HumanRequired,
 )
+from app.meetings.errors import (
+    ConsentMissing,
+    MeetingForbidden,
+    MeetingNotFound,
+    MeetingStateError,
+)
 from app.memory.errors import (
     ConfirmationRequired,
     MaintenanceBusy,
@@ -53,3 +59,7 @@ def register(app: FastAPI) -> None:
     app.add_exception_handler(ConflictNotFound, _reply(404, "Conflict not found"))
     app.add_exception_handler(DecisionStateError, _reply(409))
     app.add_exception_handler(HumanRequired, _reply(403))
+    app.add_exception_handler(MeetingNotFound, _reply(404, "Meeting not found"))
+    app.add_exception_handler(MeetingForbidden, _reply(403))
+    app.add_exception_handler(ConsentMissing, _reply(409))
+    app.add_exception_handler(MeetingStateError, _reply(409))

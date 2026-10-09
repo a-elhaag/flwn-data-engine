@@ -1,9 +1,10 @@
 """Request and response bodies for the REST API."""
 
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.api import tokens
 
@@ -151,3 +152,52 @@ class CheckDecisionRequest(BaseModel):
 class ResolveConflictRequest(BaseModel):
     status: Literal["accepted", "dismissed", "resolved"]
     note: Annotated[str, Field(max_length=5000)] | None = None
+
+
+class CreateMeetingRequest(BaseModel):
+    title: Annotated[str, Field(min_length=1, max_length=300, pattern=r"\S")]
+    participants: list[UUID] = Field(default_factory=list, max_length=200)
+    team_id: UUID | None = None
+    project_id: UUID | None = None
+    channel_id: UUID | None = None
+    scheduled_at: datetime | None = None
+    host_id: UUID | None = None  # only the trusted backend, acting for no one, may name the host
+
+
+class UpdateMeetingRequest(BaseModel):
+    title: Annotated[str, Field(min_length=1, max_length=300, pattern=r"\S")] | None = None
+    status: Literal["live", "ended", "canceled"] | None = None
+    scheduled_at: datetime | None = None
+
+
+class InviteRequest(BaseModel):
+    member_ids: list[UUID] = Field(min_length=1, max_length=200)
+
+
+class ConsentRequest(BaseModel):
+    status: Literal["granted", "declined"]
+
+
+class StartRecordingRequest(BaseModel):
+    name: Annotated[str, Field(min_length=1, max_length=255, pattern=r"\S")]
+    content_type: Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
+    size_bytes: int = Field(ge=1)
+
+
+class TranscriptSegmentIn(BaseModel):
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(ge=0)
+    text: Annotated[str, Field(min_length=1, max_length=5000, pattern=r"\S")]
+    speaker_label: Annotated[str, Field(max_length=100)] | None = None
+    speaker_member_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _ordered(self):
+        if self.end_ms < self.start_ms:
+            raise ValueError("end_ms must not be before start_ms")
+        return self
+
+
+class IngestTranscriptRequest(BaseModel):
+    segments: list[TranscriptSegmentIn] = Field(min_length=1, max_length=20000)
+    language: Annotated[str, Field(max_length=20)] | None = None

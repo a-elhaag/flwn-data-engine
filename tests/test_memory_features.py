@@ -558,6 +558,7 @@ class McpTests(MemoryHarness):
                 "decision_record",
                 "decision_check",
                 "decisions_list",
+                "meeting_transcript",
             },
         )
         for tool in response.json()["result"]["tools"]:

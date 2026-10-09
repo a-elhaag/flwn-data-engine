@@ -34,17 +34,36 @@ def media_kind(content_type: str | None, name: str) -> str | None:
     return None
 
 
+def container_format(data: bytes) -> str | None:
+    """The ffmpeg demuxer for what the bytes really are, from their magic numbers. The file's name
+    and content type come from the uploader, so they are never used to choose a demuxer: a text
+    playlist (HLS, concat) renamed .mp4 could otherwise make ffmpeg fetch URLs or read local files."""
+    if data[4:8] == b"ftyp":
+        return "mov,mp4,m4a,3gp,3g2,mj2"
+    if data[:4] == b"\x1a\x45\xdf\xa3":
+        return "matroska,webm"
+    if data[:4] == b"RIFF" and data[8:12] == b"AVI ":
+        return "avi"
+    return None
+
+
 def audio_track(data: bytes, name: str) -> tuple[bytes, str, str]:
     """Extract the sound of a video as mono 16 kHz Opus in an Ogg file: (bytes, name, mime)."""
+    container = container_format(data)
+    if container is None:
+        raise Unindexable("unsupported video format (mp4, mov, mkv, webm and avi are read)")
     if shutil.which("ffmpeg") is None:
         raise Unindexable("video files need ffmpeg, which is not installed on this server")
     with tempfile.TemporaryDirectory() as folder:
-        source, target = Path(folder, "in" + (_extension(name) or ".bin")), Path(folder, "out.ogg")
+        source, target = Path(folder, "input.bin"), Path(folder, "out.ogg")
         source.write_bytes(data)
         try:
             run = subprocess.run(
-                ["ffmpeg", "-nostdin", "-v", "error", "-i", str(source), "-vn", "-ac", "1",
-                 "-ar", "16000", "-c:a", "libopus", "-b:a", "32k", str(target)],
+                ["ffmpeg", "-nostdin", "-v", "error",
+                 "-protocol_whitelist", "file",  # no network, no pipes, no other protocols
+                 "-f", container, "-i", str(source),
+                 "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "32k",
+                 "-f", "ogg", str(target)],
                 capture_output=True,
                 timeout=settings.FFMPEG_TIMEOUT_SECONDS,
             )  # fmt: skip
