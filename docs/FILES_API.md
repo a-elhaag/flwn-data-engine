@@ -72,11 +72,14 @@ fully indexed files are searched; deleting a file removes its chunks at once.
 | Word (`.docx`) | Headings become heading paths, tables become rows. Old `.doc` is not read |
 | Scanned PDF (no text layer) | Each page rendered to an image and read by the Cohere Parse model |
 | Image (PNG, JPEG, WebP, GIF, BMP, TIFF) | Read by the Cohere Parse model, tables included |
-| Audio, video, recordings, other types | Not indexed (`skipped`, with the reason) |
+| Audio, voice notes, recordings (wav, mp3, ogg/opus, flac, m4a, aac, amr, webm) | Transcribed by Azure Speech with speaker labels (`Speaker 1`, ...), up to 100 MB, then indexed like text |
+| Video (mp4, mov, mkv, ...) | Sound track pulled out with ffmpeg (installed in the Docker image), then as audio |
+| Other types | Not indexed (`skipped`, with the reason) |
 
-**Chat and meeting files are never indexed.** They can belong to a private channel or meeting, and
+**Chat and meeting files are never searchable.** They can belong to a private channel or meeting, and
 search would show their contents to the whole workspace. They need channel-level access control
-first.
+first. Their audio is still transcribed (the file shows `skipped: transcribed; not searchable`), and
+the transcript is read through the transcript routes in [MEETINGS_API.md](MEETINGS_API.md).
 
 Limits: files over `INDEX_MAX_BYTES` (50 MB) or `INDEX_MAX_PAGES` (500) are skipped; at most
 `INDEX_MAX_CHUNKS` (2000) chunks are kept (the rest is noted in `index_error`). The Parse model has a

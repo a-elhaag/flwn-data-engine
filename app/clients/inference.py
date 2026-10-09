@@ -5,7 +5,10 @@ key serve every model. Deployments are chosen by name in the request body.
 """
 
 import base64
+import json
 import re
+from collections import Counter
+from dataclasses import dataclass
 from functools import lru_cache
 
 import httpx
@@ -22,6 +25,9 @@ _limiter = RateLimiter(rate=5, capacity=10)
 _parse_limiter = RateLimiter(rate=1 / settings.PARSE_INTERVAL_SECONDS, capacity=1)
 PARSE_MIME_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp", "image/tiff"}
 PARSE_MAX_BYTES = 20 * 1024 * 1024
+SPEECH_API_VERSION = "2024-11-15"
+SPEECH_TIMEOUT = httpx.Timeout(600.0, connect=10.0)
+_speech_limiter = RateLimiter(rate=1, capacity=3)
 
 
 @lru_cache
@@ -117,3 +123,62 @@ def parse_image(data: bytes, mime_type: str = "image/png") -> str:
 
     reply = call_with_retries(call, "parse", _parse_limiter, attempts=4, backoff=10.0)
     return "\n\n".join(page["markdown"]["content"] for page in reply["pages"]).strip()
+
+
+@dataclass(frozen=True)
+class Phrase:
+    speaker: int | None  # 1, 2, ... when the model told voices apart
+    start_ms: int
+    end_ms: int
+    text: str
+
+
+@dataclass(frozen=True)
+class Transcription:
+    phrases: list[Phrase]
+    duration_ms: int
+    language: str | None
+
+
+def transcribe(data: bytes, name: str, mime_type: str) -> Transcription:
+    """Speech to text with speaker labels (Azure Speech fast transcription, up to 300 MB / 2 h).
+
+    It listens for each language in SPEECH_LOCALES and picks per phrase. Quota errors (429) and
+    server errors are retried; the audio is sent again each time.
+    """
+    definition = {
+        "locales": [x.strip() for x in settings.SPEECH_LOCALES.split(",") if x.strip()],
+        "diarization": {"enabled": True, "maxSpeakers": settings.SPEECH_MAX_SPEAKERS},
+    }
+
+    def call() -> dict:
+        response = _http().post(
+            "/speechtotext/transcriptions:transcribe",
+            params={"api-version": SPEECH_API_VERSION},
+            headers={"Ocp-Apim-Subscription-Key": settings.AZURE_FOUNDRY_KEY},
+            files={"audio": (name, data, mime_type)},
+            data={"definition": json.dumps(definition)},
+            timeout=SPEECH_TIMEOUT,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    reply = call_with_retries(call, "speech.transcribe", _speech_limiter, attempts=3, backoff=5.0)
+    phrases = [
+        Phrase(
+            item.get("speaker"),
+            int(item["offsetMilliseconds"]),
+            int(item["offsetMilliseconds"]) + int(item.get("durationMilliseconds", 0)),
+            item["text"].strip(),
+        )
+        for item in reply.get("phrases", [])
+        if item.get("text", "").strip()
+    ]
+    languages = Counter(
+        item.get("locale") for item in reply.get("phrases", []) if item.get("locale")
+    )
+    return Transcription(
+        phrases,
+        int(reply.get("durationMilliseconds", phrases[-1].end_ms if phrases else 0)),
+        languages.most_common(1)[0][0] if languages else None,
+    )

@@ -18,6 +18,7 @@ from app.clients import inference
 from app.config import settings
 from app.storage.chunking import Section
 from app.storage.errors import Unindexable
+from app.storage.media import media_kind
 
 logger = logging.getLogger(__name__)
 TEXT_TYPES = {
@@ -83,10 +84,12 @@ def _extension(name: str) -> str:
 
 
 def file_type(content_type: str | None, name: str) -> str | None:
-    """'pdf', 'docx', 'image', 'text', or None when nothing can read it."""
+    """'pdf', 'docx', 'image', 'text', 'audio', 'video', or None when nothing can read it."""
     mime = (content_type or "").split(";")[0].strip().lower()
     if mime == "application/pdf" or _extension(name) == ".pdf":
         return "pdf"
+    if media_kind(content_type, name):
+        return media_kind(content_type, name)
     if mime == DOCX_MIME or _extension(name) == ".docx":
         return "docx"
     if mime in inference.PARSE_MIME_TYPES:
@@ -229,4 +232,6 @@ def extract(data: bytes, content_type: str | None, name: str) -> Extracted:
         if sum(len(section.text) for section in sections) >= MIN_CHARS_PER_PAGE * max(pages, 1):
             return Extracted(sections)
         return _read_scanned_pages(data, pages)
+    if kind in ("audio", "video"):
+        raise Unindexable("audio and video are transcribed, not extracted")
     raise Unindexable(f"no text extractor for {content_type or 'this file type'}")

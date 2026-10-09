@@ -120,6 +120,6 @@ Container Apps), which are not provisioned.
 
 - Recall is hybrid (vector + keyword) with a reranker, but there is no relevance cut-off yet: it
   always returns the best few, even when none is a good match.
-- File search has no relevance cut-off yet: it returns the best few chunks even when none matches. Audio and video are stored but not transcribed.
+- File search has no relevance cut-off yet: it returns the best few chunks even when none matches.
 - Writes embed synchronously; there is no background worker.
 - Task, project and workspace CRUD endpoints are not built; the tables exist.

@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     INDEX_POLL_SECONDS: int = 5
     INDEX_STUCK_MINUTES: int = 15  # an `indexing` claim older than this is taken over
 
+    # Speech to text (Azure Speech fast transcription, through the same Foundry resource and key).
+    SPEECH_LOCALES: str = "en-US,ar-EG"  # languages to detect between, comma separated
+    SPEECH_MAX_SPEAKERS: int = 10
+    TRANSCRIBE_MAX_BYTES: int = 100 * 1024 * 1024  # Azure accepts up to 300 MB and 2 hours
+    FFMPEG_TIMEOUT_SECONDS: int = 600
+
     # Memory behavior.
     MEMORY_DEDUP_THRESHOLD: float = 0.97
     MEMORY_ORGANIZE_THRESHOLD: float = 0.88

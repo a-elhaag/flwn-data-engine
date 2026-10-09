@@ -5,8 +5,12 @@ workers claim one at a time with FOR UPDATE SKIP LOCKED, so any number of worker
 can run without doing the same file twice, and a restart loses nothing. A claim that has sat in
 'indexing' too long (a crashed worker) is taken over.
 
+Audio and video are transcribed first (Azure Speech); the transcript is stored and, for files that
+may be searched, indexed like any text.
+
 Chat and meeting files are never indexed: they can belong to a private channel or meeting, and
-search results would show them to the whole workspace.
+search results would show them to the whole workspace. Their audio is still transcribed, and the
+transcript is readable only through the transcript routes.
 """
 
 import logging
@@ -22,11 +26,13 @@ from app.config import settings
 from app.db import events
 from app.db import session as db
 from app.db.models.files import File
+from app.db.models.meetings import Recording
 from app.db.models.memory import Chunk
 from app.db.session import session_for, workspace_session
-from app.storage import extract
+from app.meetings import transcripts
+from app.storage import extract, media
 from app.storage.blobs import BlobStorage
-from app.storage.chunking import chunk_sections
+from app.storage.chunking import Section, chunk_sections
 from app.storage.errors import Unindexable
 
 logger = logging.getLogger(__name__)
@@ -35,10 +41,13 @@ INDEXABLE_SOURCES = {"workspace", "agent", "import"}
 
 def plan(source: str, content_type: str | None, name: str) -> tuple[str, str | None]:
     """What happens to a newly verified file: ('pending', None) or ('skipped', why)."""
+    kind = extract.file_type(content_type, name)
+    if kind is None:
+        return "skipped", f"no text extractor for {content_type or 'this file type'}"
+    if kind in ("audio", "video"):
+        return "pending", None  # always transcribed; whether it is searchable is decided later
     if source not in INDEXABLE_SOURCES:
         return "skipped", "chat and meeting files are not indexed (they may be private)"
-    if extract.file_type(content_type, name) is None:
-        return "skipped", f"no text extractor for {content_type or 'this file type'}"
     return "pending", None
 
 
@@ -50,6 +59,7 @@ class Claim:
     blob_path: str
     name: str
     content_type: str | None
+    source: str
     team_id: uuid.UUID | None
     project_id: uuid.UUID | None
 
@@ -79,6 +89,7 @@ def claim_next() -> Claim | None:
             row.blob_path,
             row.name,
             row.content_type,
+            row.source,
             row.team_id,
             row.project_id,
         )
@@ -132,16 +143,77 @@ def _finish(
         )
 
 
+def _transcribe(claim: Claim, data: bytes, kind: str) -> list[Section]:
+    """Speech to text for an audio or video file. Stores the transcript and returns its turns as
+    sections; a recording's row (if this file is one) is marked ready, or failed on an error."""
+    name, mime = claim.name, claim.content_type or ""
+    if kind == "video":
+        data, name, mime = media.audio_track(data, name)
+    result = inference.transcribe(data, name, mime.split(";")[0].strip() or "audio/wav")
+    segments = transcripts.segments_from(result)
+    if not segments:
+        raise Unindexable("no speech found")
+    with session_for(claim.workspace_id) as session:
+        workspace = uuid.UUID(claim.workspace_id)
+        recording = session.scalars(
+            select(Recording).where(
+                Recording.workspace_id == workspace, Recording.file_id == claim.file_id
+            )
+        ).first()
+        transcripts.store(
+            session,
+            workspace,
+            segments=segments,
+            language=result.language,
+            model="azure-speech-fast",
+            duration_ms=result.duration_ms,
+            file_id=claim.file_id,
+            meeting_id=recording.meeting_id if recording else None,
+        )
+        if recording:
+            recording.status = "ready"
+            recording.duration_ms = result.duration_ms
+    return [Section(f"{who}: {text}" if who else text) for who, text in transcripts.turns(segments)]
+
+
+def _mark_recording_failed(claim: Claim) -> None:
+    with session_for(claim.workspace_id) as session:
+        recording = session.scalars(
+            select(Recording).where(
+                Recording.workspace_id == uuid.UUID(claim.workspace_id),
+                Recording.file_id == claim.file_id,
+            )
+        ).first()
+        if recording and recording.status != "ready":
+            recording.status = "failed"
+
+
 def process(claim: Claim, storage: BlobStorage) -> None:
     """Index one claimed file. Never raises: every outcome is written to the file's row."""
+    kind = extract.file_type(claim.content_type, claim.name)
+    spoken = kind in ("audio", "video")
     try:
-        data = storage.download(claim.container, claim.blob_path, settings.INDEX_MAX_BYTES)
-        extracted = extract.extract(data, claim.content_type, claim.name)
-        pieces, cut = chunk_sections(extracted.sections, settings.INDEX_MAX_CHUNKS)
+        data = storage.download(
+            claim.container,
+            claim.blob_path,
+            settings.TRANSCRIBE_MAX_BYTES if spoken else settings.INDEX_MAX_BYTES,
+        )
+        if spoken:
+            sections, notes = _transcribe(claim, data, kind), []
+            if claim.source not in INDEXABLE_SOURCES:
+                _finish(
+                    claim,
+                    "skipped",
+                    "transcribed; not searchable (chat or meeting audio may be private)",
+                )
+                return
+        else:
+            extracted = extract.extract(data, claim.content_type, claim.name)
+            sections, notes = extracted.sections, list(extracted.notes)
+        pieces, cut = chunk_sections(sections, settings.INDEX_MAX_CHUNKS)
         if not pieces:
             raise Unindexable("no text found")
         vectors = inference.embed_many([piece.embedding_text for piece in pieces])
-        notes = list(extracted.notes)
         if cut:
             notes.append(f"indexed the first {len(pieces)} sections only")
         _finish(
@@ -149,9 +221,13 @@ def process(claim: Claim, storage: BlobStorage) -> None:
         )
         logger.info("indexed file %s: %d chunks", claim.file_id, len(pieces))
     except Unindexable as exc:
+        if spoken:
+            _mark_recording_failed(claim)
         _finish(claim, "skipped", str(exc))
     except Exception as exc:  # a failure is recorded, and retried only on request
         logger.exception("indexing file %s failed", claim.file_id)
+        if spoken:
+            _mark_recording_failed(claim)
         _finish(claim, "failed", f"{type(exc).__name__}: {exc}"[:500])
 
 
