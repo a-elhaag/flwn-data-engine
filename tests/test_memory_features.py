@@ -315,7 +315,7 @@ class StewardFeatureTests(MemoryHarness):
         # asking for nothing grants read access only: never write or delete
         self.assertEqual(
             claims.scopes,
-            {tokens.SCOPE_READ, tokens.SCOPE_FILES_READ, tokens.SCOPE_DECISIONS_READ},
+            {tokens.SCOPE_READ, tokens.SCOPE_FILES_READ},
         )
         for bad in (
             {"ttl_seconds": 10**9},
@@ -555,9 +555,6 @@ class McpTests(MemoryHarness):
                 "memory_anchor",
                 "memory_pulse",
                 "files_search",
-                "decision_record",
-                "decision_check",
-                "decisions_list",
                 "meeting_transcript",
             },
         )

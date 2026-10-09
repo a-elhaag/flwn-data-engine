@@ -19,8 +19,6 @@ SCOPE_DELETE = "memory:delete"
 SCOPE_FILES_READ = "files:read"
 SCOPE_FILES_WRITE = "files:write"
 SCOPE_FILES_DELETE = "files:delete"
-SCOPE_DECISIONS_READ = "decisions:read"
-SCOPE_DECISIONS_WRITE = "decisions:write"
 SCOPE_MEETINGS_READ = "meetings:read"
 SCOPE_MEETINGS_WRITE = "meetings:write"
 AGENT_SCOPES = frozenset(
@@ -31,8 +29,6 @@ AGENT_SCOPES = frozenset(
         SCOPE_FILES_READ,
         SCOPE_FILES_WRITE,
         SCOPE_FILES_DELETE,
-        SCOPE_DECISIONS_READ,
-        SCOPE_DECISIONS_WRITE,
         SCOPE_MEETINGS_READ,
         SCOPE_MEETINGS_WRITE,
     }

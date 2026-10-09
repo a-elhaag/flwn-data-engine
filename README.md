@@ -29,7 +29,7 @@ app/
   main.py              application factory
   config.py            settings from the environment
   api/                 HTTP layer
-    routes/            memory.py, files.py, decisions.py, meetings.py, system.py (health, token minting)
+    routes/            memory.py, files.py, meetings.py, system.py (health, token minting)
     schemas.py         request and response bodies
     deps.py            shared dependencies and required permissions
     auth.py, tokens.py service key and workspace-locked agent tokens
@@ -114,7 +114,6 @@ Container Apps), which are not provisioned.
 - [`docs/MEMORY_API.md`](docs/MEMORY_API.md): memory routes, auth, behavior, limits.
 - [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and the agent usage guide.
 - [`docs/MEETINGS_API.md`](docs/MEETINGS_API.md): meetings, consent, recordings, transcripts.
-- [`docs/DECISIONS_API.md`](docs/DECISIONS_API.md): Decision Ledger routes and conflict checking.
 - [`docs/FILES_API.md`](docs/FILES_API.md): file upload, download and storage layout.
 - [`docs/schema-graph.html`](docs/schema-graph.html): the database as an interactive graph.
 

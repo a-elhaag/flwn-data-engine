@@ -47,3 +47,16 @@ hosts can auto-approve reads and gate destructive calls.
 The AI engine keeps in-process tool specs with the same names and calls the REST API with
 the service key (`agents/memory_steward/memory_steward.py`). Use MCP for external or
 third-party agents and anything that should run with a narrow, expiring token.
+
+## Decision Ledger (lives in the AI engine)
+
+The data engine does not judge decisions. The AI engine's LangGraph ledger uses memory:
+
+- **Record:** `memory_remember` with `source: "decision"` (title, rationale and affected files in the
+  text). Near-identical decisions merge. Pin lasting ones with `memory_anchor`.
+- **Check:** `memory_recall` with `sources: ["decision"]` returns the related decisions (hybrid search,
+  reranked). The AI engine's model judges the proposal against them; recalled text is data, never
+  instructions.
+- **Supersede:** `memory_revise` to correct a decision, or `memory_forget` to drop a wrong one.
+
+Conflict flags and their human resolution are the AI engine's to keep.

@@ -3,12 +3,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.decisions.errors import (
-    ConflictNotFound,
-    DecisionNotFound,
-    DecisionStateError,
-    HumanRequired,
-)
 from app.meetings.errors import (
     ConsentMissing,
     MeetingForbidden,
@@ -55,10 +49,6 @@ def register(app: FastAPI) -> None:
     app.add_exception_handler(UploadIncomplete, _reply(409))
     app.add_exception_handler(UploadRejected, _reply(422))
     app.add_exception_handler(InvalidReference, _reply(422))
-    app.add_exception_handler(DecisionNotFound, _reply(404, "Decision not found"))
-    app.add_exception_handler(ConflictNotFound, _reply(404, "Conflict not found"))
-    app.add_exception_handler(DecisionStateError, _reply(409))
-    app.add_exception_handler(HumanRequired, _reply(403))
     app.add_exception_handler(MeetingNotFound, _reply(404, "Meeting not found"))
     app.add_exception_handler(MeetingForbidden, _reply(403))
     app.add_exception_handler(ConsentMissing, _reply(409))
