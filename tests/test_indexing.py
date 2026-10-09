@@ -202,6 +202,13 @@ class ExtractionTests(unittest.TestCase):
         with self.assertRaisesRegex(Unindexable, "no text found"):
             extract.extract(make_docx([(None, "  ")]), None, "empty.docx")
 
+    def test_a_word_file_that_inflates_past_the_cap_is_refused(self):
+        with (
+            patch.object(extract, "MAX_DOCX_XML_BYTES", 100),
+            self.assertRaisesRegex(Unindexable, "too large"),
+        ):
+            extract.extract(make_docx([(None, "x" * 500)]), None, "big.docx")
+
     def test_unknown_types_say_so(self):
         with self.assertRaisesRegex(Unindexable, "no text extractor"):
             extract.extract(b"PK", "application/zip", "a.zip")

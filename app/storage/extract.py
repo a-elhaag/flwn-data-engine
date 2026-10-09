@@ -113,23 +113,31 @@ def _paragraph(node) -> str:
     ).strip()
 
 
+def _read_member(archive: zipfile.ZipFile, name: str) -> bytes:
+    """Read one archive member, refusing it if it inflates past the cap. The size in the archive
+    header is claimed by the sender, so the read itself is bounded."""
+    with archive.open(name) as member:
+        data = member.read(MAX_DOCX_XML_BYTES + 1)
+    if len(data) > MAX_DOCX_XML_BYTES:
+        raise Unindexable("the Word document is too large to read")
+    return data
+
+
 def _docx_markdown(data: bytes) -> list[Section]:
     """A Word document as Markdown: headings keep their level (so chunks cite heading paths) and
     tables become pipe rows. Old .doc files are not zip archives and are refused."""
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
-            info = archive.getinfo("word/document.xml")
-            if info.file_size > MAX_DOCX_XML_BYTES:
-                raise Unindexable("the Word document is too large to read")
+            document = _read_member(archive, "word/document.xml")
             styles = {}
             if "word/styles.xml" in archive.namelist():
-                for style in ElementTree.fromstring(archive.read("word/styles.xml")).iter(
+                for style in ElementTree.fromstring(_read_member(archive, "word/styles.xml")).iter(
                     f"{_W}style"
                 ):
                     name = style.find(f"{_W}name")
                     if name is not None:
                         styles[style.get(f"{_W}styleId")] = name.get(f"{_W}val", "")
-            body = ElementTree.fromstring(archive.read("word/document.xml")).find(f"{_W}body")
+            body = ElementTree.fromstring(document).find(f"{_W}body")
     except Unindexable:
         raise
     except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as exc:
