@@ -313,7 +313,10 @@ class StewardFeatureTests(MemoryHarness):
         claims = tokens.verify(ok.json()["token"])
         self.assertEqual(claims.workspace_id, self.team_a)
         # asking for nothing grants read access only: never write or delete
-        self.assertEqual(claims.scopes, {tokens.SCOPE_READ, tokens.SCOPE_FILES_READ})
+        self.assertEqual(
+            claims.scopes,
+            {tokens.SCOPE_READ, tokens.SCOPE_FILES_READ, tokens.SCOPE_DECISIONS_READ},
+        )
         for bad in (
             {"ttl_seconds": 10**9},
             {"scopes": ["memory:admin"]},
@@ -552,6 +555,9 @@ class McpTests(MemoryHarness):
                 "memory_anchor",
                 "memory_pulse",
                 "files_search",
+                "decision_record",
+                "decision_check",
+                "decisions_list",
             },
         )
         for tool in response.json()["result"]["tools"]:

@@ -32,6 +32,7 @@ class ChatStub:
             "memory_steward.query_rewrite": "rewritten query",
             "memory_steward.cleanup_relevance": None,  # None -> drop everything
             "memory_steward.organize": '{"action": "distinct"}',
+            "decision_ledger.judge": '{"verdicts": []}',
         }
 
     def __call__(self, task, prompt):

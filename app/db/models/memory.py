@@ -29,6 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
     EMPTY_JSON,
+    EMPTY_LIST,
     Base,
     Created,
     IdPk,
@@ -131,6 +132,7 @@ class Decision(Tenant, Stamps, Base):
     rationale: Mapped[str | None]
     alternatives: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)  # options considered
     area: Mapped[str | None]  # module or topic, e.g. "auth", "database"
+    scope_paths: Mapped[list] = mapped_column(server_default=EMPTY_LIST)  # files or paths it covers
     status: Mapped[str] = mapped_column(server_default="active")
     owner_member_id: Mapped[uuid.UUID | None]
     work_item_id: Mapped[uuid.UUID | None]
@@ -360,6 +362,7 @@ class DecisionConflict(IdPk, Tenant, Created, Base):
     source_id: Mapped[uuid.UUID | None]
     source_url: Mapped[str | None]  # e.g. the GitHub PR, which GitHub owns
     similarity: Mapped[float | None] = mapped_column(Float)
+    proposal: Mapped[str | None]  # the action or change that was checked against the decision
     explanation: Mapped[str]
     status: Mapped[str] = mapped_column(server_default="open")
     flagged_by: Mapped[uuid.UUID | None]

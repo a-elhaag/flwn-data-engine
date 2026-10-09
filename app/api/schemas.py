@@ -63,7 +63,7 @@ class OrganizeRequest(BaseModel):
 
 
 # A token gets only what is asked for. Without a request it can read, and nothing else.
-DEFAULT_SCOPES = sorted({tokens.SCOPE_READ, tokens.SCOPE_FILES_READ})
+DEFAULT_SCOPES = sorted({tokens.SCOPE_READ, tokens.SCOPE_FILES_READ, tokens.SCOPE_DECISIONS_READ})
 
 
 class TokenRequest(BaseModel):
@@ -100,3 +100,54 @@ class StartUploadRequest(BaseModel):
     project_id: UUID | None = None
     folder_id: UUID | None = None
     team_id: UUID | None = None
+
+
+Path = Annotated[str, Field(min_length=1, max_length=500, pattern=r"\S")]
+DecisionStatus = Literal["proposed", "active", "superseded", "rejected"]
+
+
+class RecordDecisionRequest(BaseModel):
+    title: Annotated[str, Field(min_length=1, max_length=500, pattern=r"\S")]
+    rationale: Annotated[str, Field(max_length=20000)] | None = None
+    files_scope: list[Path] = Field(default_factory=list, max_length=100)
+    area: Annotated[str, Field(max_length=200)] | None = None
+    alternatives: list[Annotated[str, Field(max_length=2000)]] = Field(
+        default_factory=list, max_length=20
+    )
+    agent: NonBlank = "decision_ledger"
+    status: Literal["proposed", "active"] = "active"
+    team_id: UUID | None = None
+    project_id: UUID | None = None
+    task_id: UUID | None = None
+    work_item_id: UUID | None = None
+
+
+class UpdateDecisionRequest(BaseModel):
+    title: Annotated[str, Field(min_length=1, max_length=500, pattern=r"\S")] | None = None
+    rationale: Annotated[str, Field(max_length=20000)] | None = None
+    files_scope: list[Path] | None = Field(default=None, max_length=100)
+    area: Annotated[str, Field(max_length=200)] | None = None
+    status: Literal["proposed", "active", "rejected"] | None = None
+
+
+class SupersedeDecisionRequest(BaseModel):
+    title: Annotated[str, Field(min_length=1, max_length=500, pattern=r"\S")]
+    rationale: Annotated[str, Field(max_length=20000)] | None = None
+    files_scope: list[Path] = Field(default_factory=list, max_length=100)
+    area: Annotated[str, Field(max_length=200)] | None = None
+    agent: NonBlank = "decision_ledger"
+
+
+class CheckDecisionRequest(BaseModel):
+    proposed_action: Annotated[str, Field(min_length=1, max_length=20000, pattern=r"\S")]
+    agent: NonBlank = "agent"
+    record: bool = False  # True saves each conflict as an open flag (needs decisions:write)
+    team_id: UUID | None = None
+    project_id: UUID | None = None
+    task_id: UUID | None = None
+    work_item_id: UUID | None = None
+
+
+class ResolveConflictRequest(BaseModel):
+    status: Literal["accepted", "dismissed", "resolved"]
+    note: Annotated[str, Field(max_length=5000)] | None = None

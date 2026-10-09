@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, undefer
 from app.db.models.memory import Memory
 from app.db.session import tune_vector_search
 from app.memory.errors import MemberNotFound, WorkspaceNotFound
+from app.storage.errors import InvalidReference
 
 
 def to_datetime(timestamp: float) -> datetime:
@@ -53,10 +54,19 @@ class MemoryStore:
         embedding_model: str,
         now: float,
         created_by: str | None = None,
+        kind: str = "fact",
+        scope: str = "workspace",
+        team_id: uuid.UUID | None = None,
+        project_id: uuid.UUID | None = None,
+        status: str = "active",
     ) -> Memory:
         row = Memory(
             workspace_id=self.workspace_id,
-            kind="fact",
+            kind=kind,
+            scope=scope,
+            team_id=team_id,
+            project_id=project_id,
+            status=status,
             text=text,
             raw_text=raw_text,
             source_type=source,
@@ -72,8 +82,11 @@ class MemoryStore:
             self.session.flush()
         except IntegrityError as exc:
             if isinstance(exc.orig, psycopg.errors.ForeignKeyViolation):
-                if "created_by" in (exc.orig.diag.constraint_name or ""):
+                constraint = exc.orig.diag.constraint_name or ""
+                if "created_by" in constraint:
                     raise MemberNotFound(created_by) from exc
+                if "team_id" in constraint or "project_id" in constraint:
+                    raise InvalidReference("team or project not found in this workspace") from exc
                 raise WorkspaceNotFound(str(self.workspace_id)) from exc
             raise
         return row
@@ -139,7 +152,7 @@ class MemoryStore:
             select(Memory, (1 - distance).label("score"))
             .where(
                 Memory.workspace_id == self.workspace_id,
-                Memory.status != "superseded",
+                Memory.status == "active",
                 Memory.embedding.is_not(None),
             )
             .order_by(distance)
@@ -163,7 +176,7 @@ class MemoryStore:
             select(Memory)
             .where(
                 Memory.workspace_id == self.workspace_id,
-                Memory.status != "superseded",
+                Memory.status == "active",
                 Memory.tsv.op("@@")(tsquery),
             )
             .order_by(func.ts_rank_cd(Memory.tsv, tsquery).desc(), Memory.id)
