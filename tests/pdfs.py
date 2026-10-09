@@ -30,3 +30,37 @@ def make_pdf(pages: list[str]) -> bytes:
     out += b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets)
     out += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode()
     return out
+
+
+def make_docx(
+    paragraphs: list[tuple[str | None, str]], table: list[list[str]] | None = None
+) -> bytes:
+    """A minimal Word file. Each paragraph is (style name or None, text)."""
+    import io
+    import zipfile
+
+    ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    ids = {name: f"S{i}" for i, name in enumerate({s for s, _ in paragraphs if s})}
+    styles = "".join(
+        f'<w:style w:styleId="{sid}"><w:name w:val="{name}"/></w:style>'
+        for name, sid in ids.items()
+    )
+    body = ""
+    for style, text in paragraphs:
+        props = f'<w:pPr><w:pStyle w:val="{ids[style]}"/></w:pPr>' if style else ""
+        body += f"<w:p>{props}<w:r><w:t>{text}</w:t></w:r></w:p>"
+    if table:
+        rows = "".join(
+            "<w:tr>"
+            + "".join(f"<w:tc><w:p><w:r><w:t>{c}</w:t></w:r></w:p></w:tc>" for c in row)
+            + "</w:tr>"
+            for row in table
+        )
+        body += f"<w:tbl>{rows}</w:tbl>"
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/styles.xml", f"<w:styles {ns}>{styles}</w:styles>")
+        archive.writestr(
+            "word/document.xml", f"<w:document {ns}><w:body>{body}</w:body></w:document>"
+        )
+    return buffer.getvalue()

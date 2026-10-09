@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import env  # noqa: F401  (sets the environment the app needs to import)
 from fakes import FakeBlobs
 from harness import MemoryHarness, unit
-from pdfs import make_pdf
+from pdfs import make_docx, make_pdf
 
 from app.api import tokens
 from app.config import settings
@@ -108,6 +108,9 @@ class ExtractionTests(unittest.TestCase):
         for content_type, name, expected in (
             ("application/pdf", "a.bin", "pdf"),
             ("application/octet-stream", "Report.PDF", "pdf"),
+            ("application/octet-stream", "Plan.DOCX", "docx"),
+            (extract.DOCX_MIME, "a.bin", "docx"),
+            ("application/msword", "old.doc", None),
             ("image/png", "a.png", "image"),
             ("image/jpeg; charset=binary", "a.jpg", "image"),
             ("text/markdown", "a.md", "text"),
@@ -183,6 +186,21 @@ class ExtractionTests(unittest.TestCase):
             self.assertRaisesRegex(Unindexable, "page limit"),
         ):
             extract.extract(make_pdf(["a", "b", "c"]), "application/pdf", "long.pdf")
+
+    def test_a_word_document_keeps_headings_and_tables(self):
+        data = make_docx(
+            [("Heading 1", "Refunds"), (None, "Cancel within 30 days."), ("Heading 2", "Fees")],
+            table=[["Plan", "Price"], ["Pro", "9"]],
+        )
+        (section,) = extract.extract(data, None, "policy.docx").sections
+        self.assertIn("# Refunds\n\nCancel within 30 days.\n\n## Fees", section.text)
+        self.assertIn("| Plan | Price |\n\n| Pro | 9 |", section.text)
+
+    def test_broken_or_empty_word_files_are_refused(self):
+        with self.assertRaisesRegex(Unindexable, "not a readable .docx"):
+            extract.extract(b"not a zip", None, "bad.docx")
+        with self.assertRaisesRegex(Unindexable, "no text found"):
+            extract.extract(make_docx([(None, "  ")]), None, "empty.docx")
 
     def test_unknown_types_say_so(self):
         with self.assertRaisesRegex(Unindexable, "no text extractor"):

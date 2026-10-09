@@ -69,6 +69,7 @@ fully indexed files are searched; deleting a file removes its chunks at once.
 | --- | --- |
 | Text, Markdown, JSON, YAML, CSV, source code | Decoded; Markdown headings become heading paths |
 | PDF with a text layer | Read page by page (`pypdf`); a chunk never spans pages |
+| Word (`.docx`) | Headings become heading paths, tables become rows. Old `.doc` is not read |
 | Scanned PDF (no text layer) | Each page rendered to an image and read by the Cohere Parse model |
 | Image (PNG, JPEG, WebP, GIF, BMP, TIFF) | Read by the Cohere Parse model, tables included |
 | Audio, video, recordings, other types | Not indexed (`skipped`, with the reason) |

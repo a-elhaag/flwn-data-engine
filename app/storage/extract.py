@@ -6,7 +6,10 @@ Anything that cannot yield text raises Unindexable with a reason the user can re
 
 import io
 import logging
+import re
+import zipfile
 from dataclasses import dataclass, field
+from xml.etree import ElementTree
 
 import pypdfium2
 from pypdf import PdfReader
@@ -61,6 +64,10 @@ TEXT_EXTENSIONS = {
     ".rst",
     ".log",
 }
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+MAX_DOCX_XML_BYTES = 50_000_000  # uncompressed document.xml: guards against zip bombs
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_HEADING_RE = re.compile(r"^(?:heading|titre|überschrift)\s*(\d)$", re.IGNORECASE)
 MAX_TEXT_CHARS = 10_000_000
 MIN_CHARS_PER_PAGE = 20  # fewer than this on average and the PDF is treated as scanned
 
@@ -76,10 +83,12 @@ def _extension(name: str) -> str:
 
 
 def file_type(content_type: str | None, name: str) -> str | None:
-    """'pdf', 'image', 'text', or None when nothing can read it."""
+    """'pdf', 'docx', 'image', 'text', or None when nothing can read it."""
     mime = (content_type or "").split(";")[0].strip().lower()
     if mime == "application/pdf" or _extension(name) == ".pdf":
         return "pdf"
+    if mime == DOCX_MIME or _extension(name) == ".docx":
+        return "docx"
     if mime in inference.PARSE_MIME_TYPES:
         return "image"
     if mime.startswith("text/") or mime in TEXT_TYPES or _extension(name) in TEXT_EXTENSIONS:
@@ -94,6 +103,60 @@ def _decode(data: bytes) -> list[Section]:
     text = text[:MAX_TEXT_CHARS].strip()
     if not text:
         raise Unindexable("the file is empty")
+    return [Section(text)]
+
+
+def _paragraph(node) -> str:
+    return "".join(
+        (t.text or "") if t.tag == f"{_W}t" else "\t" if t.tag == f"{_W}tab" else ""
+        for t in node.iter()
+    ).strip()
+
+
+def _docx_markdown(data: bytes) -> list[Section]:
+    """A Word document as Markdown: headings keep their level (so chunks cite heading paths) and
+    tables become pipe rows. Old .doc files are not zip archives and are refused."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            info = archive.getinfo("word/document.xml")
+            if info.file_size > MAX_DOCX_XML_BYTES:
+                raise Unindexable("the Word document is too large to read")
+            styles = {}
+            if "word/styles.xml" in archive.namelist():
+                for style in ElementTree.fromstring(archive.read("word/styles.xml")).iter(
+                    f"{_W}style"
+                ):
+                    name = style.find(f"{_W}name")
+                    if name is not None:
+                        styles[style.get(f"{_W}styleId")] = name.get(f"{_W}val", "")
+            body = ElementTree.fromstring(archive.read("word/document.xml")).find(f"{_W}body")
+    except Unindexable:
+        raise
+    except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as exc:
+        raise Unindexable("the file is not a readable .docx Word document") from exc
+    lines: list[str] = []
+    for node in body if body is not None else []:
+        if node.tag == f"{_W}p":
+            text = _paragraph(node)
+            if not text:
+                continue
+            style = node.find(f"{_W}pPr/{_W}pStyle")
+            style_name = styles.get(style.get(f"{_W}val")) if style is not None else None
+            level = _HEADING_RE.match(style_name or "")
+            if style_name == "Title":
+                lines.append(f"# {text}")
+            elif level:
+                lines.append(f"{'#' * min(int(level.group(1)), 6)} {text}")
+            else:
+                lines.append(text)
+        elif node.tag == f"{_W}tbl":
+            for row in node.iter(f"{_W}tr"):
+                cells = [_paragraph(cell).replace("|", "/") for cell in row.iter(f"{_W}tc")]
+                if any(cells):
+                    lines.append("| " + " | ".join(cells) + " |")
+    text = "\n\n".join(lines)[:MAX_TEXT_CHARS].strip()
+    if not text:
+        raise Unindexable("no text found in the Word document")
     return [Section(text)]
 
 
@@ -146,6 +209,8 @@ def extract(data: bytes, content_type: str | None, name: str) -> Extracted:
     kind = file_type(content_type, name)
     if kind == "text":
         return Extracted(_decode(data))
+    if kind == "docx":
+        return Extracted(_docx_markdown(data))
     if kind == "image":
         text = inference.parse_image(data, (content_type or "image/png").split(";")[0].strip())
         if not text:
