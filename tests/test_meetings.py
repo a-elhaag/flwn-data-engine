@@ -125,6 +125,10 @@ class MeetingTests(MemoryHarness):
             headers=self.as_member(who),
         )
 
+    def everyone_consents(self, meeting):
+        for member in [p["member_id"] for p in meeting["participants"]]:
+            self.consent(meeting, member)
+
     def go_live(self, meeting):
         self.client.patch(
             self.url(f"/{meeting['id']}"), json={"status": "live"}, headers=self.as_member(self.ana)
@@ -198,6 +202,13 @@ class MeetingTests(MemoryHarness):
             self.url(f"/{meeting['id']}/transcript"), headers=self.as_member(self.lena)
         )
         self.assertEqual(outsider.status_code, 404)
+        # a supplied transcript never overrides what the recording actually said
+        self.client.put(
+            self.url(f"/{meeting['id']}/transcript"),
+            json={"segments": [{"start_ms": 0, "end_ms": 1, "text": "forged"}]},
+        )
+        again = self.client.get(self.url(f"/{meeting['id']}/transcript")).json()
+        self.assertEqual(again["segments"][0]["text"], "Ship it Friday.")
         found = self.client.post(
             f"/workspaces/{self.team_a}/files/search", json={"query": "Ship it Friday"}
         )
@@ -208,7 +219,18 @@ class MeetingTests(MemoryHarness):
     def test_supplied_transcript_is_stored_named_and_replaced_on_resend(self):
         meeting = self.create(participants=[self.omar])
         path = self.url(f"/{meeting['id']}/transcript")
-        put = self.client.put(path, json=self.segments(), headers=self.as_member(self.omar))
+        self.assertEqual(
+            self.client.put(
+                path, json=self.segments(), headers=self.as_member(self.ana)
+            ).status_code,
+            409,  # nobody has consented yet
+        )
+        self.everyone_consents(meeting)
+        by_participant = self.client.put(
+            path, json=self.segments(), headers=self.as_member(self.omar)
+        )
+        self.assertEqual(by_participant.status_code, 403)  # only the host or the meeting service
+        put = self.client.put(path, json=self.segments(), headers=self.as_member(self.ana))
         self.assertEqual(put.status_code, 200, put.text)
         got = self.client.get(path, headers=self.as_member(self.ana)).json()
         self.assertEqual(got["total_segments"], 2)
@@ -222,6 +244,7 @@ class MeetingTests(MemoryHarness):
 
     def test_outsiders_cannot_supply_a_transcript_and_bad_segments_are_rejected(self):
         meeting = self.create()
+        self.everyone_consents(meeting)
         path = self.url(f"/{meeting['id']}/transcript")
         self.assertEqual(
             self.client.put(
@@ -243,12 +266,22 @@ class MeetingTests(MemoryHarness):
         }
         self.assertEqual(self.client.put(path, json=unknown).status_code, 422)
 
+    def test_a_speaker_must_be_a_participant(self):
+        meeting = self.create()
+        self.everyone_consents(meeting)
+        stranger = {
+            "segments": [{"start_ms": 0, "end_ms": 1, "text": "x", "speaker_member_id": self.lena}]
+        }
+        response = self.client.put(self.url(f"/{meeting['id']}/transcript"), json=stranger)
+        self.assertEqual(response.status_code, 422)
+
     def test_no_transcript_yet_is_a_404(self):
         meeting = self.create()
         self.assertEqual(self.client.get(self.url(f"/{meeting['id']}/transcript")).status_code, 404)
 
     def test_an_agent_in_the_meeting_reads_it_over_mcp_and_others_cannot(self):
         meeting = self.create(participants=[self.bot])
+        self.everyone_consents(meeting)
         self.client.put(self.url(f"/{meeting['id']}/transcript"), json=self.segments())
         self.assertEqual(
             self.client.get(
@@ -285,6 +318,7 @@ class MeetingTests(MemoryHarness):
 
     def test_the_mcp_tool_serves_participants_only(self):
         meeting = self.create(participants=[self.bot])
+        self.everyone_consents(meeting)
         self.client.put(self.url(f"/{meeting['id']}/transcript"), json=self.segments())
         mine = self.mcp_transcript(meeting, self.bot)
         self.assertFalse(mine.get("isError", False), mine)

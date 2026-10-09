@@ -347,6 +347,25 @@ class MeetingService:
             self._log(session, meeting.id, f"consent_{status}")
             return self._view(session, meeting)
 
+    def _consented(self, session, meeting: Meeting) -> tuple[dict, set[uuid.UUID]]:
+        """Who agreed, and who is present. Raises unless every participant has granted consent."""
+        people = session.scalars(
+            select(MeetingParticipant).where(
+                MeetingParticipant.workspace_id == self.workspace,
+                MeetingParticipant.meeting_id == meeting.id,
+            )
+        ).all()
+        waiting = [str(p.member_id) for p in people if p.consent_status != "granted"]
+        if not people or waiting:
+            raise ConsentMissing(
+                "every participant must consent before recording or transcribing"
+                + (f"; missing: {', '.join(waiting)}" if waiting else "; there are none")
+            )
+        snapshot = {
+            str(p.member_id): p.consented_at.isoformat() if p.consented_at else None for p in people
+        }
+        return snapshot, {p.member_id for p in people}
+
     def start_recording(
         self, meeting_id: str, *, name: str, content_type: str, size_bytes: int
     ) -> RecordingStart:
@@ -357,22 +376,7 @@ class MeetingService:
             meeting = self._meeting(session, meeting_id)
             if meeting.status not in ("live", "ended"):
                 raise MeetingStateError("only a live or ended meeting can have a recording")
-            people = session.scalars(
-                select(MeetingParticipant).where(
-                    MeetingParticipant.workspace_id == self.workspace,
-                    MeetingParticipant.meeting_id == meeting.id,
-                )
-            ).all()
-            waiting = [str(p.member_id) for p in people if p.consent_status != "granted"]
-            if not people or waiting:
-                raise ConsentMissing(
-                    "every participant must consent before recording"
-                    + (f"; missing: {', '.join(waiting)}" if waiting else "; there are none")
-                )
-            snapshot = {
-                str(p.member_id): p.consented_at.isoformat() if p.consented_at else None
-                for p in people
-            }
+            snapshot, _ = self._consented(session, meeting)
             team_id, project_id = meeting.team_id, meeting.project_id
         ticket = self.files.start_upload(
             kind="recording",
@@ -401,9 +405,14 @@ class MeetingService:
     def ingest_transcript(
         self, meeting_id: str, segments: list[Segment], language: str | None = None
     ) -> TranscriptView:
-        """Store a ready-made transcript (live captions), replacing the meeting's earlier one."""
+        """Store a ready-made transcript (live captions), replacing the meeting's earlier supplied
+        one. Host or trusted backend only: it is a record of what people said. It needs everyone's
+        consent like a recording does, and every named speaker must be a participant."""
         with session_for(self.workspace_id) as session:
-            meeting = self._meeting(session, meeting_id)
+            meeting = self._meeting(session, meeting_id, host_only=True)
+            _, present = self._consented(session, meeting)
+            if any(s.speaker_member_id and s.speaker_member_id not in present for s in segments):
+                raise InvalidReference("a speaker is not a participant of this meeting")
             known = {s.speaker_member_id for s in segments if s.speaker_member_id}
             names = dict(
                 session.execute(
@@ -445,7 +454,7 @@ class MeetingService:
                     Transcript.meeting_id == meeting.id,
                     Transcript.status == "ready",
                 )
-                .order_by(Transcript.file_id.is_(None).desc(), Transcript.created_at.desc())
+                .order_by(Transcript.file_id.is_(None), Transcript.created_at.desc())
                 .limit(1)
             ).first()
             if row is None:
