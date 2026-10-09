@@ -312,6 +312,13 @@ class MeetingService:
             meeting = self._meeting(session, meeting_id, host_only=True)
             if meeting.status in ("ended", "canceled"):
                 raise MeetingStateError(f"a {meeting.status} meeting cannot take new participants")
+            if session.scalars(
+                select(Recording.id).where(
+                    Recording.workspace_id == self.workspace, Recording.meeting_id == meeting.id
+                )
+            ).first():
+                # someone added now was never asked before the recording began
+                raise MeetingStateError("a recorded meeting cannot take new participants")
             have = set(
                 session.scalars(
                     select(MeetingParticipant.member_id).where(
@@ -410,6 +417,8 @@ class MeetingService:
         consent like a recording does, and every named speaker must be a participant."""
         with session_for(self.workspace_id) as session:
             meeting = self._meeting(session, meeting_id, host_only=True)
+            if meeting.status not in ("live", "ended"):
+                raise MeetingStateError("only a live or ended meeting can have a transcript")
             _, present = self._consented(session, meeting)
             if any(s.speaker_member_id and s.speaker_member_id not in present for s in segments):
                 raise InvalidReference("a speaker is not a participant of this meeting")

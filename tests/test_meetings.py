@@ -225,6 +225,7 @@ class MeetingTests(MemoryHarness):
             ).status_code,
             409,  # nobody has consented yet
         )
+        self.go_live(meeting)
         self.everyone_consents(meeting)
         by_participant = self.client.put(
             path, json=self.segments(), headers=self.as_member(self.omar)
@@ -244,6 +245,7 @@ class MeetingTests(MemoryHarness):
 
     def test_outsiders_cannot_supply_a_transcript_and_bad_segments_are_rejected(self):
         meeting = self.create()
+        self.go_live(meeting)
         self.everyone_consents(meeting)
         path = self.url(f"/{meeting['id']}/transcript")
         self.assertEqual(
@@ -266,8 +268,27 @@ class MeetingTests(MemoryHarness):
         }
         self.assertEqual(self.client.put(path, json=unknown).status_code, 422)
 
+    def test_nobody_can_be_added_once_a_recording_has_started(self):
+        meeting = self.create()
+        self.go_live(meeting)
+        self.everyone_consents(meeting)
+        self.assertEqual(self.record(meeting).status_code, 201)
+        late = self.client.post(
+            self.url(f"/{meeting['id']}/participants"),
+            json={"member_ids": [self.lena]},
+            headers=self.as_member(self.ana),
+        )
+        self.assertEqual(late.status_code, 409)
+
+    def test_a_meeting_that_has_not_happened_has_no_transcript(self):
+        meeting = self.create()
+        self.everyone_consents(meeting)
+        path = self.url(f"/{meeting['id']}/transcript")
+        self.assertEqual(self.client.put(path, json=self.segments()).status_code, 409)
+
     def test_a_speaker_must_be_a_participant(self):
         meeting = self.create()
+        self.go_live(meeting)
         self.everyone_consents(meeting)
         stranger = {
             "segments": [{"start_ms": 0, "end_ms": 1, "text": "x", "speaker_member_id": self.lena}]
@@ -281,6 +302,7 @@ class MeetingTests(MemoryHarness):
 
     def test_an_agent_in_the_meeting_reads_it_over_mcp_and_others_cannot(self):
         meeting = self.create(participants=[self.bot])
+        self.go_live(meeting)
         self.everyone_consents(meeting)
         self.client.put(self.url(f"/{meeting['id']}/transcript"), json=self.segments())
         self.assertEqual(
@@ -318,6 +340,7 @@ class MeetingTests(MemoryHarness):
 
     def test_the_mcp_tool_serves_participants_only(self):
         meeting = self.create(participants=[self.bot])
+        self.go_live(meeting)
         self.everyone_consents(meeting)
         self.client.put(self.url(f"/{meeting['id']}/transcript"), json=self.segments())
         mine = self.mcp_transcript(meeting, self.bot)
