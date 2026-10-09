@@ -280,6 +280,30 @@ class MeetingTests(MemoryHarness):
         )
         self.assertEqual(late.status_code, 409)
 
+    def test_consent_withdrawn_while_the_recording_starts_voids_it_and_removes_the_file(self):
+        meeting = self.create(participants=[self.omar])
+        self.go_live(meeting)
+        self.everyone_consents(meeting)
+        from app.storage.files import FileService
+
+        original = FileService.start_upload
+
+        def start_then_withdraw(service, **kwargs):
+            ticket = original(service, **kwargs)
+            self.consent(meeting, self.omar, "declined")  # happens between the two transactions
+            return ticket
+
+        with patch.object(FileService, "start_upload", start_then_withdraw):
+            response = self.record(meeting)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.sql("select count(*) as n from recordings")[0]["n"], 0)
+        self.assertEqual(
+            self.sql(
+                "select count(*) as n from files where deleted_at is null and kind = 'recording'"
+            )[0]["n"],
+            0,
+        )
+
     def test_a_meeting_that_has_not_happened_has_no_transcript(self):
         meeting = self.create()
         self.everyone_consents(meeting)

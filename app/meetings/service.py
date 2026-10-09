@@ -145,14 +145,19 @@ class MeetingService:
 
     # -- access -----------------------------------------------------------------------------------
 
-    def _meeting(self, session, meeting_id: str, *, host_only: bool = False) -> Meeting:
+    def _meeting(
+        self, session, meeting_id: str, *, host_only: bool = False, lock: bool = False
+    ) -> Meeting:
+        """`lock` holds the meeting's row until the transaction ends, so consent, invitations and
+        recording starts for one meeting happen one at a time."""
         try:
             wanted = uuid.UUID(meeting_id)
         except ValueError:
             raise MeetingNotFound(meeting_id) from None
-        meeting = session.scalars(
-            select(Meeting).where(Meeting.workspace_id == self.workspace, Meeting.id == wanted)
-        ).one_or_none()
+        statement = select(Meeting).where(
+            Meeting.workspace_id == self.workspace, Meeting.id == wanted
+        )
+        meeting = session.scalars(statement.with_for_update() if lock else statement).one_or_none()
         if meeting is None or not self._is_part_of(session, meeting):
             raise MeetingNotFound(meeting_id)
         if host_only and not (self.trusted or meeting.host_id == self.actor):
@@ -309,7 +314,7 @@ class MeetingService:
 
     def invite(self, meeting_id: str, member_ids: list[uuid.UUID]) -> MeetingView:
         with session_for(self.workspace_id) as session:
-            meeting = self._meeting(session, meeting_id, host_only=True)
+            meeting = self._meeting(session, meeting_id, host_only=True, lock=True)
             if meeting.status in ("ended", "canceled"):
                 raise MeetingStateError(f"a {meeting.status} meeting cannot take new participants")
             if session.scalars(
@@ -343,7 +348,7 @@ class MeetingService:
     def consent(self, meeting_id: str, status: str) -> MeetingView:
         """A participant answers for themselves, and only for themselves."""
         with session_for(self.workspace_id) as session:
-            meeting = self._meeting(session, meeting_id)
+            meeting = self._meeting(session, meeting_id, lock=True)
             participant = self._participant(session, meeting) if self.actor else None
             if participant is None:
                 raise MeetingForbidden("only a participant can answer for themselves")
@@ -380,7 +385,7 @@ class MeetingService:
         if not self.trusted or self.files is None:
             raise MeetingForbidden("recordings are started by the meeting service")
         with session_for(self.workspace_id) as session:
-            meeting = self._meeting(session, meeting_id)
+            meeting = self._meeting(session, meeting_id, lock=True)
             if meeting.status not in ("live", "ended"):
                 raise MeetingStateError("only a live or ended meeting can have a recording")
             snapshot, _ = self._consented(session, meeting)
@@ -395,6 +400,16 @@ class MeetingService:
             project_id=project_id,
         )
         with session_for(self.workspace_id) as session:
+            # The file was made between two transactions. Under the meeting's lock, check again that
+            # the same people have consented: an invitation or a withdrawal in between voids it.
+            try:
+                meeting = self._meeting(session, meeting_id, lock=True)
+                again, _ = self._consented(session, meeting)
+                if meeting.status not in ("live", "ended") or again.keys() != snapshot.keys():
+                    raise ConsentMissing("the participants changed while the recording started")
+            except (ConsentMissing, MeetingNotFound, MeetingStateError):
+                self.files.delete(ticket.file_id)
+                raise
             recording = Recording(
                 workspace_id=self.workspace,
                 meeting_id=uuid.UUID(meeting_id),
@@ -416,7 +431,7 @@ class MeetingService:
         one. Host or trusted backend only: it is a record of what people said. It needs everyone's
         consent like a recording does, and every named speaker must be a participant."""
         with session_for(self.workspace_id) as session:
-            meeting = self._meeting(session, meeting_id, host_only=True)
+            meeting = self._meeting(session, meeting_id, host_only=True, lock=True)
             if meeting.status not in ("live", "ended"):
                 raise MeetingStateError("only a live or ended meeting can have a transcript")
             _, present = self._consented(session, meeting)
