@@ -16,21 +16,27 @@ from app.config import settings
 SCOPE_READ = "memory:read"
 SCOPE_WRITE = "memory:write"
 SCOPE_DELETE = "memory:delete"
+SCOPE_MAINTAIN = "memory:maintain"  # run cleanup (also at sprint end); never granted by default
 SCOPE_FILES_READ = "files:read"
 SCOPE_FILES_WRITE = "files:write"
 SCOPE_FILES_DELETE = "files:delete"
 SCOPE_MEETINGS_READ = "meetings:read"
 SCOPE_MEETINGS_WRITE = "meetings:write"
+SCOPE_CONFLICTS_READ = "conflicts:read"
+SCOPE_CONFLICTS_WRITE = "conflicts:write"  # flag only; resolving is for human members
 AGENT_SCOPES = frozenset(
     {
         SCOPE_READ,
         SCOPE_WRITE,
         SCOPE_DELETE,
+        SCOPE_MAINTAIN,
         SCOPE_FILES_READ,
         SCOPE_FILES_WRITE,
         SCOPE_FILES_DELETE,
         SCOPE_MEETINGS_READ,
         SCOPE_MEETINGS_WRITE,
+        SCOPE_CONFLICTS_READ,
+        SCOPE_CONFLICTS_WRITE,
     }
 )
 

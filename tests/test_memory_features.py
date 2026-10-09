@@ -554,8 +554,11 @@ class McpTests(MemoryHarness):
                 "memory_ingest",
                 "memory_anchor",
                 "memory_pulse",
+                "memory_cleanup",
                 "files_search",
                 "meeting_transcript",
+                "conflict_flag",
+                "conflicts_list",
             },
         )
         for tool in response.json()["result"]["tools"]:
@@ -621,6 +624,23 @@ class McpTests(MemoryHarness):
         self.assertEqual((pulse["total"], pulse["pinned"]), (2, 1))
         self.call("memory_forget", {"id": ids[1]})
         self.assertEqual(self.call("memory_pulse", {})["structuredContent"]["total"], 1)
+
+    def test_cleanup_needs_the_maintain_scope(self):
+        self.call("memory_remember", {"text": "t", "source": "chat", "agent": "p"})
+        no_maintain = bearer(self.team_a, {tokens.SCOPE_READ, tokens.SCOPE_WRITE})
+        self.assertTrue(self.call("memory_cleanup", {}, no_maintain)["isError"])
+        maintain = bearer(self.team_a, {tokens.SCOPE_MAINTAIN})
+        result = self.call("memory_cleanup", {"dry_run": True}, maintain)
+        self.assertFalse(result.get("isError", False), result)
+        self.assertEqual(result["structuredContent"]["deleted"], 0)
+        self.assertEqual(self.count(self.team_a), 1)
+
+    def test_recall_accepts_a_limit_of_100_but_not_101(self):
+        ok = self.call("memory_recall", {"query": "q", "agent": "a", "limit": 100})
+        self.assertFalse(ok.get("isError", False), ok)
+        self.assertTrue(
+            self.call("memory_recall", {"query": "q", "agent": "a", "limit": 101})["isError"]
+        )
 
     def test_rejects_bad_input(self):
         for tool, args in (

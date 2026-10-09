@@ -16,7 +16,7 @@ Client config (Claude Code style):
 
 | Tool | Scope | Use it to | Notes |
 | --- | --- | --- | --- |
-| `memory_recall` | read | Search by meaning before deciding or answering | `query`, `agent`, `limit` (1-50), `sources` |
+| `memory_recall` | read | Search by meaning before deciding or answering | `query`, `agent`, `limit` (1-100), `sources` |
 | `memory_remember` | write | Save one durable fact or decision | Safe to repeat; duplicates merge |
 | `memory_ingest` | write | Save up to 20 at once | Input order kept |
 | `memory_open` | read | Read one memory with its raw text | by `id` |
@@ -25,9 +25,12 @@ Client config (Claude Code style):
 | `memory_anchor` | write | Pin so cleanup never deletes it | `pinned=false` releases |
 | `memory_forget` | delete | Delete one memory | destructive; missing id is fine |
 | `memory_pulse` | read | Counts and health snapshot | |
+| `memory_cleanup` | memory:maintain | Delete stale, unrecalled, irrelevant memories; purge old superseded ones. Also the sprint-end call | `retention_days`, `dry_run`; destructive |
+| `conflict_flag` | conflicts:write | Flag a proposal that contradicts a decision | `decision_id`, `proposal`, `explanation`; only a human can close it |
+| `conflicts_list` | conflicts:read | See flagged conflicts | `status`, `limit` |
 | `files_search` | files:read | Search inside uploaded files (PDFs, documents, scans, images) | `query`, `limit` (1-20); results cite file, page and heading |
 
-Not exposed to agents (service key, REST only): sweep, organize, purge, sprint closeout.
+Not exposed to agents (service key, REST only): organize and purge.
 Each tool carries MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so
 hosts can auto-approve reads and gate destructive calls.
 
@@ -59,4 +62,5 @@ The data engine does not judge decisions. The AI engine's LangGraph ledger uses 
   instructions.
 - **Supersede:** `memory_revise` to correct a decision, or `memory_forget` to drop a wrong one.
 
-Conflict flags and their human resolution are the AI engine's to keep.
+- **Flag:** `conflict_flag` (or `POST /decision-conflicts`) stores a flag; a human member resolves it
+  ([CONFLICTS_API.md](CONFLICTS_API.md)).

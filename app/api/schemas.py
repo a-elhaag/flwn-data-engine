@@ -80,6 +80,18 @@ class TokenResponse(BaseModel):
     expires_at: int
 
 
+class FlagConflictRequest(BaseModel):
+    decision_id: UUID  # the decision memory's id, from recall
+    proposal: Annotated[str, Field(min_length=1, max_length=20000, pattern=r"\S")]
+    explanation: Annotated[str, Field(min_length=1, max_length=5000, pattern=r"\S")]
+    similarity: float | None = Field(default=None, ge=0, le=1)
+
+
+class ResolveConflictRequest(BaseModel):
+    status: Literal["accepted", "dismissed", "resolved"]
+    note: Annotated[str, Field(max_length=5000)] | None = None
+
+
 FileKind = Literal[
     "document", "pdf", "image", "voice_note", "audio", "video", "recording", "report", "other"
 ]

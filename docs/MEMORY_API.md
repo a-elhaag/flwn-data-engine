@@ -34,8 +34,9 @@ what, which thing, when).
   stops their tokens at once (`403`), with no need to wait for expiry.
 - An unknown, foreign or suspended member in the header is `422`.
 
-Scopes: `memory:read`, `memory:write`, `memory:delete`, and for files `files:read`,
-`files:write`, `files:delete` (see [FILES_API.md](FILES_API.md)). Default when `scopes` is omitted: `memory:read` and `files:read` only; request write and
+Scopes: `memory:read`, `memory:write`, `memory:delete`, `memory:maintain` (cleanup; request it explicitly), and for files `files:read`,
+`files:write`, `files:delete` (see [FILES_API.md](FILES_API.md)), and `conflicts:read`,
+`conflicts:write` (see [CONFLICTS_API.md](CONFLICTS_API.md)). Default when `scopes` is omitted: `memory:read` and `files:read` only; request write and
 delete scopes explicitly. Max TTL:
 `MEMORY_TOKEN_MAX_TTL_SECONDS`.
 Requires `MEMORY_TOKEN_SECRET` (32+ chars). Maintenance and admin routes accept the service
@@ -58,8 +59,8 @@ workspace or missing scope or service-only route or inactive member, `404` memor
 | PATCH | `/workspaces/{ws}/memories/{id}` | write | Replace text, keep id and history | `memory_revise` |
 | PUT | `/workspaces/{ws}/memories/{id}/pin` | write | `{"pinned": true|false}` | `memory_anchor` |
 | DELETE | `/workspaces/{ws}/memories/{id}` | delete | Delete one; idempotent, 204 | `memory_forget` |
-| POST | `/workspaces/{ws}/memories/cleanup` | service | Sweep. `retention_days`, `dry_run` | - |
-| POST | `/workspaces/{ws}/sprint-completed` | service | Same as cleanup, for sprint end | - |
+| POST | `/workspaces/{ws}/memories/cleanup` | service | Sweep. `retention_days`, `dry_run` | `memory_cleanup` (scope `memory:maintain`) |
+| POST | `/workspaces/{ws}/sprint-completed` | service | Same as cleanup, for sprint end | `memory_cleanup` |
 | POST | `/workspaces/{ws}/memories/organize` | service | Dedupe/supersede. `dry_run`, `max_clusters` | - |
 | DELETE | `/workspaces/{ws}/memories?confirm={ws}` | service | Purge the whole workspace | - |
 | POST | `/auth/tokens` | service | Mint agent token | - |

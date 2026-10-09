@@ -56,7 +56,8 @@ Your adapter sends only the service key, so every memory is stored with no autho
   The token is locked to that workspace and member. With no `scopes` it can only read memory and
   files. Suspending the member stops the token immediately.
 
-Scopes you may need: `memory:read|write|delete`, `files:read|write|delete`, `meetings:read|write`.
+Scopes you may need: `memory:read|write|delete|maintain`, `files:read|write|delete`, `meetings:read|write`,
+`conflicts:read|write`.
 
 ### 3.3 Recall can filter by source (fixes a bug in your ledger)
 
@@ -73,7 +74,8 @@ doc that reads the old keys.
 
 ### 3.5 Stale text in the AI engine
 
-- `ARCHITECTURE.md` still says "-> Qdrant". It is PostgreSQL with pgvector.
+- `ARCHITECTURE.md` (lines 5 and 10) and `README.md` (lines 32 and 89) still mention Qdrant. It is
+  PostgreSQL with pgvector.
 - The `memory_steward.remember` tool spec says "upsert it to Qdrant". Reword it.
 - `.env`: `DATA_BASE_URL` and `DATA_API_KEY` are all you need. `DATA_REQUEST_TIMEOUT` of 300 is fine
   (a write embeds synchronously).
@@ -121,11 +123,11 @@ Also use a stronger model than the query-rewrite deployment for judging, and jud
 place. To replace a decision, store the new one and `DELETE` or revise the old one. The data engine has
 no "superseded by" link for ledger decisions, so record it in the new decision's text.
 
-**Conflicts and human sign-off are yours.** Keep flags somewhere in the AI engine, or in the
-backend. Suggested rule, which the data engine used before we removed it: the ledger flags, it never
-blocks; only a human member may accept, dismiss or resolve a flag; agents may not resolve their own
-flags. The data engine has `decisions` and `decision_conflicts` tables in its schema, unused, if you
-want them as storage. Say so and we will add routes.
+**Conflict flags.** The data engine stores them ([CONFLICTS_API.md](CONFLICTS_API.md)). When the
+judge finds a conflict, flag it with `POST /workspaces/{ws}/decision-conflicts` (scope
+`conflicts:write`, or the `conflict_flag` MCP tool) using the recalled decision's id. The ledger
+flags, it never blocks. Only a human member can resolve a flag, through the backend with
+`X-Acting-Member-Id`; agent tokens are refused.
 
 ## 5. New things you can call
 
@@ -152,14 +154,15 @@ transcript into memories is yours to do: summarise, then remember with `source="
 
 **MCP server at `/mcp`** ([MEMORY_TOOLS.md](MEMORY_TOOLS.md)). Bearer-token auth only (no service
 key). Tools: `memory_remember`, `memory_recall`, `memory_open`, `memory_browse`, `memory_revise`,
-`memory_forget`, `memory_ingest`, `memory_anchor`, `memory_pulse`, `files_search`,
-`meeting_transcript`. If your LangGraph nodes use an MCP client, you can drop the hand-written adapter
+`memory_forget`, `memory_ingest`, `memory_anchor`, `memory_pulse`, `memory_cleanup`, `files_search`,
+`meeting_transcript`, `conflict_flag`, `conflicts_list`. If your LangGraph nodes use an MCP client, you can drop the hand-written adapter
 for these and mint one token per agent.
 
 ## 6. Error codes to handle
 
 | Code | Meaning |
 | --- | --- |
+| 400 | `DELETE /memories` (wipe) without `confirm` equal to the workspace id |
 | 401 | Bad or expired credentials |
 | 403 | Token for another workspace, missing scope, inactive member, or a service-only route |
 | 404 | Memory, file or meeting not found, or the workspace does not exist. A meeting you are not in also looks like 404 |
@@ -179,7 +182,7 @@ Model calls on the data engine side retry timeouts and 429/5xx answers. Your sid
 - [ ] Harden the judge: strict JSON per ref, tagged inputs, failure means "no conflict, judge failed".
 - [ ] Update the `/readyz` consumer (`storage` key, no Qdrant).
 - [ ] Remove "Qdrant" from `ARCHITECTURE.md` and the tool specs.
-- [ ] Decide where conflict flags live and who may resolve them.
+- [ ] Flag conflicts through `conflict_flag` or `POST /decision-conflicts`.
 - [ ] Optional: file search tool, meeting transcript tool, or switch to the MCP server.
 
 ## 8. Not available yet
@@ -187,5 +190,5 @@ Model calls on the data engine side retry timeouts and 429/5xx answers. Your sid
 - The data engine has no deployed host; run it locally or tell us where it should live.
 - No CRUD routes for workspaces, members, teams, projects, tasks, comments, docs or chat.
 - No relevance cut-off on recall or file search.
-- Audio and video over 100 MB are skipped; old `.doc` files are not read.
+- Audio and video over 100 MB, and other files over 50 MB, are skipped; old `.doc` files are not read.
 - Speaker labels in transcripts are per-recording numbers (`Speaker 1`), not member identities.

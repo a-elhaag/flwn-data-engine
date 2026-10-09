@@ -5,7 +5,7 @@ Two kinds of caller:
   maintenance and admin operations. It can name the member it acts for with
   X-Acting-Member-Id (for example the human whose request it is relaying).
 - Agent (Authorization: Bearer <workspace token>): locked to the token's workspace and
-  limited to the token's scopes. Maintenance and admin operations are never allowed. Its member
+  limited to the token's scopes. Admin operations are never allowed; cleanup needs the memory:maintain scope. Its member
   comes only from the signed token: the header is ignored, so an agent cannot act as someone else.
 
 Whoever acts must be an active member of the workspace, checked on every request, so suspending
