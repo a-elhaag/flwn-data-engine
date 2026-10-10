@@ -1,0 +1,1 @@
+"""Structured collaboration data management."""

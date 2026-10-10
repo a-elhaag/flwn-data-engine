@@ -191,7 +191,13 @@ Model calls on the data engine side retry timeouts and 429/5xx answers. Your sid
 
 ## 8. Not available yet
 
-- No CRUD routes for workspaces, members, teams, projects, tasks, comments, docs or chat.
+- Trusted CRUD routes are available for workspaces, members, teams, projects, work items and
+  tasks, comments, structured docs and blocks, and chat channels and messages. These routes require
+  `X-Data-API-Key`; bearer-token agents cannot call them. All workspace-owned routes are scoped by
+  `/workspaces/{ws}`. Comments use `POST/GET /comments`, `GET/PATCH/DELETE /comments/{id}`; docs
+  use `POST/GET /docs`, `GET/PATCH/DELETE /docs/{id}`, and nested `/docs/{id}/blocks` CRUD; channels
+  use `POST/GET /channels`, `GET/PATCH/DELETE /channels/{id}`, `PUT /channels/{id}/members`, and
+  nested `/channels/{id}/messages` CRUD.
 - No relevance cut-off on recall or file search.
 - Audio and video over 100 MB, and other files over 50 MB, are skipped; old `.doc` files are not read.
 - Speaker labels in transcripts are per-recording numbers (`Speaker 1`), not member identities.
