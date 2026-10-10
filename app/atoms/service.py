@@ -26,23 +26,31 @@ from app.db.models.memory import AgentRun, LlmUsage
 
 
 class AtomError(ValueError):
-    pass
+    code = "invalid"
 
 
 class AtomPermissionError(PermissionError):
-    pass
+    code = "denied"
 
 
 class AtomNotFound(LookupError):
-    pass
+    code = "not_found"
 
 
 class AtomStateError(AtomError):
-    pass
+    code = "invalid_state"
 
 
 class AtomBudgetExceeded(AtomStateError):
-    pass
+    code = "cap_exhausted"
+
+
+class AtomNotDue(AtomStateError):
+    code = "not_due"
+
+
+class AtomBusy(AtomStateError):
+    code = "busy"
 
 
 def _uuid(value):
@@ -333,16 +341,39 @@ class AtomService:
         with self._session(atom_id=target, scheduler=True) as session:
             return self._configuration(session, self._atom(session, target))
 
-    def list(self):
+    def list(self, *, status=None, enabled=None):
+        if status not in (None, "draft", "active", "paused", "killed"):
+            raise AtomError("invalid atom status")
+        if enabled is not None and not isinstance(enabled, bool):
+            raise AtomError("enabled must be a boolean")
         with self._session(admin=True, scheduler=True) as session:
-            return [
-                self._configuration(session, a)
-                for a in session.scalars(
-                    select(Atom)
-                    .where(Atom.workspace_id == self.workspace, Atom.deleted_at.is_(None))
-                    .order_by(Atom.created_at, Atom.id)
+            query = select(Atom).where(
+                Atom.workspace_id == self.workspace, Atom.deleted_at.is_(None)
+            )
+            if status is not None:
+                query = query.where(Atom.status == status)
+            if enabled is not None:
+                query = query.where(
+                    select(AtomSchedule.id)
+                    .where(
+                        AtomSchedule.workspace_id == self.workspace,
+                        AtomSchedule.atom_id == Atom.id,
+                        AtomSchedule.enabled == enabled,
+                    )
+                    .exists()
                 )
+            results = [
+                self._configuration(session, atom)
+                for atom in session.scalars(query.order_by(Atom.created_at, Atom.id))
             ]
+            if enabled is not None:
+                for result in results:
+                    result["schedules"] = [
+                        schedule
+                        for schedule in result["schedules"]
+                        if schedule["enabled"] == enabled
+                    ]
+            return results
 
     def propose_candidate(
         self, atom_id=None, *, instructions, policy=None, tools=None, source=None, eval=None
@@ -706,6 +737,58 @@ class AtomService:
             session.flush()
             return _view(connection)
 
+    def release_stale(self, atom_id, *, older_than_seconds):
+        if not self.trusted or self.actor is not None:
+            raise AtomPermissionError("stale release requires service credentials")
+        age = _count(older_than_seconds)
+        if not 900 <= age <= 31536000:
+            raise AtomError("older_than_seconds must be between 900 and 31536000")
+        with self._session(atom_id=atom_id, scheduler=True) as session:
+            atom = self._atom(session, atom_id, lock=True)
+            now = datetime.now(UTC)
+            runs = list(
+                session.scalars(
+                    select(AgentRun)
+                    .where(
+                        AgentRun.workspace_id == self.workspace,
+                        AgentRun.atom_id == atom.id,
+                        AgentRun.status == "running",
+                        AgentRun.started_at < now - timedelta(seconds=age),
+                    )
+                    .order_by(AgentRun.id)
+                    .with_for_update()
+                )
+            )
+            for run in runs:
+                run.status, run.ended_at = "failed", now
+                run.output = {**(run.output or {}), "_released": "stale"}
+            session.flush()
+            return {"released_run_ids": [str(run.id) for run in runs]}
+
+    def _check_run_budget(self, session, atom, now, estimated_cost=0, estimated_actions=0):
+        """Caller holds the atom lock; all bootstrap paths share these limits."""
+        runs = list(
+            session.scalars(
+                select(AgentRun).where(
+                    AgentRun.workspace_id == self.workspace, AgentRun.atom_id == atom.id
+                )
+            )
+        )
+        if any(run.status in ("queued", "running", "waiting_approval") for run in runs):
+            raise AtomBusy("atom already has a running invocation")
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        daily = [run for run in runs if run.started_at and run.started_at >= today]
+        cost = sum((run.cost for run in daily), Decimal(0))
+        actions = sum((run.output or {}).get("_actions", 0) for run in daily)
+        if (
+            len(daily) >= atom.max_runs_per_day
+            or cost >= atom.max_cost_per_day
+            or cost + estimated_cost > atom.max_cost_per_day
+            or actions >= atom.max_actions_per_day
+            or actions + estimated_actions > atom.max_actions_per_day
+        ):
+            raise AtomBudgetExceeded("daily atom budget exhausted")
+
     def start_run(self, atom_id, *, schedule_id, slot, estimated_cost=0, estimated_actions=0):
         slot = _time(slot)
         estimated_cost, estimated_actions = _amount(estimated_cost), _count(estimated_actions)
@@ -729,31 +812,11 @@ class AtomService:
             if atom.status != "active" or not schedule.enabled or not atom.active_version_id:
                 raise AtomStateError("atom and schedule must be active")
             if schedule.next_run_at and slot < schedule.next_run_at:
-                raise AtomStateError("schedule slot is not due")
+                raise AtomNotDue("schedule slot is not due")
             now = datetime.now(UTC)
             if slot > now:
-                raise AtomStateError("schedule slot is in the future")
-            runs = list(
-                session.scalars(
-                    select(AgentRun).where(
-                        AgentRun.workspace_id == self.workspace, AgentRun.atom_id == atom.id
-                    )
-                )
-            )
-            if any(run.status in ("queued", "running", "waiting_approval") for run in runs):
-                raise AtomStateError("atom already has a running invocation")
-            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            daily = [run for run in runs if run.started_at and run.started_at >= today]
-            cost = sum((run.cost for run in daily), Decimal(0))
-            actions = sum((run.output or {}).get("_actions", 0) for run in daily)
-            if (
-                len(daily) >= atom.max_runs_per_day
-                or cost >= atom.max_cost_per_day
-                or cost + estimated_cost > atom.max_cost_per_day
-                or actions >= atom.max_actions_per_day
-                or actions + estimated_actions > atom.max_actions_per_day
-            ):
-                raise AtomBudgetExceeded("daily atom budget exhausted")
+                raise AtomNotDue("schedule slot is in the future")
+            self._check_run_budget(session, atom, now, estimated_cost, estimated_actions)
             run = AgentRun(
                 workspace_id=self.workspace,
                 agent_id=atom.member_id,

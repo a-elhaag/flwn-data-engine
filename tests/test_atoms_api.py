@@ -1,5 +1,5 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 from harness import MemoryHarness
@@ -290,6 +290,104 @@ class AtomApiTests(MemoryHarness):
             [],
         )
 
+    def test_scheduler_domain_error_prefixes(self):
+        atom, schedule = self.active_atom()
+        path = self.base + "/" + atom["id"]
+        body = {
+            "schedule_id": schedule["id"],
+            "idempotency_key": "errors",
+            "scheduled_for": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+        }
+        not_due = self.client.post(path + "/runs", json=body)
+        self.assertEqual(not_due.status_code, 422)
+        self.assertTrue(not_due.json()["detail"].startswith("not_due:"))
+        self.client.patch(path, headers=self.admin, json={"max_runs_per_day": 0})
+        body["scheduled_for"] = datetime.now(UTC).isoformat()
+        cap = self.client.post(path + "/runs", json=body)
+        self.assertEqual(cap.status_code, 422)
+        self.assertTrue(cap.json()["detail"].startswith("cap_exhausted:"))
+        self.client.patch(path, headers=self.admin, json={"max_runs_per_day": 10})
+        self.assertEqual(self.client.post(path + "/runs", json=body).status_code, 200)
+        body["scheduled_for"] = datetime.now(UTC).isoformat()
+        busy = self.client.post(path + "/runs", json=body)
+        self.assertEqual(busy.status_code, 422)
+        self.assertTrue(busy.json()["detail"].startswith("busy:"))
+
+    def test_scheduler_filters_and_stale_release_contract(self):
+        atom, schedule = self.active_atom()
+        draft = self.create_atom()
+        path = self.base + "/" + atom["id"]
+        disabled = self.client.post(
+            path + "/schedules", headers=self.admin, json={"interval_minutes": 10, "enabled": False}
+        )
+        self.assertEqual(disabled.status_code, 201, disabled.text)
+        state = self.client.get(self.base + "/scheduler-state?status=active&enabled=true")
+        self.assertEqual(state.status_code, 200, state.text)
+        self.assertEqual([item["id"] for item in state.json()], [atom["id"]])
+        self.assertEqual([item["id"] for item in state.json()[0]["schedules"]], [schedule["id"]])
+        disabled_state = self.client.get(self.base + "/scheduler-state?enabled=false")
+        self.assertEqual(
+            [item["id"] for item in disabled_state.json()[0]["schedules"]], [disabled.json()["id"]]
+        )
+        drafts = self.client.get(self.base + "/scheduler-state?status=draft")
+        self.assertEqual([item["id"] for item in drafts.json()], [draft["id"]])
+        self.assertEqual(
+            self.client.get(self.base + "/scheduler-state?status=bogus").status_code, 422
+        )
+        started = self.client.post(
+            path + "/runs",
+            json={
+                "schedule_id": schedule["id"],
+                "scheduled_for": datetime.now(UTC).isoformat(),
+                "idempotency_key": "stale-slot",
+            },
+        )
+        self.assertEqual(started.status_code, 200, started.text)
+        worker = self.token(
+            member_id=atom["member_id"],
+            atom_id=atom["id"],
+            run_id=started.json()["id"],
+            scopes=["atoms:read", "atoms:run"],
+        )
+        release = path + "/runs/release-stale"
+        for headers in (self.admin, worker):
+            self.assertEqual(
+                self.client.post(
+                    release, headers=headers, json={"older_than_seconds": 900}
+                ).status_code,
+                403,
+            )
+        for body in (
+            {},
+            {"older_than_seconds": 899},
+            {"older_than_seconds": 900.5},
+            {"older_than_seconds": True},
+            {"older_than_seconds": 31536001},
+        ):
+            self.assertEqual(self.client.post(release, json=body).status_code, 422)
+        self.sql(
+            "update agent_runs set started_at=now()-interval '1 hour' where id=:id",
+            id=started.json()["id"],
+        )
+        for status in ("queued", "waiting_approval", "succeeded", "failed", "canceled"):
+            self.sql(
+                "update agent_runs set status=:status where id=:id",
+                status=status,
+                id=started.json()["id"],
+            )
+            self.assertEqual(
+                self.client.post(release, json={"older_than_seconds": 900}).json(),
+                {"released_run_ids": []},
+            )
+        self.sql("update agent_runs set status='running' where id=:id", id=started.json()["id"])
+        for expected in ([started.json()["id"]], []):
+            response = self.client.post(release, json={"older_than_seconds": 900})
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(response.json(), {"released_run_ids": expected})
+        denied = self.mcp("atom_load", {}, worker)
+        self.assertTrue(denied.get("isError"), denied)
+        self.assertIn("denied:", denied["content"][0]["text"])
+
     def test_scheduler_bootstrap_mcp_and_finish_retry(self):
         atom, schedule = self.active_atom()
         path = self.base + "/" + atom["id"]
@@ -303,12 +401,39 @@ class AtomApiTests(MemoryHarness):
         started = self.client.post(path + "/runs", json=start_body)
         self.assertEqual(started.status_code, 200, started.text)
         run = started.json()
+        repeated = self.client.post(
+            path + "/runs", json={**start_body, "idempotency_key": "different-client-key"}
+        )
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(repeated.json()["id"], run["id"])
         headers = self.token(
             member_id=atom["member_id"],
             atom_id=atom["id"],
             run_id=run["id"],
             scopes=["atoms:read", "atoms:run", "atoms:propose"],
         )
+        replacement = self.token(
+            member_id=atom["member_id"],
+            atom_id=atom["id"],
+            run_id=run["id"],
+            scopes=["atoms:read", "atoms:run"],
+            ttl_seconds=500,
+        )
+        self.assertNotEqual(headers["Authorization"], replacement["Authorization"])
+        for valid in (replacement, headers):
+            self.assertFalse(self.mcp("atom_load", {}, valid).get("isError"))
+        for cost in (0.018, 0, -1, True, "NaN", "Infinity", "-0.01", "0.0000001", "1000000"):
+            invalid = self.mcp("atom_run_finish", {"status": "succeeded", "cost": cost}, headers)
+            self.assertTrue(invalid.get("isError"), (cost, invalid))
+        schema = self.client.post(
+            "/mcp",
+            headers={**headers, "Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        ).json()
+        finish_schema = next(
+            tool for tool in schema["result"]["tools"] if tool["name"] == "atom_run_finish"
+        )
+        self.assertEqual(finish_schema["inputSchema"]["properties"]["cost"]["type"], "string")
         loaded = self.mcp("atom_load", {}, headers)
         self.assertFalse(loaded.get("isError"), loaded)
         self.assertEqual(
@@ -322,14 +447,20 @@ class AtomApiTests(MemoryHarness):
             "status": "succeeded",
             "tokens_in": 12,
             "tokens_out": 3,
-            "cost": "0.01",
+            "cost": "0.018000",
+            "model": "test-small",
             "cursor": {"page": 2},
         }
         for _ in range(2):
             result = self.mcp("atom_run_finish", finished, headers)
             self.assertFalse(result.get("isError"), result)
-        row = self.sql("select cost, tokens_in from agent_runs where id=:id", id=run["id"])[0]
-        self.assertEqual(str(row["cost"]), "0.010000")
+        row = self.sql("select cost, tokens_in, model from agent_runs where id=:id", id=run["id"])[
+            0
+        ]
+        self.assertEqual(str(row["cost"]), "0.018000")
         self.assertEqual(row["tokens_in"], 12)
+        self.assertEqual(row["model"], "test-small")
+        usage = self.sql("select model from llm_usage where run_id=:id", id=run["id"])
+        self.assertEqual(usage, [{"model": "test-small"}])
         denied_load = self.mcp("atom_load", {}, headers)
         self.assertTrue(denied_load.get("isError"), denied_load)

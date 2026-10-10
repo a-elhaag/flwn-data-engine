@@ -1,6 +1,6 @@
 """Human atom administration and trusted scheduler bootstrap."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -13,6 +13,7 @@ from app.api.atom_schemas import (
     ConnectionBody,
     CreateAtom,
     GrantBody,
+    ReleaseStaleRuns,
     ScheduleBody,
     SkillAttachment,
     StartRun,
@@ -36,11 +37,11 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except PermissionError as exc:
-        raise HTTPException(403, str(exc)) from None
+        raise HTTPException(403, f"denied: {exc}") from None
     except LookupError as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise HTTPException(404, f"not_found: {exc}") from None
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise HTTPException(422, f"{getattr(exc, 'code', 'invalid')}: {exc}") from None
 
 
 @router.post("", status_code=201, dependencies=[ADMIN])
@@ -54,9 +55,19 @@ def list_atoms(service: Service):
 
 
 @router.get("/scheduler-state", dependencies=[allow(None)])
-def scheduler_state(workspace_id: WorkspaceId):
+def scheduler_state(
+    workspace_id: WorkspaceId,
+    status: Literal["draft", "active", "paused", "killed"] | None = None,
+    enabled: bool | None = None,
+):
     service = AtomService(str(workspace_id), trusted=True)
-    return _call(service.list)
+    return _call(service.list, status=status, enabled=enabled)
+
+
+@router.post("/{atom_id}/runs/release-stale", dependencies=[allow(None)])
+def release_stale(workspace_id: WorkspaceId, atom_id: UUID, body: ReleaseStaleRuns):
+    service = AtomService(str(workspace_id), trusted=True)
+    return _call(service.release_stale, str(atom_id), **body.model_dump())
 
 
 @router.get("/{atom_id}", dependencies=[ADMIN])

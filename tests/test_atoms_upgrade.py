@@ -1,4 +1,4 @@
-"""Data-preserving upgrades of the 3b6ac80 schema on disposable PostgreSQL."""
+"""Data-preserving upgrades of legacy and existing Atoms schemas on disposable PostgreSQL."""
 
 import unittest
 import uuid
@@ -60,6 +60,31 @@ def legacy_metadata():
             runs.indexes.remove(index)
     for name in NEW_RUN_COLUMNS:
         runs._columns.remove(runs.c[name])
+    approvals = metadata.tables["approvals"]
+    new_approval_columns = {
+        "atom_id",
+        "title",
+        "request_key",
+        "execution_run_id",
+        "claimed_at",
+        "executed_at",
+        "execution_status",
+        "execution_result",
+    }
+    for constraint in list(approvals.constraints):
+        if set(constraint.columns.keys()) & new_approval_columns or constraint.name in {
+            "ck_approvals_atom_payload",
+            "ck_approvals_atom_execution",
+            "ck_approvals_execution_status",
+        }:
+            approvals.constraints.remove(constraint)
+            for fk in getattr(constraint, "elements", ()):
+                approvals.foreign_keys.remove(fk)
+    for index in list(approvals.indexes):
+        if index.name == "ix_approvals_atom_ready":
+            approvals.indexes.remove(index)
+    for name in new_approval_columns:
+        approvals._columns.remove(approvals.c[name])
     for table, name, expression in (
         (
             "members",
@@ -271,6 +296,59 @@ class AtomsUpgradeTest(unittest.TestCase):
             self.assertEqual(
                 conn.exec_driver_sql("select id from atom_versions").scalar_one(), version
             )
+
+    def test_existing_atoms_upgrade_adds_approvals_without_changing_runs(self):
+        upgrade_atoms(self.url, app_role=self.role)
+        with self.engine.begin() as conn:
+            atom = make_atom(conn, self.ws)
+            version = make_version(conn, atom)
+            run = add(
+                conn,
+                "agent_runs",
+                workspace_id=self.ws["workspace_id"],
+                agent_id=atom["member_id"],
+                atom_id=atom["id"],
+                atom_version_id=version,
+                trigger="schedule",
+                idempotency_key="before-approvals:1",
+                tokens_in=7,
+                tokens_out=3,
+                cost="0.03",
+                input={"cursor": {"last_id": "keep"}},
+                output={"keep": "result"},
+            )
+            snapshot = conn.exec_driver_sql(
+                "select to_jsonb(r) from agent_runs r where id=%s", (run,)
+            ).scalar_one()
+            # Simulate the already-installed Atoms release in this disposable database.
+            added_columns = set(Base.metadata.tables["approvals"].c.keys()) - set(
+                self.legacy.tables["approvals"].c.keys()
+            )
+            for name in sorted(added_columns):
+                conn.connection.driver_connection.execute(
+                    sql.SQL("alter table public.approvals drop column {} cascade").format(
+                        sql.Identifier(name)
+                    )
+                )
+
+        for _ in range(2):
+            upgrade_atoms(self.url, app_role=self.role)
+            with self.engine.connect() as conn:
+                self.assert_current_schema(conn)
+                self.assertEqual(self.role_state(conn), self.credentials)
+                self.assertEqual(
+                    conn.exec_driver_sql(
+                        "select to_jsonb(r) from agent_runs r where id=%s", (run,)
+                    ).scalar_one(),
+                    snapshot,
+                )
+                self.assertEqual(
+                    conn.execute(self.legacy.tables["approvals"].select()).all(),
+                    self.rows["approvals"],
+                )
+                self.assertEqual(
+                    conn.exec_driver_sql("select id from atom_versions").scalar_one(), version
+                )
 
     def test_normal_fresh_install_is_unchanged(self):
         # Empty only this disposable database; exercise the normal installer, not --reset.

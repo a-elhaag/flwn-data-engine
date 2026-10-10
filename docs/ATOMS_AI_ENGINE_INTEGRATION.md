@@ -9,7 +9,8 @@ For human administration and storage details, see [ATOMS_API.md](ATOMS_API.md).
 | Data engine owns | AI engine owns |
 | --- | --- |
 | Atoms, immutable versions, schedules, cursors, run records | Schedule dispatch and cron/DST calculations |
-| Live grants, owner visibility, restrictive RLS, run-token validation | Prompt composition, model execution, risk gate and approval workflow |
+| Live grants, owner visibility, restrictive RLS, run-token validation | Prompt composition, model execution and risk gate |
+| Approval records, immutable payloads, expiry checks, claims/outcomes and assigned-human notifications | Approval UX, external execution and uncertain-effect reconciliation |
 | Skill persistence/search and exact-version attachments | Selecting skills and reviewing community procedures |
 | Connection configuration and failure reports | Composio direct-tool sessions, account connection UX and global throttling |
 | Retry-safe final accounting and cursor updates | Accurate usage/action totals, external-effect idempotency and worker ownership |
@@ -82,13 +83,14 @@ sequenceDiagram
 Service-key-only request:
 
 ```http
-GET /workspaces/<workspace-id>/atoms/scheduler-state
+GET /workspaces/<workspace-id>/atoms/scheduler-state?status=active&enabled=true
 X-Data-API-Key: <service-key>
 ```
 
 Returns an array of atom objects with `version`, `grants`, `schedules` and `connections`.
-It includes drafts and paused/killed atoms; it is **not a due-work queue**. Select only
-`status="active"` atoms and `enabled=true` schedules. Deleted atoms are omitted.
+It is **not a due-work queue**. The optional filters above select active atoms with an enabled
+schedule and include only matching schedules. Without filters, drafts and paused/killed atoms
+and all schedules are included. Deleted atoms are always omitted.
 
 Schedule fields include `id`, `atom_id`, `cron`, `interval_minutes`, `timezone`, `next_run_at`,
 `last_run_at` and `cursor`. Exactly one cadence is configured. Intervals are at least five minutes.
@@ -96,8 +98,29 @@ Cron validation accepts numeric five-field expressions; do not assume named week
 
 Compute the intended scheduled slot, not delivery time. Apply the schedule's timezone for cron;
 use timezone-aware timestamps on the wire. A null `next_run_at` is not a computed due time—the
-scheduler must establish its initial slot. Define catch-up/backfill and DST behavior in the
-scheduler. Do not repeatedly dispatch every poll using a fresh timestamp.
+scheduler must establish its initial slot. The agreed ACA scheduler polls every minute and runs
+**only the latest due slot**; cursor-based atoms catch up from their persisted cursor. The AI
+engine owns DST behavior. Do not dispatch every poll using a fresh timestamp.
+
+Before bootstrap, release abandoned runs through the service-only endpoint:
+
+```http
+POST /workspaces/<workspace-id>/atoms/<atom-id>/runs/release-stale
+X-Data-API-Key: <service-key>
+Content-Type: application/json
+```
+
+```json
+{"older_than_seconds": 900}
+```
+
+Returns `{"released_run_ids": [...]}`. Required age is an integer 900–31,536,000 seconds;
+choose an age safely beyond the worker's execution cap. Only older `running` rows become
+`failed`, with `ended_at` and existing output plus `"_released": "stale"`. Recorded totals,
+usage ledger and cursor/schedule timestamps are unchanged. Terminal rows and repeated calls
+are untouched. This explicit recovery endpoint is preferred over heartbeats for v1.
+It does not cancel an external call already dispatched, clear approval claims, or recreate a
+failed run for the same slot. A different, latest due slot can bootstrap afterward.
 
 ### B. Bootstrap a run before minting its token
 
@@ -121,7 +144,8 @@ Example body (replace UUID placeholders and use an intended slot that is due):
 
 `idempotency_key` is required by the REST/MCP request contract but does **not** override server
 uniqueness. The server derives its key from **atom ID + normalized UTC slot**. Keep the same
-slot on delivery retries. Two schedules on the same atom at the same instant share this key;
+slot on delivery retries. Changing only the client key still returns the same run. Two schedules
+on the same atom at the same instant share this key;
 compare the returned `schedule_id` and do not launch a second execution.
 
 The response is a run object. These are the worker-relevant fields; additional fields exist:
@@ -184,8 +208,9 @@ must refer to the same live workspace/member/atom/run. Unbound regular tokens fo
 are rejected. Atom tokens can never include `atoms:admin`.
 
 Always supply scopes explicitly. Defaults are only `memory:read` and `files:read`, not atom scopes.
-For longer work, have the trusted controller mint a replacement for the **same live run** before
-expiry. Refresh is not a way around revocation, killed/deleted state or terminal runs.
+V1 workers are capped below the token's lifetime, so no refresh is required. A replacement
+minted for the **same live run** is accepted while the first is still valid; neither revokes the
+other. Both recheck live state. Refresh cannot bypass revocation, killed/deleted or terminal state.
 
 ### D. Load and resume
 
@@ -226,22 +251,27 @@ and the AI engine must keep its external tool session consistent with current co
 Send this as `atom_run_finish` arguments. No run ID argument is accepted.
 
 - Status is `succeeded`, `failed` or `canceled` (one l).
-- Counts and cost are nonnegative **cumulative totals**, not deltas. Use decimal money.
+- Counts and cost are nonnegative **cumulative totals**, not deltas. Cost must be a decimal
+  **JSON string** like `"0.018000"` (1–6 integer digits; optional 1–6 fractional digits).
+  JSON numbers/floats, negatives, exponents, NaN and infinity are rejected by the MCP schema.
 - Output must be an object. Keys beginning with `_` are reserved and rejected.
-- The MCP tool has no `error` or `model` parameter. Put a safe failure description inside `output`.
+- Optional `model` (nonblank, at most 200 characters) is recorded on the run and reconciled
+  usage row. There is no `error` argument; put a safe failure description inside `output`.
 - Only successful completion advances the schedule cursor and `last_run_at`; failures/cancellations
   leave the cursor unchanged. Older slots cannot move it backward. Success updates interval
   `next_run_at`; computing the next cron slot remains scheduler work.
 - Terminal finish retries return the stored result without changing totals/output/cursor.
-  Changed retry arguments do not amend the first result. Only finish permits terminal runtime
-  retries, with a still-valid token; other terminal tools are denied.
+  Changed retry arguments do not amend the first result. Finish and approval get/claim/outcome
+  permit terminal retries with a still-valid token; other terminal tools are denied. Terminal
+  approval claims cannot grant fresh execution permission.
 - Run totals and `llm_usage` represent the same spend. Finish reconciles existing ledger rows;
   never add both views together when reporting cost.
 
 Persist/reconcile delivery state in the orchestrator. If the finish response is lost and the token
 expires, a trusted repeat bootstrap can help inspect the existing run. Do not start a new slot
-just to retry uncertain external effects. There is no public stale-run lease/reaper endpoint;
-an abandoned running row blocks later invocations and needs trusted operational recovery.
+just to retry uncertain external effects. Use the service-only `runs/release-stale` endpoint
+for abandoned running rows, then consider the latest due slot. It preserves recorded usage
+and cannot undo or safely repeat an uncertain external effect.
 
 ## 4. MCP adapter contract
 
@@ -252,8 +282,12 @@ All tools use identity from the token.
 | --- | --- | --- | --- |
 | `atom_load` | `atoms:read` | None | Flat atom configuration described above |
 | `atom_run_start` | `atoms:run` | schedule_id, scheduled_for, idempotency_key | Bound run with input.cursor |
-| `atom_run_finish` | `atoms:run` | status; output=null, tokens_in=0, tokens_out=0, cost=0, cursor=null, actions_count=0 | Persisted terminal run |
+| `atom_run_finish` | `atoms:run` | status; output=null, tokens_in=0, tokens_out=0, cost="0", cursor=null, actions_count=0, model=null | Persisted terminal run |
 | `atom_propose_version` | `atoms:propose` | instructions; policy=null, tools=null | New candidate, source=self; not activated |
+| `atom_approval_create` | `atoms:run` | title, payload; request_key=null, kind="atom_action", assigned_to=null, expires_at=null | Idempotent parked approval |
+| `atom_approval_get` | `atoms:run` | approval_id | Stored approval, including status/expiry/outcome |
+| `atom_approval_claim` | `atoms:run` | approval_id | execute boolean plus approval record |
+| `atom_approval_outcome` | `atoms:run` | approval_id, status; result=null | First stored outcome; status succeeded/failed/unknown |
 | `skills_search` | `skills:read` | query; limit=5 (1–50) | Object containing skills array |
 | `skill_write` | `skills:write` | name, description, when_to_use, instructions, scope; version=1, tools_required=null | Skill metadata with instructions |
 | `skill_attach` | `skills:write` | skill_id, skill_version; catalog=false | Attachment metadata |
@@ -281,8 +315,70 @@ Decode the **MCP envelope**, not just HTTP status:
 2. Check `result.isError`; HTTP 200 can still contain a failed tool call.
 3. On success, use `result.structuredContent` when present. Otherwise decode the returned JSON
    text content. Existing clients/tests support both representations.
-4. Never parse failed tool text as a successful resource. Tool exception messages are human-readable,
-   not a stable machine error-code taxonomy. Do not make retry policy depend on exact wording.
+4. Never parse failed tool text as a successful resource. Use the stable atom-domain prefixes
+   in section 7 where present, never match explanatory sentences. Other envelopes remain unchanged.
+
+### 4.1 Park, approve, then execute in a later run
+
+Full REST paths, field limits and human decision rules are in
+[the approval API contract](ATOMS_API.md#parked-action-approvals). Worker tools use only their
+run token; the service key stays with trusted control-plane code.
+
+1. When the risk gate requires approval, call `atom_approval_create`:
+
+   ```json
+   {
+     "title": "Send the reviewed report",
+     "kind": "atom_action",
+     "payload": {
+       "tool_slug": "OUTLOOK_SEND",
+       "arguments": {"subject": "Daily report"},
+       "connection_id": "<connection-id>"
+     },
+     "request_key": "report:2026-10-10",
+     "assigned_to": "<human-member-id>",
+     "expires_at": "2026-10-11T09:00:00Z"
+   }
+   ```
+
+   Payload accepts exactly tool_slug, arguments and connection_id. Caller/run/requester identity
+   is derived from the token. Omitted request_key uses a content hash scoped to this run; an
+   identical retry returns the original row. Data engine creates the assigned-human notification
+   transactionally, once. Do not create a duplicate notification. Finish the proposing run with
+   normal cumulative usage; never wait for the human while holding an in-flight run.
+2. The human decision is submitted through trusted code using
+   `PUT /workspaces/{workspace_id}/approvals/{approval_id}/decision`, service key plus acting
+   human, body `{"status":"approved","comment":"Reviewed"}` (or rejected). Approved payloads
+   are immutable. Same decision is a no-op while authorization/expiry remain valid.
+3. Scheduler queries service-only `GET /workspaces/{workspace_id}/approvals/ready?limit=100`.
+   It returns a bare array, oldest creation first, then id; limit 1–200. Only approved, unexpired
+   rows without an execution run appear. There is no cursor/offset; bootstrap removes selected
+   rows from this list, so repeated queries drain later batches.
+4. Scheduler calls service-only
+   `POST /workspaces/{workspace_id}/approvals/{approval_id}/execution-run` with
+   `{"estimated_cost":"0","estimated_actions":1}`. This is idempotent per approval and shares
+   normal budgets/one-in-flight admission. Finish the proposing run first. The dedicated run
+   has `schedule_id=null`, `trigger="schedule"` for compatibility, and key `approval:<id>`.
+   Its immutable input includes approval_id and approval_payload. It does not advance a schedule
+   cursor. Mint a token bound to this run through `/auth/tokens`, then dispatch the run input
+   and token. Do not call `atom_run_start` for this no-schedule run.
+5. Worker calls `atom_approval_claim(approval_id)`. Execute the exact stored tool/arguments only
+   when the committed response says **execute=true**. Claim rechecks connection/allowlist and
+   live authority; approval does not override grants or connection ceilings. A repeated claim
+   never authorizes another attempt. A lost claim response means stop without executing.
+6. Record `atom_approval_outcome(approval_id, status, result)` with succeeded/failed/unknown,
+   then finish the execution run with cumulative usage. Outcome does not finish/account the run.
+   First outcome wins; repeats do not change it. Get/claim/outcome remain available for bounded
+   terminal retries, but terminal claims never authorize new work.
+
+Expiry is enforced for decisions, discovery, execution bootstrap and claim. Omitted expires_at
+means **no expiry**. Status is not lazily changed to expired: get returns the stored status and
+expires_at, even when elapsed. Rejected/expired approvals are not executable; already-claimed
+outcomes may still be recorded after expiry. Workers should inspect status **and** expires_at.
+
+Once an execution run exists, failed/crashed/uncertain work never automatically returns to ready.
+Stale release preserves its claim/binding. This is at-most-once **authorization**, not exactly-once
+external delivery. Unknown effects require provider/human reconciliation, not resetting a claim.
 
 ## 5. Skills and connections
 
@@ -387,13 +483,37 @@ modify shared/read-only memories. Having an owner with broad visibility does not
 | Skill load/attachment ceiling failure | Human configuration or permitted skill selection must resolve it; never expand permission automatically |
 | Unknown external effect outcome | Reconcile with provider idempotency/status before retrying; run idempotency is not external exactly-once execution |
 
-REST errors use `{"detail": ...}`; validation details may be an array. No promise of stable
-exception-text matching. Keep logs tied to workspace_id/atom_id/run_id/schedule_id and original
-slot while redacting credentials and unnecessary private data.
+**Approval claims are an exception to generic transport retries.** A one-time claim grants
+execution only once. If its response is lost, fail closed: do not execute without confirmation
+or treat a repeated claim as fresh permission. Claimed or failed execution runs never
+automatically requeue. Stale-parent release must preserve the approval's
+`execution_run_id` and `claimed_at`. External exactly-once execution cannot be guaranteed;
+reconcile uncertain effects with the provider rather than clearing the claim and trying again.
+
+Atom domain failures use stable prefixes inside REST `detail` or MCP error text (the SDK may
+wrap the text in `Error executing tool ...`). Match the prefix, not the explanatory sentence:
+
+| Prefix | Meaning / retry policy |
+| --- | --- |
+| `denied:` | Credential/scope/live authorization rejected; stop |
+| `not_found:` | Atom-domain resource unavailable; stop |
+| `invalid:` | Fix domain input |
+| `invalid_state:` | Requires state/configuration change; not a transport retry |
+| `not_due:` | Recompute/select a due slot |
+| `busy:` | Another invocation is in flight; wait or release only if genuinely stale |
+| `cap_exhausted:` | Wait for capacity/reset or an authorized cap change |
+
+FastAPI 422 request-schema errors retain their structured detail list; MCP schema validation
+and older non-atom tool errors retain their SDK/legacy envelopes. Do not treat every 422 as
+transient. Keep logs tied to workspace_id/atom_id/run_id/schedule_id and original slot while
+redacting credentials and unnecessary private data.
 
 ## 8. AI-engine acceptance checklist
 
-- [ ] All nine tools map to their actual names and arguments; no invented identity parameters.
+- [ ] All atom tools map to their actual names and arguments; no invented identity parameters.
+- [ ] Finish sends decimal strings (numeric JSON is rejected) and optional model metadata.
+- [ ] Same-slot bootstrap with different client keys returns one run; overlapping live tokens work.
+- [ ] Scheduler filters, stable domain error prefixes and stale release are handled explicitly.
 - [ ] Service-key client and per-run MCP clients are isolated, including refresh and concurrency.
 - [ ] Duplicate delivery uses the original slot and has one execution owner; terminal runs are skipped.
 - [ ] Worker uses version payload and run.input.cursor, not the mutable active pointer/latest cursor.
@@ -404,6 +524,13 @@ slot while redacting credentials and unnecessary private data.
 - [ ] Composio sessions use explicit identity/account/version, cumulative tags and exact allowed slugs.
 - [ ] Connection reports cannot reactivate; repeated distinct failures pause safely.
 - [ ] Daily budget, one-in-flight rejection, token expiry and abandoned-worker recovery have explicit handling.
+- [ ] Approval creation retries preserve exact payload/requester and produce one assigned-human notification.
+- [ ] Rejected/expired work is excluded; execution input is immutable and claims recheck live authority.
+- [ ] Lost approval-claim responses fail closed; stale-parent release preserves claims and never auto-requeues execution.
+- [ ] Approval outcome retries preserve the first result; finishing separately accounts for execution usage.
+
+Approval lifecycle and concurrency proof: [service tests](../tests/test_atom_approvals.py) and
+[REST/MCP tests](../tests/test_atom_approvals_api.py).
 
 Data-engine reference tests: [REST/MCP integration](../tests/test_atoms_api.py),
 [lifecycle/accounting](../tests/test_atoms_service.py), [tokens](../tests/test_atom_tokens.py),

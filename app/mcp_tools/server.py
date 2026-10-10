@@ -10,7 +10,6 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
-from decimal import Decimal
 from typing import Annotated, Any, Literal
 
 import anyio
@@ -23,6 +22,7 @@ from starlette.responses import JSONResponse
 from app import members
 from app.api import tokens
 from app.api.tokens import Claims
+from app.atoms.service import AtomError, AtomNotFound
 from app.config import settings
 from app.decisions.service import ConflictService
 from app.meetings.errors import MeetingNotFound
@@ -130,7 +130,10 @@ async def _run(ctx: Context, scope: str, tool: str, fn: Callable[[MemorySteward]
 
 async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], Any]):
     """Run `fn` for the token's workspace, after checking the scope and that the member is active."""
-    claims = _claims(ctx, scope)
+    try:
+        claims = _claims(ctx, scope)
+    except PermissionError as exc:
+        raise PermissionError(f"denied: {exc}") from None
     logger.info("mcp: tool=%s workspace=%s subject=%s", tool, claims.workspace_id, claims.subject)
 
     def work():
@@ -141,7 +144,16 @@ async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], A
             context = AtomContext(
                 claims.workspace_id, claims.atom_id, claims.run_id, claims.member_id
             )
-            validate_context(context, allow_finished=tool == "atom_run_finish")
+            validate_context(
+                context,
+                allow_finished=tool
+                in (
+                    "atom_run_finish",
+                    "atom_approval_get",
+                    "atom_approval_claim",
+                    "atom_approval_outcome",
+                ),
+            )
         if claims.member_id and not members.is_active(claims.workspace_id, claims.member_id):
             raise PermissionError("Member is not active in this workspace")
         with bind_context(context):
@@ -155,6 +167,12 @@ async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], A
         raise ValueError("Workspace not found") from None
     except MaintenanceBusy:
         raise ValueError("Maintenance is already running for this workspace") from None
+    except PermissionError as exc:
+        raise PermissionError(f"denied: {exc}") from None
+    except AtomNotFound as exc:
+        raise ValueError(f"not_found: {exc}") from None
+    except AtomError as exc:
+        raise ValueError(f"{exc.code}: {exc}") from None
 
 
 def _id(value: str) -> str:
@@ -607,9 +625,10 @@ async def atom_run_finish(
     output: dict | None = None,
     tokens_in: Annotated[int, Field(ge=0)] = 0,
     tokens_out: Annotated[int, Field(ge=0)] = 0,
-    cost: Annotated[Decimal, Field(ge=0, allow_inf_nan=False)] = Decimal("0"),
+    cost: Annotated[str, Field(strict=True, pattern=r"^[0-9]{1,6}(?:\.[0-9]{1,6})?$")] = "0",
     cursor: dict | None = None,
     actions_count: Annotated[int, Field(ge=0)] = 0,
+    model: Label | None = None,
 ) -> dict:
     return await _guarded(
         ctx,
@@ -624,6 +643,7 @@ async def atom_run_finish(
             cost=cost,
             cursor=cursor,
             actions_count=actions_count,
+            model=model,
         ),
     )
 
@@ -809,3 +829,106 @@ class BearerGate:
 
 def build_app(server: FastMCP):
     return BearerGate(server.streamable_http_app())
+
+
+TOOL_NAMES = (
+    *TOOL_NAMES,
+    "atom_approval_create",
+    "atom_approval_get",
+    "atom_approval_claim",
+    "atom_approval_outcome",
+)
+
+
+@_tool(
+    name="atom_approval_create",
+    annotations=WRITES,
+    description="Request human approval for a tool action in the current atom run. Reuse request_key on retries. Approval does not authorize execution: the trusted backend must bootstrap an execution run, which must win the one-time REST claim before attempting the external effect.",
+)
+async def atom_approval_create(
+    title: Label,
+    payload: dict,
+    ctx: Context,
+    request_key: Label | None = None,
+    kind: Literal["plan", "pull_request", "deploy", "action", "atom_action"] = "atom_action",
+    assigned_to: uuid.UUID | None = None,
+    expires_at: datetime | None = None,
+) -> dict:
+    from app.atoms.approvals import ApprovalService
+
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_approval_create",
+        lambda c: ApprovalService(
+            c.workspace_id,
+            actor=c.member_id,
+            atom_id=c.atom_id,
+            run_id=c.run_id,
+        ).create_approval(
+            kind=kind,
+            title=title,
+            payload=payload,
+            request_key=request_key,
+            assigned_to=assigned_to,
+            expires_at=expires_at,
+        ),
+    )
+
+
+def _approval_service(claims: Claims):
+    from app.atoms.approvals import ApprovalService
+
+    return ApprovalService(
+        claims.workspace_id,
+        actor=claims.member_id,
+        atom_id=claims.atom_id,
+        run_id=claims.run_id,
+    )
+
+
+@_tool(
+    name="atom_approval_get",
+    annotations=READ_ONLY,
+    description="Read an approval only from its originating or dedicated execution run, including terminal-run retries.",
+)
+async def atom_approval_get(approval_id: uuid.UUID, ctx: Context) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_approval_get",
+        lambda c: _approval_service(c).get_approval(str(approval_id)),
+    )
+
+
+@_tool(
+    name="atom_approval_claim",
+    annotations=WRITES,
+    description="Consume the one-time permission to attempt the approved external effect. Only execute=true from this call authorizes execution. A retry always returns execute=false; a lost response must never lead to a retry of the external effect. Requires the dedicated execution-run token.",
+)
+async def atom_approval_claim(approval_id: uuid.UUID, ctx: Context) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_approval_claim",
+        lambda c: _approval_service(c).claim(str(approval_id)),
+    )
+
+
+@_tool(
+    name="atom_approval_outcome",
+    annotations=WRITES,
+    description="Record succeeded, failed or unknown after the bound run claims approval. First outcome wins; retries return stored data, including after run completion. No outcome requeues or grants another attempt.",
+)
+async def atom_approval_outcome(
+    approval_id: uuid.UUID,
+    status: Literal["succeeded", "failed", "unknown"],
+    ctx: Context,
+    result: dict | None = None,
+) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_approval_outcome",
+        lambda c: _approval_service(c).outcome(str(approval_id), status=status, result=result),
+    )

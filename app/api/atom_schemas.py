@@ -88,6 +88,10 @@ class ScheduleBody(AtomBody):
         return self
 
 
+class ReleaseStaleRuns(AtomBody):
+    older_than_seconds: int = Field(strict=True, ge=900, le=31536000)
+
+
 class StartRun(AtomBody):
     schedule_id: UUID
     scheduled_for: datetime

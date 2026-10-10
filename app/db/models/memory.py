@@ -343,6 +343,14 @@ class Approval(IdPk, Tenant, Created, Base):
 
     __tablename__ = "approvals"
 
+    atom_id: Mapped[uuid.UUID | None]
+    title: Mapped[str | None]
+    request_key: Mapped[str | None]
+    execution_run_id: Mapped[uuid.UUID | None]
+    claimed_at: Mapped[datetime | None]
+    executed_at: Mapped[datetime | None]
+    execution_status: Mapped[str | None]
+    execution_result: Mapped[dict | None]
     run_id: Mapped[uuid.UUID | None]
     report_id: Mapped[uuid.UUID | None]
     kind: Mapped[str]
@@ -357,6 +365,38 @@ class Approval(IdPk, Tenant, Created, Base):
 
     __table_args__ = (
         tenant_unique(),
+        UniqueConstraint("workspace_id", "run_id", "request_key"),
+        UniqueConstraint("workspace_id", "execution_run_id"),
+        tfk("atom_id", "atoms"),
+        tfk("execution_run_id", "agent_runs"),
+        CheckConstraint(
+            "atom_id is null or (run_id is not null and requested_by is not null "
+            "and title is not null and btrim(title) <> '' "
+            "and request_key is not null and btrim(request_key) <> '' "
+            "and jsonb_typeof(payload) = 'object' "
+            "and payload ?& array['tool_slug', 'arguments', 'connection_id'] "
+            "and jsonb_typeof(payload->'tool_slug') = 'string' "
+            "and btrim(payload->>'tool_slug') <> '' "
+            "and jsonb_typeof(payload->'arguments') = 'object' "
+            "and jsonb_typeof(payload->'connection_id') = 'string')",
+            name="atom_payload",
+        ),
+        CheckConstraint(
+            "atom_id is null or ((claimed_at is null or execution_run_id is not null) "
+            "and (execution_status is null or (claimed_at is not null and executed_at is not null)) "
+            "and (executed_at is null or execution_status is not null))",
+            name="atom_execution",
+        ),
+        one_of("execution_status", "succeeded", "failed", "unknown"),
+        Index(
+            "ix_approvals_atom_ready",
+            "workspace_id",
+            "created_at",
+            postgresql_where=text(
+                "atom_id is not null and status = 'approved' "
+                "and execution_run_id is null and claimed_at is null"
+            ),
+        ),
         one_of("kind", "plan", "pull_request", "deploy", "action", "atom_action"),
         one_of("status", "pending", "approved", "rejected", "expired", "canceled"),
         tfk("run_id", "agent_runs", "set null"),

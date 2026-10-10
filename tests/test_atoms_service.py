@@ -79,6 +79,79 @@ class AtomServiceTest(unittest.TestCase):
             status="active",
         )
 
+    def test_stale_release_preserves_cursor_accounting_and_terminal_runs(self):
+        terminal = self.start()
+        terminal = self.caller(terminal).finish_run(
+            terminal["id"],
+            status="succeeded",
+            cost="0.2",
+            tokens_in=3,
+            cursor={"page": 2},
+            output={"result": "kept"},
+        )
+        run = self.start(1)
+        old = datetime.now(UTC) - timedelta(hours=1)
+        with workspace_session(ENGINE, str(self.ws["workspace_id"])) as session:
+            row = session.get(AgentRun, uuid.UUID(run["id"]))
+            row.started_at = old
+            row.cost, row.tokens_in, row.tokens_out = Decimal("0.5"), 8, 4
+            row.output = {"partial": "kept", "_actions": 2}
+            session.get(AgentRun, uuid.UUID(terminal["id"])).started_at = old
+            schedule = session.get(AtomSchedule, uuid.UUID(self.schedule["id"]))
+            before = (schedule.cursor, schedule.next_run_at, schedule.last_run_at)
+            session.add(
+                LlmUsage(
+                    workspace_id=self.ws["workspace_id"],
+                    run_id=uuid.UUID(run["id"]),
+                    member_id=uuid.UUID(self.atom["member_id"]),
+                    task_type="atom.call",
+                    model="small",
+                    input_tokens=8,
+                    output_tokens=4,
+                    cost_usd=Decimal("0.5"),
+                )
+            )
+        scheduler = AtomService(self.ws["workspace_id"], trusted=True, bind=ENGINE)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(
+                pool.map(
+                    lambda _: scheduler.release_stale(self.aid, older_than_seconds=900), range(2)
+                )
+            )
+        self.assertEqual(sorted(len(result["released_run_ids"]) for result in results), [0, 1])
+        self.assertIn({"released_run_ids": [run["id"]]}, results)
+        with workspace_session(ENGINE, str(self.ws["workspace_id"])) as session:
+            row = session.get(AgentRun, uuid.UUID(run["id"]))
+            self.assertEqual(row.status, "failed")
+            self.assertIsNotNone(row.ended_at)
+            self.assertEqual((row.cost, row.tokens_in, row.tokens_out), (Decimal("0.5"), 8, 4))
+            self.assertEqual(row.output, {"partial": "kept", "_actions": 2, "_released": "stale"})
+            done = session.get(AgentRun, uuid.UUID(terminal["id"]))
+            self.assertEqual((done.status, done.output), ("succeeded", terminal["output"]))
+            schedule = session.get(AtomSchedule, uuid.UUID(self.schedule["id"]))
+            self.assertEqual((schedule.cursor, schedule.next_run_at, schedule.last_run_at), before)
+            usage = list(session.scalars(select(LlmUsage).where(LlmUsage.run_id == row.id)))
+            self.assertEqual(len(usage), 1)
+            self.assertEqual(usage[0].cost_usd, Decimal("0.5"))
+        with self.assertRaises(PermissionError):
+            self.caller(run).load()
+        self.start(2)
+        self.assertEqual(
+            scheduler.release_stale(self.aid, older_than_seconds=900), {"released_run_ids": []}
+        )
+
+    def test_stale_release_requires_service_and_valid_age(self):
+        run = self.start()
+        for service in (self.service, self.caller(run)):
+            with self.assertRaises(PermissionError):
+                service.release_stale(self.aid, older_than_seconds=900)
+        scheduler = AtomService(self.ws["workspace_id"], trusted=True, bind=ENGINE)
+        for age in (899, -1, True, 900.5, 31536001):
+            with self.subTest(age=age), self.assertRaises(ValueError):
+                scheduler.release_stale(self.aid, older_than_seconds=age)
+        with self.assertRaises(LookupError):
+            scheduler.release_stale(uuid.uuid4(), older_than_seconds=900)
+
     def test_admin_lifecycle_and_immutable_candidate(self):
         other = self.service.propose(self.aid, "New instructions")
         self.assertEqual(other["version"], 2)
