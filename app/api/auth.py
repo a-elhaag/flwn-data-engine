@@ -33,6 +33,8 @@ class Principal:
     workspace_id: str | None = None
     scopes: frozenset[str] = frozenset()
     member_id: str | None = None  # who is acting, when known
+    atom_id: str | None = None
+    run_id: str | None = None
 
 
 def _service_key_valid(key: str | None) -> bool:
@@ -53,6 +55,8 @@ def _principal(x_data_api_key: str | None, authorization: str | None) -> Princip
             workspace_id=claims.workspace_id,
             scopes=claims.scopes,
             member_id=claims.member_id,
+            atom_id=claims.atom_id,
+            run_id=claims.run_id,
         )
     raise HTTPException(status_code=401, detail="Invalid data API key")
 
@@ -80,10 +84,10 @@ def service_only(
     return Principal(subject="service", service=True)
 
 
-def allow(scope: str | None):
+def allow(scope: str | None, *, allow_finished: bool = False):
     """Dependency factory. scope=None means service callers only."""
 
-    def dependency(
+    async def dependency(
         request: Request,
         workspace_id: WorkspaceId,
         x_data_api_key: Annotated[str | None, Header()] = None,
@@ -106,7 +110,31 @@ def allow(scope: str | None):
                 raise HTTPException(
                     status_code=403, detail="Member is not active in this workspace"
                 )
-        request.state.principal = principal  # the services built for this request read it
-        return principal
+        from app.atoms.access import (
+            AtomAccessError,
+            AtomContext,
+            bind_context,
+            is_atom_member,
+            validate_context,
+        )
+
+        context = None
+        if not principal.service:
+            if principal.atom_id:
+                context = AtomContext(
+                    str(workspace_id), principal.atom_id, principal.run_id, principal.member_id
+                )
+                try:
+                    validate_context(context, allow_finished=allow_finished)
+                except AtomAccessError as exc:
+                    raise HTTPException(status_code=403, detail=str(exc)) from exc
+            elif principal.member_id and is_atom_member(str(workspace_id), principal.member_id):
+                raise HTTPException(
+                    status_code=403, detail="Atom members require run-scoped tokens"
+                )
+        request.state.principal = principal
+        # Async yield keeps the ContextVar in the event-loop task copied into sync endpoints.
+        with bind_context(context):
+            yield principal
 
     return Depends(dependency)

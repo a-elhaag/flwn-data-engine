@@ -9,6 +9,7 @@ reinforced by recall, a confidence, associations between memories, and gradual f
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -231,6 +232,13 @@ class AgentRun(IdPk, Tenant, Created, Base):
     __tablename__ = "agent_runs"
 
     agent_id: Mapped[uuid.UUID]  # an AI member
+    atom_id: Mapped[uuid.UUID | None]
+    atom_version_id: Mapped[uuid.UUID | None]
+    schedule_id: Mapped[uuid.UUID | None]
+    idempotency_key: Mapped[str | None]
+    tokens_in: Mapped[int] = mapped_column(server_default="0")
+    tokens_out: Mapped[int] = mapped_column(server_default="0")
+    cost: Mapped[Decimal] = mapped_column(Numeric(12, 6), server_default="0")
     trigger: Mapped[str]
     triggered_by: Mapped[uuid.UUID | None]
     project_id: Mapped[uuid.UUID | None]
@@ -249,7 +257,17 @@ class AgentRun(IdPk, Tenant, Created, Base):
 
     __table_args__ = (
         tenant_unique(),
+        UniqueConstraint("workspace_id", "idempotency_key"),
         one_of("trigger", "chat", "ticket_event", "schedule", "user", "meeting", "webhook"),
+        CheckConstraint("atom_id is null or trigger = 'schedule'", name="atom_schedule_only"),
+        CheckConstraint(
+            "tokens_in >= 0 and tokens_out >= 0 and cost >= 0 and cost < 'Infinity'::numeric",
+            name="nonnegative_usage",
+        ),
+        tfk("atom_id", "atoms", "set null"),
+        tfk("atom_version_id", "atom_versions", "set null"),
+        tfk("schedule_id", "atom_schedules", "set null"),
+        Index("ix_agent_runs_atom_created", "workspace_id", "atom_id", "created_at"),
         one_of(
             "status", "queued", "running", "waiting_approval", "succeeded", "failed", "canceled"
         ),
@@ -339,7 +357,7 @@ class Approval(IdPk, Tenant, Created, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("kind", "plan", "pull_request", "deploy", "action"),
+        one_of("kind", "plan", "pull_request", "deploy", "action", "atom_action"),
         one_of("status", "pending", "approved", "rejected", "expired", "canceled"),
         tfk("run_id", "agent_runs", "set null"),
         tfk("report_id", "agent_reports", "set null"),

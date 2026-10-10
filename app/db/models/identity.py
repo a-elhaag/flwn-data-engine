@@ -20,6 +20,7 @@ from app.db.base import (
 )
 
 AGENT_KINDS = (
+    "atom",
     "team_agent",
     "ghost_engineer",
     "decision_ledger",

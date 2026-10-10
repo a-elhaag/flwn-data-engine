@@ -1,8 +1,13 @@
 # Data Engine update for the AI engine
 
 For the developers of `flwn-ai-engine`. This describes what the data engine (`flwn-data-engine`,
-branch `dev`) now offers, what changed under you, and what you need to update. The AI engine keeps
-the Decision Ledger and its LangGraph flows; the data engine is the place they read and write.
+historical `dev` migration) offers, what changed under you, and what you need to update. The AI
+engine keeps the Decision Ledger and its LangGraph flows; the data engine is the place they read
+and write.
+
+This guide preserves the memory-adapter migration and Decision Ledger guidance. For current
+scheduled atoms, use [ATOMS_AI_ENGINE_INTEGRATION.md](ATOMS_AI_ENGINE_INTEGRATION.md) instead:
+atom workers require run-scoped tokens, not the regular agent tokens described here.
 
 ## 1. Summary
 
@@ -21,7 +26,7 @@ the Decision Ledger and its LangGraph flows; the data engine is the place they r
 
 | Thing | Value |
 | --- | --- |
-| Base URL | `DATA_BASE_URL`, default `http://localhost:8002` (the service is not deployed to a host yet) |
+| Base URL | `DATA_BASE_URL`, default `http://localhost:8002` locally; use the verified deployment URL for hosted environments |
 | Service auth | `X-Data-API-Key: <DATA_API_KEY>` |
 | Remember | `POST /workspaces/{ws}/memories` with `{text, source, agent}` returns `{point_id, deduplicated}` |
 | Recall | `POST /workspaces/{ws}/memories/recall` with `{query, agent, limit}` returns a list of `{id, text, source, agent, score}` |
@@ -152,11 +157,10 @@ live captions), `PUT /meetings/{id}/transcript`, which needs the host or the tru
 everyone's recorded consent. A transcript from a recording always wins over a supplied one. Turning a
 transcript into memories is yours to do: summarise, then remember with `source="meeting"`.
 
-**MCP server at `/mcp`** ([MEMORY_TOOLS.md](MEMORY_TOOLS.md)). Bearer-token auth only (no service
-key). Tools: `memory_remember`, `memory_recall`, `memory_open`, `memory_browse`, `memory_revise`,
-`memory_forget`, `memory_ingest`, `memory_anchor`, `memory_pulse`, `memory_cleanup`, `files_search`,
-`meeting_transcript`, `conflict_flag`, `conflicts_list`. If your LangGraph nodes use an MCP client, you can drop the hand-written adapter
-for these and mint one token per agent.
+**MCP server at `/mcp`**. Bearer-token auth only (no service key). See the tool references in
+[MEMORY_TOOLS.md](MEMORY_TOOLS.md) and [MEETINGS_API.md](MEETINGS_API.md) rather than maintaining
+a second tool inventory here. If your LangGraph nodes use an MCP client, you can drop the
+hand-written adapter for these and mint one token per regular agent.
 
 ## 6. Error codes to handle
 
@@ -187,7 +191,6 @@ Model calls on the data engine side retry timeouts and 429/5xx answers. Your sid
 
 ## 8. Not available yet
 
-- The data engine has no deployed host; run it locally or tell us where it should live.
 - No CRUD routes for workspaces, members, teams, projects, tasks, comments, docs or chat.
 - No relevance cut-off on recall or file search.
 - Audio and video over 100 MB, and other files over 50 MB, are skipped; old `.doc` files are not read.

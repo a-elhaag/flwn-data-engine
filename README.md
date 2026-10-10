@@ -58,7 +58,8 @@ app/
     erd.py             draws the schema as an interactive graph
 tests/                 unit and database tests
 docs/                  API and design documents
-infra/provision.sh     the Azure resources, as code
+infra/provision.sh     PostgreSQL and Blob Storage provisioning
+infra/deploy.sh        ACR, networking and Azure Container Apps deployment
 .github/workflows/     CI
 ```
 
@@ -75,11 +76,20 @@ bash run.sh                   # API on http://localhost:8002 (docs at /docs)
 Other commands: `bash run.sh test`, `bash run.sh lint`, `bash run.sh ready` (live dependency
 check), `bash run.sh erd` (rebuild `docs/schema-graph.html`).
 
-### Database: no migrations
+### Database installation and Atoms upgrade
 
-The database was created fresh, so the models are the schema. `python -m app.db.install` creates
-whatever is missing and is safe to re-run; `--reset` drops every table first (development only).
-When the schema must change on a database that holds real data, add Alembic then.
+Use `python -m app.db.install` for a fresh database; it does not alter existing tables.
+For an existing legacy database, take a backup, then run the admin upgrade **before app rollout**:
+
+```sh
+python -m app.db.upgrade_atoms --app-role flwn_app
+```
+
+The upgrade requires `DATABASE_ADMIN_URL` (no fallback to `DATABASE_URL`). Set `--app-role` to
+the runtime database role, replacing `flwn_app` if needed. It is additive, transactional and
+idempotent, uses bounded locks, and preserves rows and the existing role's login/password.
+Never use `--reset` on an existing database. Rolling back to the old image leaves the additive
+schema in place. See [Atoms installation](docs/ATOMS_API.md#installation-and-verification).
 
 ## Configuration
 
@@ -88,7 +98,7 @@ See `.env.example`. The settings that matter most:
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | What the API connects as. **Must not be a superuser or `BYPASSRLS` role**, or workspace isolation is silently off. Azure's admin role has `BYPASSRLS`. |
-| `DATABASE_ADMIN_URL` | Used only to install the schema; may be the admin role. |
+| `DATABASE_ADMIN_URL` | Administrative schema installation/upgrade connection; required by the Atoms upgrade. Never use it for the API. |
 | `AZURE_STORAGE_ACCOUNT_URL` | Enables the file routes. Access is by Entra ID, no keys. |
 | `AZURE_FOUNDRY_*`, `EMBEDDING_DEPLOYMENT` | Chat and embedding models. |
 | `MEMORY_TOKEN_SECRET` | 32+ characters. Enables agent tokens and `/mcp`. |
@@ -104,13 +114,20 @@ with private containers `workspace-files`, `chat-media`, `meeting-recordings` an
 
 ## CI
 
-`.github/workflows/ci.yml` runs on every push and pull request: lint and format check, the test
-suite against a pgvector Postgres service, then a Docker build with a health-check smoke test.
-Deployment is not automated yet: it needs a container registry and a host (for example Azure
-Container Apps), which are not provisioned.
+`.github/workflows/ci.yml` runs on pushes to `main` and pull requests: lint and format check,
+the test suite against a pgvector Postgres service, then a Docker build with a health-check
+smoke test. CI does not deploy.
+
+[`infra/deploy.sh`](infra/deploy.sh) provides a manual Azure Container Apps deployment path
+after [`infra/provision.sh`](infra/provision.sh): it creates ACR, a managed identity, networking
+and private endpoints, builds the image in ACR, and creates or updates the app. It reads secrets
+from the gitignored `.env`. These scripts describe deployment intent; their presence does not
+confirm that resources are provisioned or that a deployment is healthy.
 
 ## Docs
 
+- [`docs/ATOMS_API.md`](docs/ATOMS_API.md): atom administration, MCP tools, run tokens, grants and soft deletion.
+- [`docs/ATOMS_AI_ENGINE_INTEGRATION.md`](docs/ATOMS_AI_ENGINE_INTEGRATION.md): AI-engine scheduler/worker handoff, request examples, retries and acceptance checklist.
 - [`docs/MEMORY_API.md`](docs/MEMORY_API.md): memory routes, auth, behavior, limits.
 - [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and the agent usage guide.
 - [`docs/AI_ENGINE_UPDATE.md`](docs/AI_ENGINE_UPDATE.md): what the AI engine must update.

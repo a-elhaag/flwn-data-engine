@@ -3,6 +3,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from app.atoms.access import AtomAccessError
 from app.decisions.errors import ConflictNotFound, ConflictStateError, HumanRequired
 from app.meetings.errors import (
     ConsentMissing,
@@ -36,6 +37,7 @@ def _reply(status: int, detail: str | None = None):
 
 
 def register(app: FastAPI) -> None:
+    app.add_exception_handler(AtomAccessError, _reply(403))
     app.add_exception_handler(MemoryNotFound, _reply(404, "Memory not found"))
     app.add_exception_handler(WorkspaceNotFound, _reply(404, "Workspace not found"))
     app.add_exception_handler(

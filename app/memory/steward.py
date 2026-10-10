@@ -121,6 +121,19 @@ class MemorySteward:
         self.actor = str(uuid.UUID(actor)) if actor else None
 
     def _log(self, store: MemoryStore, entity_id, action: str, **changes) -> None:
+        from app.atoms.access import current_context
+
+        if current_context() is not None:
+            import json
+
+            from sqlalchemy import text
+
+            store.session.flush()
+            store.session.execute(
+                text("select atom_record_memory_event(:id,:action,cast(:changes as jsonb))"),
+                {"id": entity_id, "action": action, "changes": json.dumps(changes)},
+            )
+            return
         events.record(
             store.session, self.workspace_id, self.actor, "memory", entity_id, action, changes
         )
@@ -155,7 +168,9 @@ class MemorySteward:
         now = time.time()
         threshold = settings.MEMORY_DEDUP_THRESHOLD
         if threshold <= 1.0:
-            hits = store.search(vector, 1)
+            from app.atoms.access import current_context
+
+            hits = store.search(vector, 1, writable=current_context() is not None)
             if hits and hits[0][1] >= threshold:
                 existing = hits[0][0]
                 store.refresh(existing, now, prepared.importance)

@@ -559,6 +559,15 @@ class McpTests(MemoryHarness):
                 "meeting_transcript",
                 "conflict_flag",
                 "conflicts_list",
+                "atom_load",
+                "atom_run_start",
+                "atom_run_finish",
+                "atom_propose_version",
+                "skills_search",
+                "skill_write",
+                "skill_attach",
+                "atom_connection_report",
+                "aggregate_read",
             },
         )
         for tool in response.json()["result"]["tools"]:

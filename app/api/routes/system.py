@@ -32,10 +32,31 @@ def mint_token(request: TokenRequest) -> TokenResponse:
         raise HTTPException(
             status_code=422, detail="Member not found or not active in this workspace"
         )
+    from app.atoms.access import AtomAccessError, AtomContext, is_atom_member, validate_context
+
+    atom_id = str(request.atom_id) if request.atom_id else None
+    run_id = str(request.run_id) if request.run_id else None
     try:
+        if atom_id or run_id:
+            if not (member_id and atom_id and run_id):
+                raise tokens.TokenError("atom tokens require atom_id, run_id and member_id")
+            validate_context(AtomContext(workspace_id, atom_id, run_id, member_id))
+        elif member_id and is_atom_member(workspace_id, member_id):
+            raise tokens.TokenError("Atom members require run-scoped tokens")
+        ttl_seconds = request.ttl_seconds
+        if atom_id and "ttl_seconds" not in request.model_fields_set:
+            ttl_seconds = 900
         token, expires_at = tokens.mint(
-            workspace_id, set(request.scopes), request.subject, request.ttl_seconds, member_id
+            workspace_id,
+            set(request.scopes),
+            request.subject,
+            ttl_seconds,
+            member_id,
+            atom_id=atom_id,
+            run_id=run_id,
         )
+    except AtomAccessError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except tokens.TokenError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return TokenResponse(token=token, expires_at=expires_at)

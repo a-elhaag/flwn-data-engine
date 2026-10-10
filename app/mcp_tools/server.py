@@ -9,7 +9,9 @@ import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict
-from typing import Annotated, Any
+from datetime import datetime
+from decimal import Decimal
+from typing import Annotated, Any, Literal
 
 import anyio
 from mcp.server.fastmcp import Context, FastMCP
@@ -51,6 +53,15 @@ TOOL_NAMES = (
     "meeting_transcript",
     "conflict_flag",
     "conflicts_list",
+    "atom_load",
+    "atom_run_start",
+    "atom_run_finish",
+    "atom_propose_version",
+    "skills_search",
+    "skill_write",
+    "skill_attach",
+    "atom_connection_report",
+    "aggregate_read",
 )
 
 Text = Annotated[str, Field(min_length=1, max_length=20000, pattern=r"\S")]
@@ -123,9 +134,18 @@ async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], A
     logger.info("mcp: tool=%s workspace=%s subject=%s", tool, claims.workspace_id, claims.subject)
 
     def work():
+        from app.atoms.access import AtomContext, bind_context, validate_context
+
+        context = None
+        if claims.atom_id:
+            context = AtomContext(
+                claims.workspace_id, claims.atom_id, claims.run_id, claims.member_id
+            )
+            validate_context(context, allow_finished=tool == "atom_run_finish")
         if claims.member_id and not members.is_active(claims.workspace_id, claims.member_id):
             raise PermissionError("Member is not active in this workspace")
-        return fn(claims)
+        with bind_context(context):
+            return fn(claims)
 
     try:
         return await anyio.to_thread.run_sync(work)
@@ -526,6 +546,242 @@ async def conflicts_list(
         lambda c: ConflictService(c.workspace_id, actor=c.member_id).list(status, None, limit),
     )
     return {"conflicts": [asdict(item) for item in page.items]}
+
+
+def _atom_service(claims: Claims):
+    from app.atoms.service import AtomService
+
+    if not claims.atom_id or not claims.run_id:
+        raise PermissionError("This tool requires a run-scoped atom token")
+    return AtomService(
+        claims.workspace_id,
+        actor=claims.member_id,
+        atom_id=claims.atom_id,
+        run_id=claims.run_id,
+    )
+
+
+@_tool(
+    name="atom_load",
+    annotations=READ_ONLY,
+    description="Load this atom's active configuration, pinned skills, grants and schedules.",
+)
+async def atom_load(ctx: Context) -> dict:
+    return await _guarded(
+        ctx, "atoms:read", "atom_load", lambda c: _atom_service(c).load(c.atom_id)
+    )
+
+
+@_tool(
+    name="atom_run_start",
+    annotations=WRITES,
+    description="Resume the token-bound scheduled run idempotently. The trusted scheduler starts the run before minting its token.",
+)
+async def atom_run_start(
+    schedule_id: uuid.UUID,
+    scheduled_for: datetime,
+    idempotency_key: Label,
+    ctx: Context,
+) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_run_start",
+        lambda c: _atom_service(c).run_start(
+            c.atom_id,
+            schedule_id=str(schedule_id),
+            scheduled_for=scheduled_for,
+            idempotency_key=idempotency_key,
+        ),
+    )
+
+
+@_tool(
+    name="atom_run_finish",
+    annotations=WRITES,
+    description="Finish the bound run once, reconcile usage and advance its cursor only on success. Repeated finishes do not charge twice.",
+)
+async def atom_run_finish(
+    status: Literal["succeeded", "failed", "canceled"],
+    ctx: Context,
+    output: dict | None = None,
+    tokens_in: Annotated[int, Field(ge=0)] = 0,
+    tokens_out: Annotated[int, Field(ge=0)] = 0,
+    cost: Annotated[Decimal, Field(ge=0, allow_inf_nan=False)] = Decimal("0"),
+    cursor: dict | None = None,
+    actions_count: Annotated[int, Field(ge=0)] = 0,
+) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_run_finish",
+        lambda c: _atom_service(c).run_finish(
+            c.run_id,
+            status=status,
+            output=output or {},
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cost=cost,
+            cursor=cursor,
+            actions_count=actions_count,
+        ),
+    )
+
+
+@_tool(
+    name="atom_propose_version",
+    annotations=WRITES,
+    description="Propose a new candidate version for this atom. Only a human admin can activate it.",
+)
+async def atom_propose_version(
+    instructions: Text,
+    ctx: Context,
+    policy: dict | None = None,
+    tools: list[dict] | None = None,
+) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:propose",
+        "atom_propose_version",
+        lambda c: _atom_service(c).propose(
+            c.atom_id,
+            instructions=instructions,
+            policy=policy or {},
+            tools=tools or [],
+        ),
+    )
+
+
+@_tool(
+    name="atom_connection_report",
+    annotations=WRITES,
+    description="Report an expired, revoked or unknown own connection. Three distinct failed runs pause the atom; retries are deduplicated. Cannot activate a connection or change permissions.",
+)
+async def atom_connection_report(
+    connection_id: uuid.UUID,
+    status: Literal["expired", "revoked", "unknown"],
+    ctx: Context,
+    detail: Annotated[str | None, Field(max_length=2000)] = None,
+) -> dict:
+    return await _guarded(
+        ctx,
+        "atoms:run",
+        "atom_connection_report",
+        lambda c: _atom_service(c).connection_report(
+            c.run_id,
+            connection_id=str(connection_id),
+            status=status,
+            detail=detail,
+        ),
+    )
+
+
+def _skill_service(claims: Claims):
+    from app.atoms.skills import SkillService
+
+    return SkillService(
+        claims.workspace_id, actor=claims.member_id, atom_id=claims.atom_id, run_id=claims.run_id
+    )
+
+
+@_tool(
+    name="skills_search",
+    annotations=READ_ONLY,
+    description="Hybrid search of accessible skill metadata. Community results are explicitly flagged; instructions are not returned by search.",
+)
+async def skills_search(
+    query: Label, ctx: Context, limit: Annotated[int, Field(ge=1, le=50)] = 5
+) -> dict:
+    return await _guarded(
+        ctx,
+        "skills:read",
+        "skills_search",
+        lambda c: {"skills": _skill_service(c).search(query, limit=limit)},
+    )
+
+
+@_tool(
+    name="skill_write",
+    annotations=WRITES,
+    description="Write a versioned workspace or personal skill. Tool requirements use ref and minimum_permission; writing never grants more connection privileges.",
+)
+async def skill_write(
+    name: Label,
+    description: Text,
+    when_to_use: Text,
+    instructions: Text,
+    scope: Literal["workspace", "personal"],
+    ctx: Context,
+    version: Annotated[int, Field(ge=1)] = 1,
+    tools_required: list[dict] | None = None,
+) -> dict:
+    return await _guarded(
+        ctx,
+        "skills:write",
+        "skill_write",
+        lambda c: _skill_service(c).write(
+            name,
+            description,
+            when_to_use,
+            instructions,
+            scope=scope,
+            version=version,
+            tools_required=tools_required or [],
+        ),
+    )
+
+
+@_tool(
+    name="skill_attach",
+    annotations=WRITES,
+    description="Attach an exact skill version to this atom, only within active connection ceilings and allowed tool slugs. Does not activate a candidate atom version.",
+)
+async def skill_attach(
+    skill_id: uuid.UUID,
+    skill_version: Annotated[int, Field(ge=1)],
+    ctx: Context,
+    catalog: bool = False,
+) -> dict:
+    def attach(c):
+        if not c.atom_id:
+            raise PermissionError("This tool requires a run-scoped atom token")
+        return _skill_service(c).attach(str(skill_id), skill_version=skill_version, catalog=catalog)
+
+    return await _guarded(ctx, "skills:write", "skill_attach", attach)
+
+
+@_tool(
+    name="aggregate_read",
+    annotations=READ_ONLY,
+    description="Return counts, safe groupings or time trends permitted by live summary/read/write grants. Never returns raw row IDs, titles or bodies.",
+)
+async def aggregate_read(
+    resource_type: Literal[
+        "project", "team", "collection", "channel", "folder", "memory", "meeting", "connection"
+    ],
+    ctx: Context,
+    resource_id: uuid.UUID | None = None,
+    group_by: str | None = None,
+    trend: str | None = None,
+) -> dict:
+    from app.atoms.aggregate import AggregateService
+
+    return await _guarded(
+        ctx,
+        "aggregate:read",
+        "aggregate_read",
+        lambda c: AggregateService(
+            c.workspace_id,
+            actor=c.member_id,
+            atom_id=c.atom_id,
+            run_id=c.run_id,
+        ).read(
+            resource_type,
+            resource_id=str(resource_id) if resource_id else None,
+            group_by=group_by,
+            trend=trend,
+        ),
+    )
 
 
 class BearerGate:

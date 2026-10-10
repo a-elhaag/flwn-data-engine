@@ -50,12 +50,28 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
 
     `service=True` lifts the workspace restriction for trusted admin work that spans workspaces.
     """
+    from app.atoms.access import AtomAccessError, current_context
+
+    atom = current_context()
+    if atom and (service or str(workspace_id) != str(atom.workspace_id)):
+        raise AtomAccessError("Atom context cannot cross workspaces or enable service mode")
     with sessionmaker(bind, expire_on_commit=False)() as session, session.begin():
         session.execute(
             text(
-                "select set_config('app.workspace_id', :ws, true), set_config('app.service', :svc, true)"
+                "select set_config('app.workspace_id', :ws, true), "
+                "set_config('app.service', :svc, true), "
+                "set_config('app.atom_id', :atom, true), "
+                "set_config('app.run_id', :run, true), "
+                "set_config('app.member_id', :member, true), "
+                "set_config('app.atom_aggregate', 'off', true)"
             ),
-            {"ws": workspace_id, "svc": "on" if service else "off"},
+            {
+                "ws": str(workspace_id),
+                "svc": "on" if service else "off",
+                "atom": str(atom.atom_id) if atom else "",
+                "run": str(atom.run_id) if atom else "",
+                "member": str(atom.member_id) if atom else "",
+            },
         )
         yield session
 

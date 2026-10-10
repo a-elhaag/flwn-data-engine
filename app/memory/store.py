@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 import psycopg
 from sqlalchemy import delete, func, select, update
+from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, undefer
 
@@ -56,14 +57,40 @@ class MemoryStore:
         created_by: str | None = None,
         kind: str = "fact",
         scope: str = "workspace",
+        owner_member_id: uuid.UUID | None = None,
         team_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None = None,
         status: str = "active",
     ) -> Memory:
+        from app.atoms.access import current_context, require_row_access
+
+        context = current_context()
+        memory_id = uuid.uuid4()
+        if context is not None:
+            scope = "agent"
+            owner_member_id = _as_uuid(context.member_id)
+            created_by = context.member_id
+            require_row_access(
+                self.session,
+                "memories",
+                {
+                    "id": memory_id,
+                    "workspace_id": self.workspace_id,
+                    "scope": scope,
+                    "owner_member_id": owner_member_id,
+                    "created_by": created_by,
+                    "team_id": team_id,
+                    "project_id": project_id,
+                    "created_at": to_datetime(now),
+                },
+                level="write",
+            )
         row = Memory(
+            id=memory_id,
             workspace_id=self.workspace_id,
             kind=kind,
             scope=scope,
+            owner_member_id=owner_member_id,
             team_id=team_id,
             project_id=project_id,
             status=status,
@@ -144,7 +171,12 @@ class MemoryStore:
         return self.session.scalars(query).one_or_none()
 
     def search(
-        self, embedding: list[float], limit: int, sources: list[str] | None = None
+        self,
+        embedding: list[float],
+        limit: int,
+        sources: list[str] | None = None,
+        *,
+        writable: bool = False,
     ) -> list[tuple[Memory, float]]:
         """Nearest memories by cosine similarity (1.0 = identical), superseded ones hidden."""
         distance = Memory.embedding.cosine_distance(embedding)
@@ -160,6 +192,8 @@ class MemoryStore:
         )
         if sources:
             query = query.where(Memory.source_type.in_(sources))
+        if writable:
+            query = query.where(sql_text("atom_row_allowed('memories',to_jsonb(memories),'write')"))
         tune_vector_search(self.session, limit)
         return [(row, float(score)) for row, score in self.session.execute(query)]
 

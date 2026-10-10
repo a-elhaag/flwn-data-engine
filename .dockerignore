@@ -3,6 +3,10 @@
 .env
 .env.*
 .venv
+.ruff_cache
+.pytest_cache
+.code-review-graph
+.atoms-test-runtime
 __pycache__
 tests
 docs

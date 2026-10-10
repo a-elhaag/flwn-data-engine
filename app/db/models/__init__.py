@@ -1,3 +1,3 @@
 """Importing this package registers every model on Base.metadata."""
 
-from app.db.models import collab, files, identity, meetings, memory, planning  # noqa: F401
+from app.db.models import atoms, collab, files, identity, meetings, memory, planning  # noqa: F401
