@@ -82,7 +82,6 @@ def upgrade() -> None:
     sa.UniqueConstraint('id', 'organization_id', name=op.f('uq_members_id_organization_id')),
     sa.UniqueConstraint('organization_id', 'user_id', name=op.f('uq_members_organization_id_user_id'))
     )
-    op.create_index('ix_members_user_id', 'members', ['user_id'], unique=False, postgresql_where=sa.text('user_id IS NOT NULL'))
     op.create_index('uq_members_organization_id_email_ai', 'members', ['organization_id', sa.literal_column('lower(email)')], unique=True, postgresql_where=sa.text("type = 'AI' AND email IS NOT NULL"))
     op.create_index('uq_members_organization_id_name_ai', 'members', ['organization_id', sa.literal_column('lower(name)')], unique=True, postgresql_where=sa.text("type = 'AI'"))
     op.create_table('workspaces',
@@ -273,7 +272,6 @@ def downgrade() -> None:
         op.f('fk_members_workspace_id_organization_id_workspaces'), 'members', type_='foreignkey'
     )
     op.drop_table('workspaces')
-    op.drop_index('ix_members_user_id', table_name='members', postgresql_where=sa.text('user_id IS NOT NULL'))
     op.drop_index('uq_members_organization_id_name_ai', table_name='members', postgresql_where=sa.text("type = 'AI'"))
     op.drop_index('uq_members_organization_id_email_ai', table_name='members', postgresql_where=sa.text("type = 'AI' AND email IS NOT NULL"))
     op.drop_table('members')
