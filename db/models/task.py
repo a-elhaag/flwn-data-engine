@@ -6,11 +6,9 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKeyConstraint,
-    Index,
     Integer,
     String,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -50,22 +48,6 @@ class Task(IdMixin, TimestampMixin, Base):
             "(status = 'DONE') = (completed_at IS NOT NULL)", name="done_completed"
         ),
         CheckConstraint("char_length(btrim(title)) > 0", name="title_not_blank"),
-        Index("ix_tasks_project_id_status", "project_id", "status"),
-        Index(
-            "ix_tasks_sprint_id",
-            "sprint_id",
-            postgresql_where=text("sprint_id IS NOT NULL"),
-        ),
-        Index(
-            "ix_tasks_work_item_id",
-            "work_item_id",
-            postgresql_where=text("work_item_id IS NOT NULL"),
-        ),
-        Index(
-            "ix_tasks_assignee_id",
-            "assignee_id",
-            postgresql_where=text("assignee_id IS NOT NULL"),
-        ),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))

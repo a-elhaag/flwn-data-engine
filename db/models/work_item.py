@@ -4,7 +4,6 @@ from sqlalchemy import (
     CheckConstraint,
     Enum,
     ForeignKeyConstraint,
-    Index,
     String,
     UniqueConstraint,
 )
@@ -28,7 +27,6 @@ class WorkItem(IdMixin, TimestampMixin, Base):
             ["members.id", "members.organization_id"],
         ),
         CheckConstraint("char_length(btrim(title)) > 0", name="title_not_blank"),
-        Index("ix_work_items_project_id_status", "project_id", "status"),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))

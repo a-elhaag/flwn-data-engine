@@ -72,7 +72,6 @@ class ProjectTeam(Base):
         ForeignKeyConstraint(
             ["team_id", "organization_id"], ["teams.id", "teams.organization_id"]
         ),
-        Index("ix_project_teams_team_id", "team_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))

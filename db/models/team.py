@@ -63,7 +63,6 @@ class TeamMember(Base):
             ["member_id", "organization_id"],
             ["members.id", "members.organization_id"],
         ),
-        Index("ix_team_members_member_id", "member_id"),
     )
 
     team_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))

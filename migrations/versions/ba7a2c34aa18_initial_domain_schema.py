@@ -157,7 +157,6 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['team_id', 'organization_id'], ['teams.id', 'teams.organization_id'], name=op.f('fk_project_teams_team_id_organization_id_teams')),
     sa.PrimaryKeyConstraint('project_id', 'team_id', name=op.f('pk_project_teams'))
     )
-    op.create_index('ix_project_teams_team_id', 'project_teams', ['team_id'], unique=False)
     op.create_table('team_members',
     sa.Column('team_id', sa.UUID(), nullable=False),
     sa.Column('member_id', sa.UUID(), nullable=False),
@@ -168,7 +167,6 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['team_id', 'organization_id'], ['teams.id', 'teams.organization_id'], name=op.f('fk_team_members_team_id_organization_id_teams')),
     sa.PrimaryKeyConstraint('team_id', 'member_id', name=op.f('pk_team_members'))
     )
-    op.create_index('ix_team_members_member_id', 'team_members', ['member_id'], unique=False)
     op.create_table('work_items',
     sa.Column('organization_id', sa.UUID(), nullable=False),
     sa.Column('project_id', sa.UUID(), nullable=False),
@@ -187,7 +185,6 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id', name=op.f('pk_work_items')),
     sa.UniqueConstraint('id', 'project_id', name=op.f('uq_work_items_id_project_id'))
     )
-    op.create_index('ix_work_items_project_id_status', 'work_items', ['project_id', 'status'], unique=False)
     op.create_table('sprints',
     sa.Column('organization_id', sa.UUID(), nullable=False),
     sa.Column('project_id', sa.UUID(), nullable=False),
@@ -241,27 +238,16 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id', name=op.f('pk_tasks')),
     sa.UniqueConstraint('project_id', 'number', name=op.f('uq_tasks_project_id_number'))
     )
-    op.create_index('ix_tasks_assignee_id', 'tasks', ['assignee_id'], unique=False, postgresql_where=sa.text('assignee_id IS NOT NULL'))
-    op.create_index('ix_tasks_project_id_status', 'tasks', ['project_id', 'status'], unique=False)
-    op.create_index('ix_tasks_sprint_id', 'tasks', ['sprint_id'], unique=False, postgresql_where=sa.text('sprint_id IS NOT NULL'))
-    op.create_index('ix_tasks_work_item_id', 'tasks', ['work_item_id'], unique=False, postgresql_where=sa.text('work_item_id IS NOT NULL'))
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index('ix_tasks_work_item_id', table_name='tasks', postgresql_where=sa.text('work_item_id IS NOT NULL'))
-    op.drop_index('ix_tasks_sprint_id', table_name='tasks', postgresql_where=sa.text('sprint_id IS NOT NULL'))
-    op.drop_index('ix_tasks_project_id_status', table_name='tasks')
-    op.drop_index('ix_tasks_assignee_id', table_name='tasks', postgresql_where=sa.text('assignee_id IS NOT NULL'))
     op.drop_table('tasks')
     op.drop_index('uq_sprints_project_id_team_id_name', table_name='sprints')
     op.drop_index('uq_sprints_project_id_team_id_active', table_name='sprints', postgresql_where=sa.text("status = 'ACTIVE'"))
     op.drop_table('sprints')
-    op.drop_index('ix_work_items_project_id_status', table_name='work_items')
     op.drop_table('work_items')
-    op.drop_index('ix_team_members_member_id', table_name='team_members')
     op.drop_table('team_members')
-    op.drop_index('ix_project_teams_team_id', table_name='project_teams')
     op.drop_table('project_teams')
     op.drop_index('uq_teams_workspace_id_name_active', table_name='teams', postgresql_where=sa.text('archived_at IS NULL'))
     op.drop_table('teams')
