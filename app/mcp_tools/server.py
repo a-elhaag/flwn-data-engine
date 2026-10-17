@@ -128,6 +128,27 @@ async def _run(ctx: Context, scope: str, tool: str, fn: Callable[[MemorySteward]
     )
 
 
+def _agent(claims: Claims, supplied: str | None) -> str:
+    """The storing-agent label. An atom's label comes from its token, so a model cannot pick or spoof it."""
+    if claims.atom_id:
+        return f"atom:{claims.atom_id}"
+    if not supplied or not supplied.strip():
+        raise ValueError("agent is required")
+    return supplied
+
+
+async def _run_as_agent(ctx: Context, scope: str, tool: str, supplied: str | None, fn):
+    """Like _run, but fn also gets the agent label to use."""
+    return await _guarded(
+        ctx,
+        scope,
+        tool,
+        lambda claims: fn(
+            MemorySteward(claims.workspace_id, actor=claims.member_id), _agent(claims, supplied)
+        ),
+    )
+
+
 async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], Any]):
     """Run `fn` for the token's workspace, after checking the scope and that the member is active."""
     try:
@@ -142,7 +163,11 @@ async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], A
         context = None
         if claims.atom_id:
             context = AtomContext(
-                claims.workspace_id, claims.atom_id, claims.run_id, claims.member_id
+                claims.workspace_id,
+                claims.atom_id,
+                claims.run_id,
+                claims.member_id,
+                claims.ctx or "",
             )
             validate_context(
                 context,
@@ -232,16 +257,21 @@ async def memory_remember(
             pattern=r"\S",
         ),
     ],
-    agent: Annotated[
-        str, Field(description="Your agent name.", min_length=1, max_length=200, pattern=r"\S")
-    ],
     ctx: Context,
+    agent: Annotated[
+        str | None,
+        Field(
+            description="Your agent name. Atoms may omit it: the server uses the atom's id.",
+            max_length=200,
+        ),
+    ] = None,
 ) -> dict:
-    result = await _run(
+    result = await _run_as_agent(
         ctx,
         tokens.SCOPE_WRITE,
         "memory_remember",
-        lambda s: s.remember_detailed(text, source, agent),
+        agent,
+        lambda s, label: s.remember_detailed(text, source, label),
     )
     return {"id": result.point_id, "deduplicated": result.deduplicated}
 
@@ -260,20 +290,25 @@ async def memory_recall(
         str,
         Field(description="What you want to know.", min_length=1, max_length=2000, pattern=r"\S"),
     ],
-    agent: Annotated[
-        str, Field(description="Your agent name.", min_length=1, max_length=200, pattern=r"\S")
-    ],
     ctx: Context,
+    agent: Annotated[
+        str | None,
+        Field(
+            description="Your agent name. Atoms may omit it: the server uses the atom's id.",
+            max_length=200,
+        ),
+    ] = None,
     limit: Annotated[int, Field(ge=1, le=100, description="Max results.")] = 5,
     sources: Annotated[
         list[str] | None, Field(description="Only these sources, e.g. ['decision'].", max_length=20)
     ] = None,
 ) -> dict:
-    results = await _run(
+    results = await _run_as_agent(
         ctx,
         tokens.SCOPE_READ,
         "memory_recall",
-        lambda s: s.recall(query, agent, limit, sources),
+        agent,
+        lambda s, label: s.recall(query, label, limit, sources),
     )
     return {
         "memories": [
@@ -378,17 +413,28 @@ async def memory_ingest(
     ],
     ctx: Context,
 ) -> dict:
-    cleaned = []
     for item in items:
         if not all(
-            isinstance(item.get(key), str) and item[key].strip()
-            for key in ("text", "source", "agent")
+            isinstance(item.get(key), str) and item[key].strip() for key in ("text", "source")
         ):
-            raise ValueError("each item needs non-blank text, source, and agent")
+            raise ValueError("each item needs non-blank text and source")
         if len(item["text"]) > 20000:
             raise ValueError("item text exceeds 20000 characters")
-        cleaned.append({key: item[key] for key in ("text", "source", "agent")})
-    results = await _run(ctx, tokens.SCOPE_WRITE, "memory_ingest", lambda s: s.ingest(cleaned))
+    results = await _guarded(
+        ctx,
+        tokens.SCOPE_WRITE,
+        "memory_ingest",
+        lambda claims: MemorySteward(claims.workspace_id, actor=claims.member_id).ingest(
+            [
+                {
+                    "text": item["text"],
+                    "source": item["source"],
+                    "agent": _agent(claims, item.get("agent")),
+                }
+                for item in items
+            ]
+        ),
+    )
     return {"results": [{"id": r.point_id, "deduplicated": r.deduplicated} for r in results]}
 
 

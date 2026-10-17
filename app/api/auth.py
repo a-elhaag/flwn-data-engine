@@ -35,6 +35,7 @@ class Principal:
     member_id: str | None = None  # who is acting, when known
     atom_id: str | None = None
     run_id: str | None = None
+    ctx: str | None = None
 
 
 def _service_key_valid(key: str | None) -> bool:
@@ -57,6 +58,7 @@ def _principal(x_data_api_key: str | None, authorization: str | None) -> Princip
             member_id=claims.member_id,
             atom_id=claims.atom_id,
             run_id=claims.run_id,
+            ctx=claims.ctx,
         )
     raise HTTPException(status_code=401, detail="Invalid data API key")
 
@@ -122,7 +124,11 @@ def allow(scope: str | None, *, allow_finished: bool = False):
         if not principal.service:
             if principal.atom_id:
                 context = AtomContext(
-                    str(workspace_id), principal.atom_id, principal.run_id, principal.member_id
+                    str(workspace_id),
+                    principal.atom_id,
+                    principal.run_id,
+                    principal.member_id,
+                    principal.ctx or "",
                 )
                 try:
                     validate_context(context, allow_finished=allow_finished)

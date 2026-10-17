@@ -63,6 +63,7 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
                 "set_config('app.atom_id', :atom, true), "
                 "set_config('app.run_id', :run, true), "
                 "set_config('app.member_id', :member, true), "
+                "set_config('app.ctx', :ctx, true), "
                 "set_config('app.atom_aggregate', 'off', true)"
             ),
             {
@@ -71,6 +72,7 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
                 "atom": str(atom.atom_id) if atom else "",
                 "run": str(atom.run_id) if atom else "",
                 "member": str(atom.member_id) if atom else "",
+                "ctx": atom.ctx if atom else "",
             },
         )
         yield session

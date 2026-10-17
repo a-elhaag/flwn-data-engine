@@ -15,6 +15,8 @@ language sql stable security definer set search_path = pg_catalog, public as $$
           and r.id = nullif(current_setting('app.run_id', true), '')::uuid
           and m.type = 'AI' and m.agent_kind = 'atom' and m.status = 'active'
           and m.deleted_at is null and a.deleted_at is null
+          and (nullif(current_setting('app.ctx', true), '') is null
+               or current_setting('app.ctx', true) = a.kind)
           and a.status in ('active', 'paused')
           and (r.status in ('running', 'waiting_approval') or (allow_finished
               and r.status in ('succeeded', 'failed', 'cancelled')))

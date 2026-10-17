@@ -22,6 +22,7 @@ class AtomContext:
     atom_id: str
     run_id: str
     member_id: str
+    ctx: str = ""  # from the token: "personal" or "workspace"; the database checks it against the atom's kind
 
 
 _context: ContextVar[AtomContext | None] = ContextVar("atom_context", default=None)
@@ -55,6 +56,19 @@ def validate_context(context: AtomContext, bind=None, *, allow_finished: bool = 
         )
     if not valid:
         raise AtomAccessError("Atom, member or run is not active or does not match")
+
+
+def atom_kind(workspace_id: str, atom_id: str, bind=None) -> str | None:
+    """The atom's stored kind, 'personal' or 'workspace'. Used at mint time so the caller never chooses it."""
+    from app.db.session import engine, workspace_session
+
+    with workspace_session(bind if bind is not None else engine(), workspace_id) as session:
+        return session.scalar(
+            text(
+                "select kind from atoms where workspace_id = :ws and id = :atom and deleted_at is null"
+            ),
+            {"ws": workspace_id, "atom": atom_id},
+        )
 
 
 def is_atom_member(workspace_id: str, member_id: str, bind=None) -> bool:

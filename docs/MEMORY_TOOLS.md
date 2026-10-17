@@ -5,6 +5,11 @@ Auth: `Authorization: Bearer <workspace token>`. Mint one per agent session via
 `POST /auth/tokens`. The workspace is read from the token. **No tool takes a workspace
 argument**, so a model cannot reach another workspace. Service keys are not accepted here.
 
+Atom run tokens (`atom_id`, `run_id`) also carry `ctx`, `personal` or `workspace`. The data engine copies it
+from the atom's stored kind when it mints the token, never from the request, and rejects the token if it ever
+differs from the atom's current kind. For an atom token the `agent` argument of `memory_remember`,
+`memory_recall` and `memory_ingest` is optional and ignored: the stored label is always `atom:<atom_id>`.
+
 Client config (Claude Code style):
 
 ```json

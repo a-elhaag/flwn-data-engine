@@ -27,6 +27,7 @@ class AtomTokenTests(unittest.TestCase):
             member_id=self.ids[1],
             atom_id=self.ids[2],
             run_id=self.ids[3],
+            ctx="workspace",
             subject="atom",
             scopes={"atoms:read"},
             ttl_seconds=900,
@@ -72,11 +73,30 @@ class AtomTokenTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(tokens.TokenError):
                 tokens.verify(jwt.encode({**payload, **changes}, TOKEN_SECRET, algorithm="HS256"))
 
+    def test_ctx_is_required_for_atom_tokens_and_forbidden_otherwise(self):
+        for values in ({"ctx": None}, {"ctx": "everything"}, {"ctx": ""}):
+            with self.subTest(values=values), self.assertRaises(tokens.TokenError):
+                self.mint(**values)
+        with self.assertRaises(tokens.TokenError):
+            self.mint(atom_id=None, run_id=None, ctx="personal")
+        token, _ = self.mint(ctx="personal")
+        self.assertEqual(tokens.verify(token).ctx, "personal")
+
+    def test_verify_rejects_a_signed_token_whose_ctx_is_missing_or_changed_to_nonsense(self):
+        token, _ = self.mint()
+        payload = jwt.decode(
+            token, TOKEN_SECRET, algorithms=["HS256"], options={"verify_exp": False}
+        )
+        for changes in ({"ctx": None}, {"ctx": "admin"}):
+            with self.subTest(changes=changes), self.assertRaises(tokens.TokenError):
+                tokens.verify(jwt.encode({**payload, **changes}, TOKEN_SECRET, algorithm="HS256"))
+
     def test_existing_nonatom_tokens_remain_compatible(self):
         token, _ = self.mint(
             atom_id=None,
             run_id=None,
             member_id=None,
+            ctx=None,
             scopes={"memory:read", "atoms:admin"},
             ttl_seconds=3600,
         )
@@ -147,6 +167,7 @@ class AtomRestAccessTests(MemoryHarness):
             member_id=self.member_id,
             atom_id=self.atom_id,
             run_id=self.run_id,
+            ctx="workspace",
             scopes={"memory:read"},
             ttl_seconds=600,
             subject="atom",
@@ -311,10 +332,91 @@ class AtomRestAccessTests(MemoryHarness):
         ):
             response = self.client.post("/auth/tokens", json={**body, **changes})
             self.assertEqual(response.status_code, 422, response.text)
-        headers = self.atom_headers(atom_id=None, run_id=None)
+        headers = self.atom_headers(atom_id=None, run_id=None, ctx=None)
         self.assertEqual(
             self.client.get(f"/workspaces/{self.team_a}/memories", headers=headers).status_code, 403
         )
+
+    def test_mint_takes_ctx_from_the_atom_row_not_the_request(self):
+        body = dict(
+            workspace_id=self.team_a,
+            member_id=self.member_id,
+            atom_id=self.atom_id,
+            run_id=self.run_id,
+            scopes=["atoms:read"],
+            ctx="personal",
+        )
+        response = self.client.post("/auth/tokens", json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = jwt.decode(response.json()["token"], TOKEN_SECRET, algorithms=["HS256"])
+        self.assertEqual(payload["ctx"], "workspace")  # the atom's stored kind
+
+    def test_token_ctx_that_disagrees_with_the_atoms_kind_is_refused(self):
+        path = f"/workspaces/{self.team_a}/memories"
+        self.assertEqual(self.client.get(path, headers=self.atom_headers()).status_code, 200)
+        self.assertEqual(
+            self.client.get(path, headers=self.atom_headers(ctx="personal")).status_code, 403
+        )
+
+    def test_atom_agent_label_comes_from_the_token_and_others_must_supply_one(self):
+        from app.mcp_tools.server import _agent
+
+        atom = tokens.Claims(
+            self.team_a,
+            frozenset(),
+            "atom",
+            0,
+            self.member_id,
+            self.atom_id,
+            self.run_id,
+            "workspace",
+        )
+        human = tokens.Claims(self.team_a, frozenset(), "human", 0, self.member_id)
+        self.assertEqual(_agent(atom, "spoofed"), f"atom:{self.atom_id}")
+        self.assertEqual(_agent(atom, None), f"atom:{self.atom_id}")
+        self.assertEqual(_agent(human, "reviewer"), "reviewer")
+        for missing in (None, "", "  "):
+            with self.assertRaises(ValueError):
+                _agent(human, missing)
+
+    def test_mcp_memory_tools_label_an_atom_from_its_token_even_without_an_agent_argument(self):
+        self.sql(
+            "insert into atom_grants (workspace_id,atom_id,resource_type,level) "
+            "values (:ws,:atom,'memory','write')",
+            ws=self.team_a,
+            atom=self.atom_id,
+        )
+        headers = {
+            **self.atom_headers(scopes={"memory:read", "memory:write"}),
+            "Accept": "application/json, text/event-stream",
+        }
+
+        def call(name, arguments):
+            response = self.client.post(
+                "/mcp",
+                headers=headers,
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            return response.json()["result"]
+
+        for agent in ({}, {"agent": "spoofed display name"}):
+            result = call("memory_remember", {"text": "Atom note", "source": "chat", **agent})
+            self.assertFalse(result.get("isError"), result)
+        labels = {
+            row["agent_name"]
+            for row in self.sql(
+                "select agent_name from memories where owner_member_id=:m", m=self.member_id
+            )
+        }
+        self.assertEqual(labels, {f"atom:{self.atom_id}"})
+        recalled = call("memory_recall", {"query": "Atom note"})
+        self.assertFalse(recalled.get("isError"), recalled)
 
     def test_terminal_run_and_suspended_member_stop_existing_bearer(self):
         headers = self.atom_headers()
