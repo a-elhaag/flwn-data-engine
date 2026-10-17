@@ -41,6 +41,7 @@ class Member(IdMixin, TimestampMixin, Base):
         CheckConstraint(
             "name IS NULL OR char_length(btrim(name)) > 0", name="name_not_blank"
         ),
+        Index("ix_members_user_id", "user_id", postgresql_where=text("user_id IS NOT NULL")),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
