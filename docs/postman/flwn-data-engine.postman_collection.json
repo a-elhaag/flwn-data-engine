@@ -1,0 +1,3445 @@
+{
+  "info": {
+    "name": "Flwn Data Engine",
+    "description": "Domain CRUD API of the Flwn data engine (users, organizations, members, workspaces, teams, projects, work items, sprints, tasks).\n\nAuth: header X-Data-API-Key ({{apiKey}}), set at collection level. Tenant: header X-Organization-Id ({{orgId}}) is added automatically by a collection pre-request script to every request EXCEPT /users... and /organizations... (those take the organization from the path or have none). A request that sets the header itself keeps its own value.\n\nStart with the 'Full flow' folder in the Collection Runner.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-Data-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Tenant header: everything except /users... and /organizations... is scoped by X-Organization-Id.",
+          "const path = pm.request.url.getPath();",
+          "const global = /^\\/(users|organizations)(\\/|$)/.test(path);",
+          "if (!global && !pm.request.headers.has('X-Organization-Id')) {",
+          "  pm.request.headers.add({ key: 'X-Organization-Id', value: pm.environment.get('orgId') || '' });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Full flow",
+      "description": "The whole journey in order. Run it with the Collection Runner; it is re-runnable (unique email and project key per run, a new organization each time).",
+      "item": [
+        {
+          "name": "1. Create user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "Pre-request script makes the email and project key unique per run, so the flow can be re-run.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ahmed\",\n  \"email\": \"{{runEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = pm.variables.replaceIn('{{$timestamp}}');",
+                  "pm.environment.set('runEmail', 'ahmed+' + ts + '@flwn.io');",
+                  "pm.environment.set('runEmailEncoded', encodeURIComponent('AHMED+' + ts + '@FLWN.IO'));",
+                  "const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';",
+                  "let key = ''; for (let i = 0; i < 4; i++) key += letters[Math.floor(Math.random() * 26)];",
+                  "pm.environment.set('projectKey', key);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Email is lowercased\", function () { const j = pm.response.json(); pm.expect(j.email).to.eql(j.email.toLowerCase()); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"userId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2. Find user by email (upper case)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?email={{runEmailEncoded}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users?email={{runEmailEncoded}}"
+              ]
+            },
+            "description": "The lookup ignores case."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Exactly the created user\", function () { const j = pm.response.json(); pm.expect(j.items.length).to.eql(1); pm.expect(j.items[0].id).to.eql(pm.environment.get('userId')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3. Create organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations"
+              ]
+            },
+            "description": "Creates the organization and its OWNER member in one transaction. The org header is not sent here.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Flwn Inc\",\n  \"createdById\": \"{{userId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Creator is the OWNER named Ahmed\", function () { const j = pm.response.json(); pm.expect(j.member.role).to.eql('OWNER'); pm.expect(j.member.name).to.eql('Ahmed'); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"orgId\", j.organization.id);",
+                  "  pm.environment.set(\"memberId\", j.member.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4a. Create workspace Software",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "workspaces"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Software\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"workspaceId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4b. Create team Backend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "teams"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Backend\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"teamId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5a. Create AI member Ghost",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "members"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"AI\",\n  \"name\": \"Ghost\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"AI member\", function () { const j = pm.response.json(); pm.expect(j.type).to.eql('AI'); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"ghostId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5b. Add Ahmed to Backend as LEAD",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "members"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"memberId\": \"{{memberId}}\",\n  \"role\": \"LEAD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Role LEAD\", function () { const j = pm.response.json(); pm.expect(j.role).to.eql('LEAD'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5c. Add Ghost to Backend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "members"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"memberId\": \"{{ghostId}}\",\n  \"role\": \"MEMBER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Role MEMBER\", function () { const j = pm.response.json(); pm.expect(j.role).to.eql('MEMBER'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6a. Create project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "projects"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"{{projectKey}}\",\n  \"name\": \"Flwn\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Key as sent\", function () { const j = pm.response.json(); pm.expect(j.key).to.eql(pm.environment.get('projectKey')); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"projectId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6b. Add Backend to the project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": \"{{teamId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6c. Create workspace HR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "workspaces"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"HR\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"hrWorkspaceId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6d. Create team Recruiting (in HR)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{hrWorkspaceId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{hrWorkspaceId}}",
+                "teams"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Recruiting\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"recruitingTeamId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6e. Add Recruiting to the project (cross-department)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams"
+              ]
+            },
+            "description": "A team from another department of the same org may work on the project.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": \"{{recruitingTeamId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7. Create sprint for Backend",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams/{{teamId}}/sprints",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams",
+                "{{teamId}}",
+                "sprints"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sprint 1\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"PLANNED by default\", function () { const j = pm.response.json(); pm.expect(j.status).to.eql('PLANNED'); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"sprintId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8. Create work item Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/work-items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "work-items"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Login\",\n  \"type\": \"FEATURE\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"workItemId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9a. Create task 1 (sprint + work item)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Task one\",\n  \"sprintId\": \"{{sprintId}}\",\n  \"workItemId\": \"{{workItemId}}\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Number 1 and key\", function () { const j = pm.response.json(); pm.expect(j.number).to.eql(1); pm.expect(j.key).to.eql(pm.environment.get('projectKey') + '-1'); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"taskId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9b. Create task 2 (assigned to Ghost)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Task two\",\n  \"assigneeId\": \"{{ghostId}}\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Number 2\", function () { const j = pm.response.json(); pm.expect(j.number).to.eql(2); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"taskId2\", j.id);",
+                  "  pm.environment.set(\"taskKey\", j.key);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "9c. Create task 3",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Task three\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Number 3\", function () { const j = pm.response.json(); pm.expect(j.number).to.eql(3); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"taskId3\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10. Get task 2 by key",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/by-key/{{taskKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "by-key",
+                "{{taskKey}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"The right task\", function () { const j = pm.response.json(); pm.expect(j.id).to.eql(pm.environment.get('taskId2')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "11. Backlog (tasks without a sprint)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks?backlog=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks?backlog=true"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Only tasks 2 and 3\", function () { const j = pm.response.json(); pm.expect(j.items.map(t => t.number)).to.eql([2, 3]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12a. Mark task 3 DONE (with completedAt)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId3}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId3}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DONE\",\n  \"completedAt\": \"2026-10-17T10:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"DONE\", function () { const j = pm.response.json(); pm.expect(j.status).to.eql('DONE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12b. Mark task 2 DONE without completedAt -> 422",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId2}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId2}}"
+              ]
+            },
+            "description": "The database check rejects it; the error names the completedAt field.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DONE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"Error on completedAt\", function () { const j = pm.response.json(); pm.expect(j.code).to.eql('VALIDATION_ERROR'); pm.expect(j.field).to.eql('completedAt'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13a. Ghost's tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{ghostId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{ghostId}}",
+                "tasks"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Ghost's task\", function () { const j = pm.response.json(); pm.expect(j.items.map(t => t.id)).to.eql([pm.environment.get('taskId2')]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "13b. Ahmed's projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{memberId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{memberId}}",
+                "projects"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"The project\", function () { const j = pm.response.json(); pm.expect(j.items.map(p => p.id)).to.eql([pm.environment.get('projectId')]); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14a. Delete the sprint",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sprints/{{sprintId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sprints",
+                "{{sprintId}}"
+              ]
+            },
+            "description": "Hard delete; its tasks keep existing with sprintId = null."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "14b. Task 1 is back in the backlog",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"sprintId is null\", function () { const j = pm.response.json(); pm.expect(j.sprintId).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15a. Delete the work item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/work-items/{{workItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "work-items",
+                "{{workItemId}}"
+              ]
+            },
+            "description": "Hard delete; its tasks keep existing with workItemId = null."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "15b. Task 1 has no work item",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"workItemId is null\", function () { const j = pm.response.json(); pm.expect(j.workItemId).to.eql(null); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16a. Archive the project",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}"
+              ]
+            },
+            "description": "DELETE archives, it doesn't remove."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204\", function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16b. The project is still readable, with archivedAt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"archivedAt is set\", function () { const j = pm.response.json(); pm.expect(j.archivedAt).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "16c. archived=false hides it",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/projects?archived=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "projects?archived=false"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Not in the list\", function () { const j = pm.response.json(); pm.expect(j.items.map(p => p.id)).to.not.include(pm.environment.get('projectId')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17a. Create task 4 (archived parent is allowed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Task 4\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Number 4\", function () { const j = pm.response.json(); pm.expect(j.number).to.eql(4); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17b. Create task 5 (archived parent is allowed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Task 5\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Number 5\", function () { const j = pm.response.json(); pm.expect(j.number).to.eql(5); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17c. Create task 6 (archived parent is allowed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Task 6\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "pm.test(\"Number 6\", function () { const j = pm.response.json(); pm.expect(j.number).to.eql(6); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "17d. Page of 2 tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks?limit=2&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks?limit=2&offset=0"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"2 items and hasMore\", function () { const j = pm.response.json(); pm.expect(j.items.length).to.eql(2); pm.expect(j.hasMore).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Error examples",
+      "description": "Typical errors. Run the Full flow first (these reuse its ids). Every error has the same body: {code, message, field}.",
+      "item": [
+        {
+          "name": "Setup: create a second organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations"
+              ]
+            },
+            "description": "Needed for the wrong-organization example. Run the Full flow first.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Other Inc\",\n  \"createdById\": \"{{userId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"otherOrgId\", j.organization.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wrong organization -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Organization-Id",
+                "value": "{{otherOrgId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": "The task exists, but not in the organization sent in the header, so it looks missing (never 403)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 404\", function () { pm.response.to.have.status(404); });",
+                  "pm.test(\"TASK_NOT_FOUND\", function () { const j = pm.response.json(); pm.expect(j.code).to.eql('TASK_NOT_FOUND'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate project key -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "projects"
+              ]
+            },
+            "description": "Keys are unique per organization, archived projects included.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"{{projectKey}}\",\n  \"name\": \"Another project\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () { pm.response.to.have.status(409); });",
+                  "pm.test(\"PROJECT_KEY_ALREADY_EXISTS on key\", function () { const j = pm.response.json(); pm.expect(j.code).to.eql('PROJECT_KEY_ALREADY_EXISTS'); pm.expect(j.field).to.eql('key'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: an ACTIVE sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams/{{teamId}}/sprints",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams",
+                "{{teamId}}",
+                "sprints"
+              ]
+            },
+            "description": "201 the first time; 409 if one is already active (re-run).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Active {{$timestamp}}\",\n  \"status\": \"ACTIVE\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"201 or 409\", function () { pm.expect([201, 409]).to.include(pm.response.code); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Second ACTIVE sprint for the same team -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams/{{teamId}}/sprints",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams",
+                "{{teamId}}",
+                "sprints"
+              ]
+            },
+            "description": "At most one ACTIVE sprint per team per project.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Second {{$timestamp}}\",\n  \"status\": \"ACTIVE\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 409\", function () { pm.response.to.have.status(409); });",
+                  "pm.test(\"SPRINT_ALREADY_ACTIVE\", function () { const j = pm.response.json(); pm.expect(j.code).to.eql('SPRINT_ALREADY_ACTIVE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: another project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "projects"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"{{otherKey}}\",\n  \"name\": \"Other {{$timestamp}}\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';",
+                  "let key = ''; for (let i = 0; i < 5; i++) key += letters[Math.floor(Math.random() * 26)];",
+                  "pm.environment.set('otherKey', key);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"otherProjectId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: team on the other project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{otherProjectId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{otherProjectId}}",
+                "teams"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": \"{{teamId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: sprint in the other project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{otherProjectId}}/teams/{{teamId}}/sprints",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{otherProjectId}}",
+                "teams",
+                "{{teamId}}",
+                "sprints"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Foreign\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "if (pm.response.code < 300) {",
+                  "  const j = pm.response.json();",
+                  "  pm.environment.set(\"otherSprintId\", j.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sprint from another project -> 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "The database enforces that a task's sprint belongs to the task's project.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Bad sprint\",\n  \"sprintId\": \"{{otherSprintId}}\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 422\", function () { pm.response.to.have.status(422); });",
+                  "pm.test(\"INVALID_REFERENCE on sprintId\", function () { const j = pm.response.json(); pm.expect(j.code).to.eql('INVALID_REFERENCE'); pm.expect(j.field).to.eql('sprintId'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "Global login accounts. No X-Organization-Id needed. Users are never deleted.",
+      "item": [
+        {
+          "name": "Create user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "Email is stored lowercased; a duplicate (any case) returns 409 USER_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ahmed\",\n  \"email\": \"ahmed@flwn.io\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Find user by email",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?email=ahmed@flwn.io",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "email",
+                  "value": "ahmed@flwn.io"
+                }
+              ]
+            },
+            "description": "Exact match on the lowercased email. Returns a page with 0 or 1 items; `email` is required."
+          }
+        },
+        {
+          "name": "Get user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "404 USER_NOT_FOUND if unknown."
+          }
+        },
+        {
+          "name": "Update user",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "Only the fields you send change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ahmed H.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List memberships",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/memberships",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}",
+                "memberships"
+              ]
+            },
+            "description": "The user's Member rows across all organizations."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organizations",
+      "description": "POST /organizations and /organizations/{orgId}/... take the organization from the body/path, so the org header is not sent.",
+      "item": [
+        {
+          "name": "Create organization",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations"
+              ]
+            },
+            "description": "One transaction: the organization plus the creator's HUMAN member (role defaults to OWNER). Unknown createdById returns 422 INVALID_REFERENCE and nothing is saved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Flwn Inc\",\n  \"description\": \"Demo org\",\n  \"createdById\": \"{{userId}}\",\n  \"creatorMember\": {\n    \"role\": \"OWNER\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get organization",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}"
+              ]
+            },
+            "description": "404 ORGANIZATION_NOT_FOUND if unknown."
+          }
+        },
+        {
+          "name": "Update organization",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}"
+              ]
+            },
+            "description": "`archived: true` sets archivedAt, `false` clears it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Flwn Inc.\",\n  \"archived\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Archive organization",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}"
+              ]
+            },
+            "description": "DELETE archives (sets archivedAt); it does not remove the row."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Members",
+      "description": "A membership in an organization: HUMAN (has a user) or AI (no user). There is no DELETE for members.",
+      "item": [
+        {
+          "name": "Create AI member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "members"
+              ]
+            },
+            "description": "AI needs a name (unique per org, case-insensitive); email optional.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"AI\",\n  \"name\": \"Ghost\",\n  \"email\": \"ghost@flwn.io\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Create HUMAN member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "members"
+              ]
+            },
+            "description": "HUMAN needs userId and no name/email. A user can join an org once.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"HUMAN\",\n  \"userId\": \"{{userId}}\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/members?type=AI&status=ACTIVE&role=MEMBER&workspaceId={{workspaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "members"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "AI",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "MEMBER",
+                  "disabled": true
+                },
+                {
+                  "key": "workspaceId",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Filters (enable as needed): type, status, role, workspaceId."
+          }
+        },
+        {
+          "name": "Get member",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{memberId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{memberId}}"
+              ]
+            },
+            "description": "name/email of a HUMAN come from the User."
+          }
+        },
+        {
+          "name": "Update member",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{ghostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{ghostId}}"
+              ]
+            },
+            "description": "workspaceId: null clears the home department. type/userId cannot change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"MEMBER\",\n  \"status\": \"ACTIVE\",\n  \"workspaceId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Member's teams",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{memberId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{memberId}}",
+                "teams"
+              ]
+            },
+            "description": "Team memberships of the member."
+          }
+        },
+        {
+          "name": "Member's projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{memberId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{memberId}}",
+                "projects"
+              ]
+            },
+            "description": "Distinct projects of the member's teams (any department)."
+          }
+        },
+        {
+          "name": "Member's tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/members/{{ghostId}}/tasks?status=TODO",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "members",
+                "{{ghostId}}",
+                "tasks"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "TODO",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Tasks assigned to the member across projects; optional status filter."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Workspaces",
+      "description": "Departments of an organization.",
+      "item": [
+        {
+          "name": "Create workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/workspaces",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "workspaces"
+              ]
+            },
+            "description": "Name unique per organization among non-archived workspaces (case-insensitive).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Software\",\n  \"description\": \"Engineering\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List workspaces",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/organizations/{{orgId}}/workspaces?archived=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "organizations",
+                "{{orgId}}",
+                "workspaces"
+              ],
+              "query": [
+                {
+                  "key": "archived",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Archived rows are included unless `archived` is set."
+          }
+        },
+        {
+          "name": "Get workspace",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update workspace",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}"
+              ]
+            },
+            "description": "`archived: true` sets archivedAt, `false` clears it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Software Dept\",\n  \"archived\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Archive workspace",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}"
+              ]
+            },
+            "description": "DELETE archives, it doesn't remove."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Teams",
+      "description": "Teams belong to a workspace; members and projects can come from any department of the same org.",
+      "item": [
+        {
+          "name": "Create team",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "teams"
+              ]
+            },
+            "description": "Name unique per workspace among non-archived teams.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Backend\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List teams",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/teams?archived=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "teams"
+              ],
+              "query": [
+                {
+                  "key": "archived",
+                  "value": "false",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Archived rows are included unless `archived` is set."
+          }
+        },
+        {
+          "name": "Get team",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update team",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Backend Team\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Archive team",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}"
+              ]
+            },
+            "description": "DELETE archives, it doesn't remove."
+          }
+        },
+        {
+          "name": "Add team member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "members"
+              ]
+            },
+            "description": "Role defaults to MEMBER. Adding twice returns 409 TEAM_MEMBER_ALREADY_EXISTS.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"memberId\": \"{{ghostId}}\",\n  \"role\": \"MEMBER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List team members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/members",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "members"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update team member",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/members/{{ghostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "members",
+                "{{ghostId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"LEAD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remove team member",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/members/{{ghostId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "members",
+                "{{ghostId}}"
+              ]
+            },
+            "description": "Hard delete of the membership (the member stays)."
+          }
+        },
+        {
+          "name": "Team's projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/teams/{{teamId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "teams",
+                "{{teamId}}",
+                "projects"
+              ]
+            },
+            "description": "Projects this team works on."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "description": "Owned by one department. The key (e.g. FLWN) is permanent and unique per org, archived projects included.",
+      "item": [
+        {
+          "name": "Create project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/projects",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "projects"
+              ]
+            },
+            "description": "key must match ^[A-Z]{2,10}$.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"FLWN\",\n  \"name\": \"Flwn\",\n  \"description\": \"The product\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/workspaces/{{workspaceId}}/projects?archived=false&status=ACTIVE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "workspaces",
+                "{{workspaceId}}",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "archived",
+                  "value": "false",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Filters: archived, status. Archived rows are included by default."
+          }
+        },
+        {
+          "name": "Get project",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update project",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}"
+              ]
+            },
+            "description": "The key cannot be changed (422).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Flwn Platform\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Archive project",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}"
+              ]
+            },
+            "description": "DELETE archives, it doesn't remove."
+          }
+        },
+        {
+          "name": "Add team to project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams"
+              ]
+            },
+            "description": "The team may belong to any workspace of the same org.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": \"{{teamId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List project teams",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Remove team from project",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams/{{teamId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams",
+                "{{teamId}}"
+              ]
+            },
+            "description": "Hard delete. 409 PROJECT_TEAM_HAS_SPRINTS while the team still has sprints in the project."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Work items",
+      "description": "Optional grouping of tasks (feature / story / bug).",
+      "item": [
+        {
+          "name": "Create work item",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/work-items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "work-items"
+              ]
+            },
+            "description": "type is required; priority defaults to MEDIUM, status to OPEN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Login\",\n  \"type\": \"FEATURE\",\n  \"priority\": \"MEDIUM\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List work items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/work-items?status=OPEN&type=FEATURE&priority=MEDIUM",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "work-items"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "OPEN",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "FEATURE",
+                  "disabled": true
+                },
+                {
+                  "key": "priority",
+                  "value": "MEDIUM",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Filters: status, type, priority."
+          }
+        },
+        {
+          "name": "Get work item",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/work-items/{{workItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "work-items",
+                "{{workItemId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update work item",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/work-items/{{workItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "work-items",
+                "{{workItemId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete work item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/work-items/{{workItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "work-items",
+                "{{workItemId}}"
+              ]
+            },
+            "description": "Hard delete. Its tasks are kept with workItemId = null."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Sprints",
+      "description": "A sprint belongs to one team inside one project.",
+      "item": [
+        {
+          "name": "Create sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/teams/{{teamId}}/sprints",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "teams",
+                "{{teamId}}",
+                "sprints"
+              ]
+            },
+            "description": "The team must already be on the project (404 PROJECT_TEAM_NOT_FOUND). Only one ACTIVE sprint per team per project.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Sprint 1\",\n  \"goal\": \"Ship login\",\n  \"startDate\": \"2026-11-01\",\n  \"endDate\": \"2026-11-14\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List sprints",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/sprints?teamId={{teamId}}&status=ACTIVE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "sprints"
+              ],
+              "query": [
+                {
+                  "key": "teamId",
+                  "value": "{{teamId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Filters: teamId, status."
+          }
+        },
+        {
+          "name": "Get sprint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sprints/{{sprintId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sprints",
+                "{{sprintId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Update sprint",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sprints/{{sprintId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sprints",
+                "{{sprintId}}"
+              ]
+            },
+            "description": "Setting ACTIVE while another sprint of the team is ACTIVE returns 409 SPRINT_ALREADY_ACTIVE.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete sprint",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sprints/{{sprintId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sprints",
+                "{{sprintId}}"
+              ]
+            },
+            "description": "Hard delete. Its tasks are kept with sprintId = null (back to the backlog)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "description": "Numbered per project (1, 2, 3...), identified by key like FLWN-12. Numbers are never reused.",
+      "item": [
+        {
+          "name": "Create task",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ]
+            },
+            "description": "number and key are assigned by the server. dueDate must carry a timezone. status DONE requires completedAt.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Build login form\",\n  \"description\": \"Email + password\",\n  \"priority\": \"HIGH\",\n  \"sprintId\": \"{{sprintId}}\",\n  \"workItemId\": \"{{workItemId}}\",\n  \"assigneeId\": \"{{ghostId}}\",\n  \"dueDate\": \"2026-11-03T17:00:00+03:00\",\n  \"createdById\": \"{{memberId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "List tasks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/projects/{{projectId}}/tasks?backlog=true&status=TODO&priority=HIGH&assigneeId={{ghostId}}&sprintId={{sprintId}}&workItemId={{workItemId}}&limit=50&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "projects",
+                "{{projectId}}",
+                "tasks"
+              ],
+              "query": [
+                {
+                  "key": "backlog",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "TODO",
+                  "disabled": true
+                },
+                {
+                  "key": "priority",
+                  "value": "HIGH",
+                  "disabled": true
+                },
+                {
+                  "key": "assigneeId",
+                  "value": "{{ghostId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "sprintId",
+                  "value": "{{sprintId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "workItemId",
+                  "value": "{{workItemId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": true
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Ordered by number. Filters: status, priority, assigneeId, sprintId, workItemId, backlog=true (no sprint)."
+          }
+        },
+        {
+          "name": "Get task",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": ""
+          }
+        },
+        {
+          "name": "Get task by key",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/by-key/{{taskKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "by-key",
+                "{{taskKey}}"
+              ]
+            },
+            "description": "Key format PROJECTKEY-NUMBER, looked up inside the header's organization."
+          }
+        },
+        {
+          "name": "Update task",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": "Only sent fields change. DONE <=> completedAt must hold (422 on completedAt otherwise).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DONE\",\n  \"completedAt\": \"2026-11-05T09:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Delete task",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/tasks/{{taskId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tasks",
+                "{{taskId}}"
+              ]
+            },
+            "description": "Hard delete. The number is not reused."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -66,13 +66,41 @@ bash run.sh migrate    # alembic upgrade head
 `DATABASE_URL` format: `postgresql+psycopg://user:pass@host:5432/db`.
 
 ```sh
-bash run.sh test
+pip install -r requirements-dev.txt   # or: uv pip install -r requirements-dev.txt
+pytest tests/unit          # no database needed
+pytest tests/integration   # needs Postgres (bash run.sh postgres)
+pytest                     # everything; `bash run.sh test` runs this
 bash run.sh memory_steward
 ```
 
-Tests use in-memory Qdrant and mocked inference. `memory_steward` performs live
+Integration tests use a separate database (`TEST_DATABASE_URL`, default
+`postgresql+psycopg://flwn:flwn@localhost:5432/flwn_test`). The test run creates it if
+needed, rebuilds the schema with Alembic and truncates every table after each test, so
+**it refuses to run against any database whose name does not end in `_test`**. If
+Postgres is unreachable the integration run stops with a message (it never skips
+silently); unit tests still run. `DATABASE_URL` from `.env` is ignored by the tests.
+
+Memory tests use in-memory Qdrant and mocked inference. `memory_steward` performs live
 Qdrant and embedding readiness checks. Run separately with local and cloud
 `QDRANT_URL`/`QDRANT_API_KEY` values before deployment; keys stay in environment.
+
+## Try it with Postman
+
+Collection and environment live in `docs/postman/`.
+
+1. Start Postgres and the API: `bash run.sh postgres && bash run.sh migrate && bash run.sh`
+   (the API also needs Qdrant at `QDRANT_URL`, see above).
+2. In Postman, import `flwn-data-engine.postman_collection.json` and
+   `flwn-local.postman_environment.json`, and select the "Flwn local" environment.
+3. Set the `apiKey` variable to your `DATA_API_KEY` (the file only has a placeholder).
+4. Run the **Full flow** folder with the Collection Runner. It is re-runnable: the
+   email and project key are unique per run and every run creates a new organization.
+   Then run **Error examples** for typical failures. The other folders hold one example
+   request per route and reuse the ids the flow saved.
+
+`X-Data-API-Key` is set on the collection; `X-Organization-Id` is added automatically
+(except for `/users...` and `/organizations...`). Optional command line run:
+`npx newman run docs/postman/flwn-data-engine.postman_collection.json -e docs/postman/flwn-local.postman_environment.json --env-var apiKey=<key>`.
 
 ## Docs
 
