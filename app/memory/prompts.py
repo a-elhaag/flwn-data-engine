@@ -77,7 +77,7 @@ def sweep_prompt(items: list[tuple[str, str]]) -> str:
 
 def parse_sweep(raw: str, refs: list[str]) -> dict[str, bool]:
     """Map ref -> keep. Anything missing or malformed defaults to keep=True."""
-    decisions = {ref: True for ref in refs}
+    decisions = dict.fromkeys(refs, True)
     data = extract_json(raw)
     if not data or not isinstance(data.get("decisions"), list):
         return decisions

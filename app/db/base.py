@@ -59,7 +59,7 @@ class Created:
 
 
 class Stamps(Created):
-    # updated_at is maintained by a trigger (see alembic/ddl.py), not by the ORM.
+    # updated_at is maintained by a trigger (see sql/10_triggers.sql), not by the ORM.
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
@@ -98,7 +98,7 @@ def pfk(col: str, target: str, ondelete: str | None = None) -> ForeignKeyConstra
 
 
 def one_of(col: str, *values: str) -> CheckConstraint:
-    """Text enum as a CHECK: easy to extend with a migration."""
+    """Text enum as a CHECK: a new value needs the constraint changed in the database."""
     listed = ", ".join(f"'{value}'" for value in values)
     return CheckConstraint(f"{col} in ({listed})", name=col)
 

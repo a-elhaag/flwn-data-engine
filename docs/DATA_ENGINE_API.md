@@ -1,6 +1,6 @@
 # flwn Data Engine
 
-Documentation for the REST API, Swagger UI, service connections, and MCP tools.
+Authentication, service connections, MCP tools and errors. Endpoint reference: Swagger UI at `/docs`.
 
 ## 1. Authentication
 
@@ -31,7 +31,7 @@ Content-Type: application/json
 
 ```json
 {
-  "workspace_id": "team-a",
+  "workspace_id": "3f2b8c1e-5a47-4d0e-9c1a-7b6d2e8f4a10",
   "subject": "agent",
   "scopes": [
     "memory:read",
@@ -68,171 +68,12 @@ Available scopes:
 Bearer tokens are locked to the workspace in the token. The token workspace
 must match the `{workspace_id}` in the URL.
 
-## 2. REST API routers
+## 2. REST API
 
-### 2.1 System router
-
-| Method | Path | Authentication | Description |
-| --- | --- | --- | --- |
-| `GET` | `/healthz` | None | Confirms that the process is alive. |
-| `GET` | `/readyz` | Service API key | Checks configured service dependencies. Returns `503` when unavailable. |
-
-Health response:
-
-```json
-{
-  "status": "ok"
-}
-```
-
-### 2.2 Authentication router
-
-| Method | Path | Authentication | Description |
-| --- | --- | --- | --- |
-| `POST` | `/auth/tokens` | Service API key | Creates a workspace-scoped JWT. |
-
-Token request fields:
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `workspace_id` | Yes | Workspace name or ID. |
-| `subject` | No | Token subject. Defaults to `agent`. |
-| `scopes` | No | Requested memory scopes. |
-| `ttl_seconds` | No | Token lifetime. Defaults to `3600`. |
-
-### 2.3 Workspace memory router
-
-All paths below use `{workspace_id}` and require the appropriate scope or the
-service API key.
-
-| Method | Path | Scope | Description |
-| --- | --- | --- | --- |
-| `POST` | `/workspaces/{workspace_id}/memories` | `memory:write` | Stores one memory. |
-| `POST` | `/workspaces/{workspace_id}/memories/batch` | `memory:write` | Stores 1-50 memories. |
-| `POST` | `/workspaces/{workspace_id}/memories/recall` | `memory:read` | Searches relevant memories. |
-| `GET` | `/workspaces/{workspace_id}/memories` | `memory:read` | Browses memories. |
-| `GET` | `/workspaces/{workspace_id}/memories/stats` | `memory:read` | Returns memory statistics. |
-| `GET` | `/workspaces/{workspace_id}/memories/{point_id}` | `memory:read` | Opens one memory. |
-| `PATCH` | `/workspaces/{workspace_id}/memories/{point_id}` | `memory:write` | Revises one memory. |
-| `PUT` | `/workspaces/{workspace_id}/memories/{point_id}/pin` | `memory:write` | Pins or unpins one memory. |
-| `DELETE` | `/workspaces/{workspace_id}/memories/{point_id}` | `memory:delete` | Deletes one memory. Returns `204`. |
-
-#### Store one memory
-
-```http
-POST /workspaces/team-a/memories
-X-Data-API-Key: <DATA_API_KEY>
-Content-Type: application/json
-```
-
-```json
-{
-  "text": "The billing service retries failed payments three times.",
-  "source": "decision",
-  "agent": "planner"
-}
-```
-
-Response:
-
-```json
-{
-  "point_id": "memory-uuid",
-  "deduplicated": false
-}
-```
-
-#### Store memories in a batch
-
-```json
-{
-  "items": [
-    {
-      "text": "The billing service retries failed payments three times.",
-      "source": "decision",
-      "agent": "planner"
-    }
-  ]
-}
-```
-
-The REST batch endpoint accepts 1-50 items.
-
-#### Recall memories
-
-```json
-{
-  "query": "How many payment retries are configured?",
-  "agent": "reviewer",
-  "limit": 5,
-  "sources": ["decision"]
-}
-```
-
-The REST `limit` must be between 1 and 100. `sources` is optional.
-
-#### Browse memories
-
-| Query parameter | Default | Description |
-| --- | ---: | --- |
-| `limit` | `20` | Number of results, from 1 to 100. |
-| `cursor` | None | UUID cursor from the previous page. |
-| `source` | None | Filter by source. |
-| `agent` | None | Filter by storing agent. |
-| `include_superseded` | `false` | Include superseded memories. |
-
-#### Revise a memory
-
-```json
-{
-  "text": "The billing service retries failed payments five times."
-}
-```
-
-#### Pin a memory
-
-```json
-{
-  "pinned": true
-}
-```
-
-### 2.4 Maintenance router
-
-Maintenance endpoints require the service API key. Bearer tokens cannot call
-these routes.
-
-| Method | Path | Description |
-| --- | --- | --- |
-| `POST` | `/workspaces/{workspace_id}/memories/cleanup` | Cleans up old memories. |
-| `POST` | `/workspaces/{workspace_id}/memories/organize` | Organizes related memories. |
-| `POST` | `/workspaces/{workspace_id}/sprint-completed` | Runs sprint-completion cleanup. |
-| `DELETE` | `/workspaces/{workspace_id}/memories` | Purges workspace memories. |
-
-Cleanup request:
-
-```json
-{
-  "retention_days": 30,
-  "dry_run": false
-}
-```
-
-Organize request:
-
-```json
-{
-  "dry_run": false,
-  "max_clusters": 50
-}
-```
-
-Purge requires confirmation matching the workspace ID:
-
-```http
-DELETE /workspaces/team-a/memories?confirm=team-a
-X-Data-API-Key: <DATA_API_KEY>
-```
+The REST API has 100+ endpoints across memory, files, meetings, atoms, approvals, planning,
+identity and collaboration, so it is documented in one place that cannot go stale: the live
+Swagger UI at `/docs` (alias `/swagger`). It lists every endpoint with a description, the required
+access, request and response schemas, and example bodies. The raw spec is at `/openapi.json`.
 
 ## 3. Service connections
 
@@ -331,7 +172,7 @@ is disabled.
 
 1. Start the API with `bash run.sh`.
 2. Open Swagger UI at [http://127.0.0.1:8002/docs](http://127.0.0.1:8002/docs) or [http://127.0.0.1:8002/swagger](http://127.0.0.1:8002/swagger).
-3. Confirm all 16 REST operations and their nested schemas are listed and expanded by default.
+3. Confirm the endpoints are grouped by tag and every request and response schema is listed under Schemas.
 4. Open the [OpenAPI JSON](http://127.0.0.1:8002/openapi.json).
 5. Call `GET /healthz` without authentication.
 6. Call `GET /readyz` with `X-Data-API-Key`.

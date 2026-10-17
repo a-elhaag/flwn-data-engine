@@ -10,7 +10,7 @@ DATABASE_ADMIN_URL, used only to install the schema, may be that admin role. Bot
 here, not in app.config, so installing works without the API's other settings.
 """
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -82,6 +82,11 @@ def session_for(workspace_id: str):
     return workspace_session(engine(), workspace_id)
 
 
+def service_session():
+    """A service-mode transaction that spans workspaces (admin work, background workers)."""
+    return workspace_session(engine(), "", service=True)
+
+
 @contextmanager
 def advisory_lock(key: str):
     """Cross-process exclusive lock. Yields True if this caller got it, False if another holds it.
@@ -113,8 +118,5 @@ def tune_vector_search(session: Session, limit: int) -> None:
     session.execute(
         text("select set_config('hnsw.ef_search', :n, true)"), {"n": str(min(max(limit, 40), 1000))}
     )
-    try:
-        with session.begin_nested():
-            session.execute(text("select set_config('hnsw.iterative_scan', 'relaxed_order', true)"))
-    except DBAPIError:
-        pass
+    with suppress(DBAPIError), session.begin_nested():
+        session.execute(text("select set_config('hnsw.iterative_scan', 'relaxed_order', true)"))

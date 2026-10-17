@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 
 from app.db import events
 from app.db.models.identity import Workspace
-from app.db.session import engine, workspace_session
+from app.db.session import service_session
 
 
 class WorkspaceNotFound(LookupError):
@@ -41,7 +41,7 @@ def _slug_available(session, slug, *, exclude_id=None):
 
 class WorkspaceService:
     def list(self, limit=50, offset=0):
-        with workspace_session(engine(), "", service=True) as session:
+        with service_session() as session:
             rows = session.scalars(
                 select(Workspace)
                 .where(Workspace.deleted_at.is_(None))
@@ -52,11 +52,11 @@ class WorkspaceService:
             return list(rows)
 
     def get(self, workspace_id):
-        with workspace_session(engine(), "", service=True) as session:
+        with service_session() as session:
             return _workspace(session, workspace_id)
 
     def create(self, *, name, slug, description=None, settings=None):
-        with workspace_session(engine(), "", service=True) as session:
+        with service_session() as session:
             _slug_available(session, slug)
             row = Workspace(
                 name=name.strip(),
@@ -70,7 +70,7 @@ class WorkspaceService:
             return row
 
     def update(self, workspace_id, **fields):
-        with workspace_session(engine(), "", service=True) as session:
+        with service_session() as session:
             row = _workspace(session, workspace_id)
             if "slug" in fields:
                 _slug_available(session, fields["slug"], exclude_id=row.id)
@@ -83,7 +83,7 @@ class WorkspaceService:
             return row
 
     def delete(self, workspace_id):
-        with workspace_session(engine(), "", service=True) as session:
+        with service_session() as session:
             row = _workspace(session, workspace_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()

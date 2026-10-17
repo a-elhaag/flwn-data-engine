@@ -151,7 +151,7 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
                     Doc.archived_at.is_(None),
                 )
             )
-            if parent_id == doc_id:
+            if doc_id is not None and parent_id == doc_id:  # a new doc has no id yet
                 raise CollaborationConflict("doc parent cannot create a cycle")
         fields["parent_doc_id"] = value
 

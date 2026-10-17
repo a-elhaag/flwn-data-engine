@@ -7,10 +7,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.api.identity_schemas import NonBlank
+from app.db.base import PRIORITIES, WORK_STATUSES
 
 ProjectKey = Annotated[str, Field(min_length=1, max_length=10, pattern=r"^[A-Z][A-Z0-9]*$")]
-PRIORITIES = {"none", "low", "medium", "high", "urgent"}
-WORK_STATUSES = {"backlog", "todo", "in_progress", "in_review", "done", "canceled"}
 
 
 class ProjectCreate(BaseModel):

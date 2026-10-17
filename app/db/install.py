@@ -29,6 +29,21 @@ SQL_DIR = Path(__file__).parent / "sql"
 ROLE_NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
+APP_ROLE_GRANTS = (
+    "grant usage on schema public to {}",
+    "grant select, insert, update, delete on all tables in schema public to {}",
+    "grant usage, select on all sequences in schema public to {}",
+    "alter default privileges in schema public grant select, insert, update, delete on tables to {}",
+    "alter default privileges in schema public grant usage, select on sequences to {}",
+)
+
+
+def grant_privileges(raw, role: str) -> None:
+    """Give an existing role the table access the application needs (never superuser)."""
+    for statement in APP_ROLE_GRANTS:
+        raw.execute(sql.SQL(statement).format(sql.Identifier(role)))
+
+
 def grant_app_role(conn: Connection, role: str, password: str | None = None) -> None:
     """Create the application role if missing and give it table access, nothing more.
 
@@ -48,15 +63,7 @@ def grant_app_role(conn: Connection, role: str, password: str | None = None) -> 
         raw.execute(sql.SQL("create role {} {} {}").format(sql.Identifier(role), login, flags))
     elif password:
         raw.execute(sql.SQL("alter role {} {} {}").format(sql.Identifier(role), login, flags))
-    who = sql.Identifier(role)
-    for statement in (
-        "grant usage on schema public to {}",
-        "grant select, insert, update, delete on all tables in schema public to {}",
-        "grant usage, select on all sequences in schema public to {}",
-        "alter default privileges in schema public grant select, insert, update, delete on tables to {}",
-        "alter default privileges in schema public grant usage, select on sequences to {}",
-    ):
-        raw.execute(sql.SQL(statement).format(who))
+    grant_privileges(raw, role)
 
 
 def install(

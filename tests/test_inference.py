@@ -35,7 +35,7 @@ class FakeFoundry:
             patch("app.clients.inference._limiter", RateLimiter(10_000, 10_000)),
             patch("app.clients.resilience.time.sleep"),
         ):
-            test.slept = patcher.start() if "sleep" in str(patcher.attribute) else patcher.start()
+            test.slept = patcher.start()
             test.addCleanup(patcher.stop)
         return self
 

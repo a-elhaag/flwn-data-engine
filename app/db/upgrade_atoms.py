@@ -17,7 +17,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.schema import AddConstraint, CreateColumn
 
 from app.db.base import Base
-from app.db.install import ROLE_NAME, SQL_DIR
+from app.db.install import ROLE_NAME, SQL_DIR, grant_privileges
 from app.db.session import admin_database_url
 
 ATOM_TABLES = (
@@ -116,15 +116,8 @@ def _check_helper_access(conn: Connection) -> None:
 
 
 def _grant_existing_app_role(conn: Connection, role: str) -> None:
-    # Deliberately do not use the installer's role-creation/password-management path.
-    for statement in (
-        "grant usage on schema public to {}",
-        "grant select, insert, update, delete on all tables in schema public to {}",
-        "grant usage, select on all sequences in schema public to {}",
-        "alter default privileges in schema public grant select, insert, update, delete on tables to {}",
-        "alter default privileges in schema public grant usage, select on sequences to {}",
-    ):
-        conn.connection.driver_connection.execute(sql.SQL(statement).format(sql.Identifier(role)))
+    # Deliberately not the installer's role-creation/password-management path.
+    grant_privileges(conn.connection.driver_connection, role)
 
 
 def _replace_check(conn: Connection, constraint: CheckConstraint) -> None:
@@ -159,11 +152,10 @@ def _check_legacy_shape(conn: Connection) -> None:
             if table_name == "agent_runs" and column.name in ("tokens_in", "tokens_out", "cost"):
                 if not re.fullmatch(r"'?0'?(?:::(?:integer|numeric))?", actual["default"] or ""):
                     raise RuntimeError(f"unexpected default for agent_runs.{column.name}")
-        if name := WIDENED_CHECKS.get(table_name):
-            if name not in {
-                c["name"] for c in inspector.get_check_constraints(table_name, schema="public")
-            }:
-                raise RuntimeError(f"expected legacy constraint {name}; no upgrade applied")
+        if (name := WIDENED_CHECKS.get(table_name)) and name not in {
+            c["name"] for c in inspector.get_check_constraints(table_name, schema="public")
+        }:
+            raise RuntimeError(f"expected legacy constraint {name}; no upgrade applied")
 
 
 def _check_existing_run_constraint(conn: Connection, constraint) -> None:
@@ -201,28 +193,24 @@ def _check_existing_run_constraint(conn: Connection, constraint) -> None:
     raise RuntimeError(f"unexpected definition for {constraint.name}; no upgrade applied")
 
 
-def _upgrade_approvals(conn: Connection) -> None:
-    table = Base.metadata.tables["approvals"]
-    columns = {c["name"] for c in inspect(conn).get_columns("approvals", schema="public")}
-    for name in APPROVAL_COLUMNS:
-        if name not in columns:
+def _add_missing_columns(conn: Connection, table_name: str, names) -> None:
+    table = Base.metadata.tables[table_name]
+    present = {c["name"] for c in inspect(conn).get_columns(table_name, schema="public")}
+    for name in names:
+        if name not in present:
             definition = str(CreateColumn(table.c[name]).compile(dialect=conn.dialect))
-            conn.exec_driver_sql(f"alter table public.approvals add column {definition}")
+            conn.exec_driver_sql(f"alter table public.{table_name} add column {definition}")
+
+
+def _sync_constraints(conn: Connection, table, wanted) -> None:
+    """Add the constraints `wanted` selects; widen existing checks and verify existing keys."""
     present = set(
         conn.exec_driver_sql(
-            "select conname from pg_constraint where conrelid = 'public.approvals'::regclass"
+            f"select conname from pg_constraint where conrelid = 'public.{table.name}'::regclass"
         ).scalars()
     )
     for constraint in sorted(table.constraints, key=lambda c: c.name):
-        if not (
-            set(constraint.columns.keys()) & set(APPROVAL_COLUMNS)
-            or constraint.name
-            in (
-                "ck_approvals_atom_payload",
-                "ck_approvals_atom_execution",
-                "ck_approvals_execution_status",
-            )
-        ):
+        if not wanted(constraint):
             continue
         if constraint.name not in present:
             conn.execute(AddConstraint(constraint, isolate_from_table=False))
@@ -232,35 +220,65 @@ def _upgrade_approvals(conn: Connection) -> None:
             _check_existing_run_constraint(conn, constraint)
             if isinstance(constraint, ForeignKeyConstraint):
                 conn.connection.driver_connection.execute(
-                    sql.SQL("alter table public.approvals validate constraint {}").format(
-                        sql.Identifier(constraint.name)
+                    sql.SQL("alter table public.{} validate constraint {}").format(
+                        sql.Identifier(table.name), sql.Identifier(constraint.name)
                     )
                 )
-    index = next(i for i in table.indexes if i.name == "ix_approvals_atom_ready")
+
+
+def _normalize_where(value) -> str:
+    return re.sub(r"::text|[\s()]", "", ("" if value is None else str(value)).lower())
+
+
+def _ensure_index(conn: Connection, table, index_name: str) -> None:
+    """Create the index, or fail if an index of that name exists with a different shape."""
+    index = next(i for i in table.indexes if i.name == index_name)
     existing = next(
         (
             i
-            for i in inspect(conn).get_indexes("approvals", schema="public")
+            for i in inspect(conn).get_indexes(table.name, schema="public")
             if i["name"] == index.name
         ),
         None,
     )
     if existing:
         options = existing.get("dialect_options", {})
-        actual_where = str(options.get("postgresql_where", ""))
-        expected_where = str(index.dialect_options["postgresql"]["where"])
-
-        def normalize(value):
-            return re.sub(r"::text|[\s()]", "", value.lower())
-
         if (
             existing["column_names"] != list(index.columns.keys())
             or existing["unique"]
-            or normalize(actual_where) != normalize(expected_where)
+            or _normalize_where(options.get("postgresql_where"))
+            != _normalize_where(index.dialect_options["postgresql"]["where"])
             or any(value for key, value in options.items() if key != "postgresql_where")
         ):
             raise RuntimeError(f"unexpected definition for {index.name}; no upgrade applied")
     index.create(conn, checkfirst=True)
+
+
+def _wants_approval_constraint(constraint) -> bool:
+    return bool(set(constraint.columns.keys()) & set(APPROVAL_COLUMNS)) or constraint.name in (
+        "ck_approvals_atom_payload",
+        "ck_approvals_atom_execution",
+        "ck_approvals_execution_status",
+    )
+
+
+def _upgrade_approvals(conn: Connection) -> None:
+    _add_missing_columns(conn, "approvals", APPROVAL_COLUMNS)
+    _sync_constraints(conn, Base.metadata.tables["approvals"], _wants_approval_constraint)
+    _ensure_index(conn, Base.metadata.tables["approvals"], "ix_approvals_atom_ready")
+
+
+def _upgrade_runs(conn: Connection) -> None:
+    _add_missing_columns(conn, "agent_runs", RUN_COLUMNS)
+    # The new tables below must exist before the run constraints that reference them.
+    Base.metadata.create_all(conn, tables=[Base.metadata.tables[n] for n in ATOM_TABLES])
+    _upgrade_approvals(conn)
+    for table_name, name in WIDENED_CHECKS.items():
+        constraint = next(c for c in Base.metadata.tables[table_name].constraints if c.name == name)
+        _replace_check(conn, constraint)
+    runs = Base.metadata.tables["agent_runs"]
+    _sync_constraints(conn, runs, lambda constraint: constraint.name in RUN_CONSTRAINTS)
+    _ensure_index(conn, runs, "ix_agent_runs_atom_created")
 
 
 def upgrade_atoms(url: str | None = None, *, app_role: str) -> None:
@@ -283,57 +301,7 @@ def upgrade_atoms(url: str | None = None, *, app_role: str) -> None:
                 )
 
             _check_legacy_shape(conn)
-            runs = Base.metadata.tables["agent_runs"]
-            columns = {c["name"] for c in inspect(conn).get_columns("agent_runs", schema="public")}
-            for name in RUN_COLUMNS:
-                if name not in columns:
-                    definition = str(CreateColumn(runs.c[name]).compile(dialect=conn.dialect))
-                    conn.exec_driver_sql(f"alter table public.agent_runs add column {definition}")
-
-            Base.metadata.create_all(conn, tables=[Base.metadata.tables[n] for n in ATOM_TABLES])
-            _upgrade_approvals(conn)
-            for table_name, name in WIDENED_CHECKS.items():
-                constraint = next(
-                    c for c in Base.metadata.tables[table_name].constraints if c.name == name
-                )
-                _replace_check(conn, constraint)
-
-            present = set(
-                conn.exec_driver_sql(
-                    "select conname from pg_constraint where conrelid = 'public.agent_runs'::regclass"
-                ).scalars()
-            )
-            for constraint in sorted(runs.constraints, key=lambda c: c.name):
-                if constraint.name not in RUN_CONSTRAINTS:
-                    continue
-                if constraint.name not in present:
-                    conn.execute(AddConstraint(constraint, isolate_from_table=False))
-                elif isinstance(constraint, CheckConstraint):
-                    _replace_check(conn, constraint)
-                else:
-                    _check_existing_run_constraint(conn, constraint)
-                    if isinstance(constraint, ForeignKeyConstraint):
-                        conn.connection.driver_connection.execute(
-                            sql.SQL("alter table public.agent_runs validate constraint {}").format(
-                                sql.Identifier(constraint.name)
-                            )
-                        )
-            index = next(i for i in runs.indexes if i.name == "ix_agent_runs_atom_created")
-            existing_index = next(
-                (
-                    i
-                    for i in inspect(conn).get_indexes("agent_runs", schema="public")
-                    if i["name"] == index.name
-                ),
-                None,
-            )
-            if existing_index and (
-                existing_index["column_names"] != list(index.columns.keys())
-                or existing_index["unique"]
-                or any(existing_index.get("dialect_options", {}).values())
-            ):
-                raise RuntimeError(f"unexpected definition for {index.name}; no upgrade applied")
-            index.create(conn, checkfirst=True)
+            _upgrade_runs(conn)
 
             # Columns and referenced tables must exist before functions/triggers/RLS.
             for path in sorted(SQL_DIR.glob("*.sql")):

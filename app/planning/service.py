@@ -343,6 +343,7 @@ class TaskService:
             )
             session.add(row)
             session.flush()
+            session.refresh(row)  # `number` is assigned by a database trigger
             events.record(session, str(self.workspace_id), None, "task", row.id, "created")
             return _task_view(session, row)
 
