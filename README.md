@@ -51,7 +51,19 @@ Qdrant environments:
 - **Local dev:** `bash run.sh qdrant` starts a light container (`docker-compose.yml`)
   at `http://localhost:6333`, the default `QDRANT_URL`. No API key needed.
 - **Tests:** in-memory Qdrant, no container.
-- PostgreSQL is out of scope for now; memory still goes straight to Qdrant.
+- Memory still goes straight to Qdrant; Postgres holds the core domain schema.
+
+## Postgres
+
+Core domain schema (11 tables) lives in Postgres 15+ (SQLAlchemy models in `db/`,
+Pydantic schemas in `schemas/`, Alembic migrations in `migrations/`).
+
+```sh
+bash run.sh postgres   # local container, db/user/password: flwn
+bash run.sh migrate    # alembic upgrade head
+```
+
+`DATABASE_URL` format: `postgresql+psycopg://user:pass@host:5432/db`.
 
 ```sh
 bash run.sh test

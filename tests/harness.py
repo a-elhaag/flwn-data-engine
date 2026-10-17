@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 os.environ.setdefault("DATA_API_KEY", "test-data-key")
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://flwn:flwn@localhost:5432/flwn_test")
 os.environ.setdefault("AZURE_FOUNDRY_ENDPOINT", "https://example.invalid")
 os.environ.setdefault("AZURE_FOUNDRY_KEY", "test-foundry-key")
 

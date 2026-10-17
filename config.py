@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATA_API_KEY: str
+    DATABASE_URL: str
     QDRANT_URL: str = "http://localhost:6333"
     QDRANT_API_KEY: str = ""
     AZURE_FOUNDRY_ENDPOINT: str
@@ -30,7 +31,11 @@ class Settings(BaseSettings):
     ORGANIZE_SCAN_CAP: int = 1000
 
     @field_validator(
-        "DATA_API_KEY", "QDRANT_URL", "AZURE_FOUNDRY_ENDPOINT", "AZURE_FOUNDRY_KEY"
+        "DATA_API_KEY",
+        "DATABASE_URL",
+        "QDRANT_URL",
+        "AZURE_FOUNDRY_ENDPOINT",
+        "AZURE_FOUNDRY_KEY",
     )
     @classmethod
     def not_blank(cls, value: str, info) -> str:

@@ -8,5 +8,23 @@ services:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: flwn
+      POSTGRES_PASSWORD: flwn
+      POSTGRES_DB: flwn
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flwn -d flwn"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
+  postgres_data:

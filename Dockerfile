@@ -7,5 +7,9 @@ COPY api ./api
 COPY memory ./memory
 COPY retrieval ./retrieval
 COPY clients ./clients
+COPY db ./db
+COPY schemas ./schemas
+COPY migrations ./migrations
+COPY alembic.ini ./
 EXPOSE 8002
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8002"]
