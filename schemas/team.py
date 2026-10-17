@@ -35,7 +35,7 @@ class TeamRead(TimestampedRead):
 
 class TeamMemberCreate(RequestModel):
     member_id: uuid.UUID
-    role: TeamMemberRole = UNSET
+    role: TeamMemberRole = TeamMemberRole.MEMBER
 
 
 class TeamMemberUpdate(RequestModel):

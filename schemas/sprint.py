@@ -10,7 +10,7 @@ from schemas.common import UNSET, Description, Name, RequestModel, TimestampedRe
 class SprintCreate(RequestModel):
     name: Name
     goal: Description = None
-    status: SprintStatus = UNSET
+    status: SprintStatus = SprintStatus.PLANNED
     start_date: date | None = None
     end_date: date | None = None
     created_by_id: uuid.UUID

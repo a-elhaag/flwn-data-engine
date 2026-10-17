@@ -8,8 +8,8 @@ class WorkItemCreate(RequestModel):
     title: Title
     description: Description = None
     type: WorkItemType
-    priority: Priority = UNSET
-    status: WorkItemStatus = UNSET
+    priority: Priority = Priority.MEDIUM
+    status: WorkItemStatus = WorkItemStatus.OPEN
     created_by_id: uuid.UUID
 
 

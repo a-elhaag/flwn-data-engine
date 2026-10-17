@@ -12,9 +12,9 @@ from pydantic import (
 )
 from pydantic.alias_generators import to_camel
 
-# Default for fields that are optional on input but NOT NULL in the DB (or that
-# have a DB default). "Not sent" stays out of model_fields_set; an explicit null
-# fails validation because the declared type does not allow None.
+# Default for Update (PATCH) fields that are NOT NULL in the DB. "Not sent" stays
+# out of model_fields_set; an explicit null fails validation because the declared
+# type does not allow None. Create schemas use real defaults instead.
 UNSET: Any = None
 
 

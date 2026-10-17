@@ -20,8 +20,8 @@ class TaskCreate(RequestModel):
     description: Description = None
     requirements: LongText = None
     acceptance_criteria: LongText = None
-    priority: Priority = UNSET
-    status: TaskStatus = UNSET
+    priority: Priority = Priority.MEDIUM
+    status: TaskStatus = TaskStatus.TODO
     due_date: UtcDatetime | None = None
     completed_at: UtcDatetime | None = None
     work_item_id: uuid.UUID | None = None

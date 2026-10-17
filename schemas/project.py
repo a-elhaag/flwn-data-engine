@@ -17,7 +17,7 @@ class ProjectCreate(RequestModel):
     key: ProjectKey
     name: Name
     description: Description = None
-    status: ProjectStatus = UNSET
+    status: ProjectStatus = ProjectStatus.ACTIVE
     created_by_id: uuid.UUID
 
 

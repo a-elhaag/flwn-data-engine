@@ -11,8 +11,8 @@ class MemberCreate(RequestModel):
     user_id: uuid.UUID | None = None
     name: Name | None = None
     email: Email | None = None
-    role: MemberRole = UNSET
-    status: MemberStatus = UNSET
+    role: MemberRole = MemberRole.MEMBER
+    status: MemberStatus = MemberStatus.ACTIVE
     workspace_id: uuid.UUID | None = None
     created_by_id: uuid.UUID | None = None
 
