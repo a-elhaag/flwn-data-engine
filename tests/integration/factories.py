@@ -60,7 +60,7 @@ def ok(response, status: int):
 
 
 def make_user(api: Api, name: str | None = None, email: str | None = None) -> dict:
-    body = {"name": name or uniq("User"), "email": email or f"{uniq('u')}@flwn.test"}
+    body = {"name": name or uniq("User"), "email": email or f"{uniq('u')}@flwn.io"}
     return ok(api.post("/users", json=body), 201)
 
 
@@ -140,3 +140,16 @@ def make_work_item(api: Api, org: Org, project: dict, title: str | None = None, 
 def make_task(api: Api, org: Org, project: dict, title: str | None = None, **extra) -> dict:
     body = {"title": title or uniq("Task"), "createdById": org.owner_id, **extra}
     return ok(api.post(f"/projects/{project['id']}/tasks", org, json=body), 201)
+
+
+ANY = object()
+
+
+def assert_error(response, status: int, code: str, field=ANY):
+    """Assert status, `code` and (optionally) `field`. Message texts are never checked."""
+    assert response.status_code == status, f"{response.status_code}: {response.text}"
+    body = response.json()
+    assert set(body) == {"code", "message", "field"}, body
+    assert body["code"] == code, body
+    if field is not ANY:
+        assert body["field"] == field, body
