@@ -13,6 +13,13 @@ from app.memory.steward import MemorySteward
 
 
 class MemoryApiTests(MemoryHarness):
+    def test_swagger_ui_expands_operations_and_models_by_default(self):
+        response = self.client.get("/docs")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('"docExpansion": "full"', response.text)
+        self.assertIn('"defaultModelsExpandDepth": 20', response.text)
+        self.assertIn('"defaultModelExpandDepth": 20', response.text)
+
     def test_round_trip_and_workspace_isolation(self):
         a_id = self.remember(self.team_a)
         b_id = self.remember(self.team_b)

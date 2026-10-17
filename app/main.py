@@ -26,7 +26,15 @@ def create_app() -> FastAPI:
         finally:
             indexer.stop_worker()
 
-    app = FastAPI(title="flwn-data-engine", lifespan=lifespan)
+    app = FastAPI(
+        title="flwn-data-engine",
+        lifespan=lifespan,
+        swagger_ui_parameters={
+            "docExpansion": "full",
+            "defaultModelsExpandDepth": 20,
+            "defaultModelExpandDepth": 20,
+        },
+    )
     errors.register(app)
     app.include_router(router)
     # MCP last: it owns exactly /mcp and falls through to 404 for anything else.
