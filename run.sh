@@ -7,7 +7,7 @@ case "${1:-}" in
   qdrant) docker compose up -d qdrant ;;
   postgres) docker compose up -d postgres ;;
   migrate) uv run alembic upgrade head ;;
-  test) uv run python -m unittest discover -s tests -v ;;
+  test) uv run pytest ;;
   memory_steward)
     uv run python -c 'from clients.health import health_check; status = health_check(); print(status); assert all(status.values()), status'
     ;;
