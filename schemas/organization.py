@@ -4,7 +4,15 @@ from datetime import datetime
 from pydantic import Field
 
 from db.enums import MemberRole
-from schemas.common import UNSET, Description, Name, RequestModel, TimestampedRead
+from schemas.common import (
+    UNSET,
+    Description,
+    Name,
+    RequestModel,
+    ResponseModel,
+    TimestampedRead,
+)
+from schemas.member import MemberRead
 
 
 class CreatorMember(RequestModel):
@@ -29,3 +37,8 @@ class OrganizationRead(TimestampedRead):
     name: str
     description: str | None
     archived_at: datetime | None
+
+
+class OrganizationCreated(ResponseModel):
+    organization: OrganizationRead
+    member: MemberRead

@@ -54,6 +54,7 @@ class TaskRead(TimestampedRead):
     organization_id: uuid.UUID
     project_id: uuid.UUID
     number: int
+    key: str  # project key + number, e.g. "FLWN-12"
     work_item_id: uuid.UUID | None
     sprint_id: uuid.UUID | None
     assignee_id: uuid.UUID | None

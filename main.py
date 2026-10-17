@@ -6,6 +6,8 @@ from fastapi import FastAPI
 
 from api.routes import router
 from clients import vector_store
+from domain.errors import register_error_handlers
+from domain.routes import domain_router
 from mcp_server import build_app, create_mcp
 
 
@@ -19,6 +21,8 @@ def create_app() -> FastAPI:
             yield
 
     app = FastAPI(title="flwn-data-engine", lifespan=lifespan)
+    register_error_handlers(app)
+    app.include_router(domain_router)
     app.include_router(router)
     # MCP last: it owns exactly /mcp and falls through to 404 for anything else.
     app.mount("/", build_app(mcp))
