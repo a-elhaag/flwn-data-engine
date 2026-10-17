@@ -145,8 +145,13 @@ or pass private raw records to one.
 
 Base: `/workspaces/{workspace_id}/atoms`. These routes require an active, nondeleted human
 member with workspace role `owner` or `admin`, using an `atoms:admin` bearer token or a
-service key plus `X-Acting-Member-Id` for that human. Personal ownership alone does not grant
-administration to a workspace `member` or `viewer`. Atom tokens cannot contain
+service key plus `X-Acting-Member-Id` for that human. Exception: a workspace `member` (not a
+`viewer`) may create and manage **their own personal atom** (kind `personal`, `owner_member_id` =
+themselves): list/get their own, edit, propose and activate versions, schedules, grants,
+connections, skills, pause/kill/delete. They cannot create workspace atoms, touch anyone else's
+atom, or change the daily caps (`max_runs_per_day`, `max_cost_per_day`, `max_actions_per_day`):
+a member-created atom starts at the defaults (10 runs, cost 1, 100 actions) and only an
+owner/admin raises them. Atom tokens cannot contain
 `atoms:admin`. The service key alone does not impersonate a human administrator. Never attach
 it to runtime atom requests: valid service-key authentication takes precedence over REST bearer auth.
 
@@ -449,7 +454,7 @@ claims; legacy approval rows retain their previous behavior.
 
 ## Connection integration boundaries
 
-Only a human admin may change a connection's ceiling, allowed tools or pinned version.
+Only a human admin may change a connection's ceiling, allowed tools or pinned version on a workspace atom. A personal atom's owner may do so on their own atom; its connection must use the owner's member UUID.
 `atom_connection_report` updates health fields for the caller's connection, never sets
 `active`, and pauses the atom after failures in **three distinct runs**. Repeated reports
 within one run do not inflate this count. A human reconnection resets the failure window.

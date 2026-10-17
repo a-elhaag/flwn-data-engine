@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import db_support
 from sqlalchemy import delete, func, select, text, update
-from test_schema import T, make_workspace
+from test_schema import T, add, make_workspace
 
 from app.atoms.access import AtomContext, bind_context
 from app.atoms.service import AtomService
@@ -199,6 +199,58 @@ class AtomServiceTest(unittest.TestCase):
                 self.service.configure(self.aid, name="Denied")
         with self.assertRaises(PermissionError):
             AtomService(self.ws["workspace_id"], trusted=True, bind=ENGINE).create("Denied")
+
+    def member(self, role="member"):
+        with ENGINE.begin() as conn:
+            user = add(conn, "users", email=f"m{uuid.uuid4().hex[:8]}@example.com", name="M")
+            member = add(
+                conn,
+                "members",
+                workspace_id=self.ws["workspace_id"],
+                user_id=user,
+                type="HUMAN",
+                role=role,
+            )
+        return member, AtomService(self.ws["workspace_id"], member, bind=ENGINE)
+
+    def test_member_manages_only_own_personal_atom_without_budgets(self):
+        me, mine = self.member()
+        other, theirs = self.member()
+        atom = mine.create("Mine", kind="personal", owner_member_id=me, max_cost_per_day="99")
+        self.assertEqual(
+            Decimal(atom["max_cost_per_day"]), Decimal("1")
+        )  # default caps, not the request
+        aid = atom["id"]
+        version = mine.propose(aid, "Do it")
+        mine.activate(aid, version["id"])
+        mine.set_schedule(aid, interval_minutes=5)
+        mine.set_connection(
+            aid,
+            toolkit="outlook",
+            composio_user_id=str(me),
+            toolkit_version="2026",
+            permission_ceiling="read",
+        )
+        mine.configure(aid, name="Renamed")
+        self.assertEqual([a["id"] for a in mine.list()], [aid])
+        with self.assertRaises(PermissionError):
+            mine.configure(aid, max_cost_per_day="50")
+        for denied in (
+            lambda: mine.create("Shared"),
+            lambda: mine.create("ForOther", kind="personal", owner_member_id=other),
+            lambda: mine.configure(self.aid, name="x"),
+            lambda: mine.get(self.aid),
+            lambda: theirs.get(aid),
+            lambda: theirs.configure(aid, name="x"),
+            lambda: theirs.delete(aid),
+        ):
+            with self.assertRaises(PermissionError):
+                denied()
+        _, viewer = self.member("viewer")
+        with self.assertRaises(PermissionError):
+            viewer.create("V", kind="personal", owner_member_id=viewer.actor)
+        self.service.configure(aid, max_cost_per_day="5")  # an admin still raises the cap
+        mine.delete(aid)
 
     def test_grant_schedule_connection_crud_and_validation(self):
         grant = self.service.set_grant(

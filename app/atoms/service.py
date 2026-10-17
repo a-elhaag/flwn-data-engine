@@ -133,6 +133,9 @@ def _validate_cron(cron):
             raise AtomError("invalid numeric cron field") from None
 
 
+BUDGET_FIELDS = frozenset({"max_runs_per_day", "max_cost_per_day", "max_actions_per_day"})
+
+
 class AtomService:
     def __init__(
         self,
@@ -154,7 +157,10 @@ class AtomService:
         self.trusted = trusted
 
     @contextmanager
-    def _session(self, *, admin=False, atom_id=None, run_id=None, finishing=False, scheduler=False):
+    def _session(
+        self, *, admin=False, atom_id=None, run_id=None, finishing=False, scheduler=False, own=None
+    ):
+        # own: an atom id (or True for list/create) a plain member may use when it is their personal atom
         from app.atoms.access import bind_context, current_context, privileged_atom_session
 
         target = _uuid(atom_id) or self.atom_id
@@ -189,8 +195,9 @@ class AtomService:
             if member is None:
                 raise AtomPermissionError("active workspace member required")
             human_admin = member.type == "HUMAN" and member.role in ("owner", "admin")
+            session.info["human_admin"] = human_admin
             if admin or member.type == "HUMAN":
-                if not human_admin:
+                if not human_admin and not self._owns(session, member, own):
                     raise AtomPermissionError("active human owner/admin required")
             else:
                 if member.agent_kind != "atom" or target is None or run_target is None:
@@ -213,6 +220,23 @@ class AtomService:
                     if owner.type != "HUMAN" or owner.status != "active" or owner.deleted_at:
                         raise AtomPermissionError("personal owner must remain active")
             yield session
+
+    def _owns(self, session, member, own):
+        """A plain member (not a viewer) may manage only their own personal atom, or create/list their own."""
+        if own is None or member.type != "HUMAN" or member.role == "viewer":
+            return False
+        if own is True:
+            return True
+        atom = session.scalar(
+            select(Atom).where(
+                Atom.workspace_id == self.workspace,
+                Atom.id == _uuid(own),
+                Atom.deleted_at.is_(None),
+                Atom.kind == "personal",
+                Atom.owner_member_id == member.id,
+            )
+        )
+        return atom is not None
 
     def _row(self, session, model, row_id, *, atom_id=None, lock=False):
         query = select(model).where(model.workspace_id == self.workspace, model.id == _uuid(row_id))
@@ -256,7 +280,12 @@ class AtomService:
                 max_actions_per_day=max_actions_per_day,
             )
         )
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=True) as session:
+            if not session.info["human_admin"]:
+                # A member creates only their own personal atom, at the default caps.
+                if kind != "personal" or str(_uuid(owner_member_id)) != str(self.actor):
+                    raise AtomPermissionError("members may only create their own personal atoms")
+                max_runs_per_day, max_cost_per_day, max_actions_per_day = 10, "1", 100
             if owner_member_id:
                 owner = self._row(session, Member, owner_member_id)
                 if owner.type != "HUMAN" or owner.status != "active" or owner.deleted_at:
@@ -304,7 +333,9 @@ class AtomService:
 
     def configure(self, atom_id, **fields):
         self._validate_config(fields)
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
+            if not session.info["human_admin"] and fields.keys() & BUDGET_FIELDS:
+                raise AtomPermissionError("only an owner/admin may change daily caps")
             atom = self._atom(session, atom_id, lock=True)
             for key, value in fields.items():
                 setattr(atom, key, value)
@@ -338,7 +369,7 @@ class AtomService:
 
     def get(self, atom_id=None):
         target = atom_id or self.atom_id
-        with self._session(atom_id=target, scheduler=True) as session:
+        with self._session(atom_id=target, scheduler=True, own=target) as session:
             return self._configuration(session, self._atom(session, target))
 
     def list(self, *, status=None, enabled=None):
@@ -346,10 +377,12 @@ class AtomService:
             raise AtomError("invalid atom status")
         if enabled is not None and not isinstance(enabled, bool):
             raise AtomError("enabled must be a boolean")
-        with self._session(admin=True, scheduler=True) as session:
+        with self._session(admin=True, scheduler=True, own=True) as session:
             query = select(Atom).where(
                 Atom.workspace_id == self.workspace, Atom.deleted_at.is_(None)
             )
+            if not session.info.get("human_admin", True):
+                query = query.where(Atom.kind == "personal", Atom.owner_member_id == self.actor)
             if status is not None:
                 query = query.where(Atom.status == status)
             if enabled is not None:
@@ -381,7 +414,7 @@ class AtomService:
         target = atom_id or self.atom_id
         if not isinstance(instructions, str) or not instructions.strip():
             raise AtomError("instructions are required")
-        with self._session(atom_id=target) as session:
+        with self._session(atom_id=target, own=target) as session:
             atom = self._atom(session, target, lock=True)
             member = self._row(session, Member, self.actor)
             effective_source = "self" if member.type == "AI" else (source or "human")
@@ -438,7 +471,7 @@ class AtomService:
         return self._activate(atom_id, version_id, rollback=True)
 
     def _activate(self, atom_id, version_id, *, rollback):
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             if atom.status == "killed":
                 raise AtomStateError("killed atoms cannot be activated")
@@ -464,7 +497,7 @@ class AtomService:
         return self._state(atom_id, "killed", deleted=True)
 
     def _state(self, atom_id, status, *, deleted=False):
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             if atom.status == "killed" and status != "killed":
                 raise AtomStateError("killed atoms cannot be resumed")
@@ -511,7 +544,7 @@ class AtomService:
         return self._list_children(AtomConnection, atom_id)
 
     def _delete_child(self, model, atom_id, row_id):
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             row = self._row(session, model, row_id, atom_id=atom.id)
             session.delete(row)
@@ -531,7 +564,7 @@ class AtomService:
     ):
         if resource_type not in RESOURCE_TYPES or level not in ("summary", "read", "write"):
             raise AtomError("invalid grant")
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             if resource_id is not None:
                 from app.db.base import Base
@@ -597,7 +630,7 @@ class AtomService:
             ZoneInfo(timezone)
         except (ZoneInfoNotFoundError, ValueError, TypeError):
             raise AtomError("invalid timezone") from None
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             row = (
                 self._row(session, AtomSchedule, schedule_id, atom_id=atom.id)
@@ -643,7 +676,7 @@ class AtomService:
             raise AtomError("invalid connection status")
         if status == "active" and not composio_account_ref:
             raise AtomError("active connection requires an account reference")
-        with self._session(admin=True) as session:
+        with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             if atom.kind == "personal" and composio_user_id != str(atom.owner_member_id):
                 raise AtomError("personal connections must use the owner's member UUID")
