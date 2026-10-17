@@ -1,5 +1,8 @@
 """Plain CRUD functions. Each takes a session (and the org id where scoped), returns
-ORM objects, raises DomainError, and commits its own transaction on writes."""
+ORM objects, raises DomainError, and commits its own transaction on writes.
+
+Rule: a route calls at most one write CRUD function. Any operation that writes
+several rows must be one CRUD function with one commit at the end."""
 
 from typing import Any
 from uuid import UUID
