@@ -159,9 +159,12 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     # Atoms
     f"POST {W}/atoms": (
         "Create an atom",
-        "An atom is a scheduled agent with daily run, cost and action budgets. Starts as a draft. Trusted backend only.",
+        "An atom is a scheduled agent with daily run, cost and action budgets. Starts as a draft. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
-    f"GET {W}/atoms": ("List atoms", "Trusted backend only."),
+    f"GET {W}/atoms": (
+        "List atoms",
+        "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
+    ),
     f"GET {W}/atoms/scheduler-state": (
         "Scheduler state",
         "What the scheduler needs to decide what to run next. Trusted backend only.",
@@ -172,64 +175,67 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"GET {W}/atoms/{{atom_id}}": (
         "Get an atom",
-        "Returns one atom. Trusted backend only.",
+        "Returns one atom. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"PATCH {W}/atoms/{{atom_id}}": (
         "Configure an atom",
-        "Rename it, change budgets or model tier, or set `draft`, `paused` or `killed`. Null values are rejected. Trusted backend only.",
+        "Rename it, change budgets or model tier, or set `draft`, `paused` or `killed`. Null values are rejected. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
-    f"DELETE {W}/atoms/{{atom_id}}": ("Delete an atom", "Returns 204. Trusted backend only."),
+    f"DELETE {W}/atoms/{{atom_id}}": (
+        "Delete an atom",
+        "Returns 204. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
+    ),
     f"POST {W}/atoms/{{atom_id}}/versions": (
         "Propose a version",
-        "Adds a new instruction version. It does nothing until activated. Trusted backend only.",
+        "Adds a new instruction version. It does nothing until activated. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"POST {W}/atoms/{{atom_id}}/activate": (
         "Activate a version",
-        "Makes the version live and the atom active. Trusted backend only.",
+        "Makes the version live and the atom active. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"POST {W}/atoms/{{atom_id}}/rollback": (
         "Roll back to a version",
-        "Re-activates an earlier version. Trusted backend only.",
+        "Re-activates an earlier version. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"PUT {W}/atoms/{{atom_id}}/grants": (
         "Grant access",
-        "Gives the atom `summary`, `read` or `write` access to one resource. Trusted backend only.",
+        "Gives the atom `summary`, `read` or `write` access to one resource. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"DELETE {W}/atoms/{{atom_id}}/grants/{{grant_id}}": (
         "Revoke a grant",
-        "Returns 204. Trusted backend only.",
+        "Returns 204. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"POST {W}/atoms/{{atom_id}}/schedules": (
         "Add a schedule",
-        "Give exactly one of `cron` or `interval_minutes` (at least 5). Trusted backend only.",
+        "Give exactly one of `cron` or `interval_minutes` (at least 5). Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"PUT {W}/atoms/{{atom_id}}/schedules/{{schedule_id}}": (
         "Replace a schedule",
-        "Trusted backend only.",
+        "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"DELETE {W}/atoms/{{atom_id}}/schedules/{{schedule_id}}": (
         "Delete a schedule",
-        "Trusted backend only.",
+        "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"PUT {W}/atoms/{{atom_id}}/connections/{{connection_id}}": (
         "Replace a connection",
-        "Updates a toolkit connection in place. `toolkit_version` must be pinned, not `latest`. Trusted backend only.",
+        "Updates a toolkit connection in place. `toolkit_version` must be pinned, not `latest`. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"DELETE {W}/atoms/{{atom_id}}/connections/{{connection_id}}": (
         "Delete a connection",
-        "Trusted backend only.",
+        "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"PUT {W}/atoms/{{atom_id}}/connections": (
         "Add or update a connection",
-        "Links the atom to a Composio toolkit account with a permission ceiling and an allow-list of tools. Trusted backend only.",
+        "Links the atom to a Composio toolkit account with a permission ceiling and an allow-list of tools. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"POST {W}/atoms/{{atom_id}}/skills": (
         "Attach a skill",
-        "Attaches a promoted skill version to the atom. Trusted backend only.",
+        "Attaches a promoted skill version to the atom. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"PATCH {W}/atoms/{{atom_id}}/skills/{{attachment_id}}": (
         "Enable or disable a skill",
-        "Trusted backend only.",
+        "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     f"POST {W}/atoms/{{atom_id}}/runs": (
         "Start a run",
@@ -267,9 +273,12 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     # Skills
     f"POST {W}/skills/{{skill_id}}/promote": (
         "Promote a skill",
-        "Makes a local skill available to the whole workspace. Trusted backend only.",
+        "Makes a local skill available to the whole workspace. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
-    f"DELETE {W}/skills/{{skill_id}}": ("Delete a skill", "Soft delete. Trusted backend only."),
+    f"DELETE {W}/skills/{{skill_id}}": (
+        "Delete a skill",
+        "Soft delete. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
+    ),
     # Workspaces
     "POST /workspaces": (
         "Create a workspace",

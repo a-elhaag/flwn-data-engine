@@ -14,17 +14,17 @@ notetaker sees a meeting only if it was added as a participant.
 
 ## Routes
 
-| Method | Path | Who | Result |
-| --- | --- | --- | --- |
-| POST | `/workspaces/{ws}/meetings` | write | Create (201). The acting member hosts and is a participant |
-| GET | `/workspaces/{ws}/meetings` | read | Page of visible meetings. `status`, `project_id`, `limit`, `offset` |
-| GET | `/workspaces/{ws}/meetings/{id}` | read | One meeting with participants and consent |
-| PATCH | `/workspaces/{ws}/meetings/{id}` | host | `title`, `scheduled_at`, `status`: `live`, `ended` or `canceled` (forward only) |
-| POST | `/workspaces/{ws}/meetings/{id}/participants` | host | Invite members (`member_ids`) |
-| PUT | `/workspaces/{ws}/meetings/{id}/consent` | the participant | `granted` or `declined`, for yourself only |
-| POST | `/workspaces/{ws}/meetings/{id}/recordings` | trusted backend | Upload ticket for a recording (201) |
-| PUT | `/workspaces/{ws}/meetings/{id}/transcript` | host, trusted | Hand in a transcript (needs everyone's consent); replaces the earlier supplied one |
-| GET | `/workspaces/{ws}/meetings/{id}/transcript` | participant, trusted | Transcript with segments. `limit`, `offset` |
+Endpoints, parameters and schemas are in the Swagger UI at `/docs`. Who may call what:
+
+- **Create, list, get:** any member with `meetings:write` or `meetings:read`. The creator hosts and
+  becomes a participant. List and get show only meetings the member can see.
+- **Host only:** update the meeting (status moves forward only: `live`, `ended` or `canceled`) and
+  invite participants.
+- **The participant, for themselves only:** answer the consent question (`granted` or `declined`).
+- **Trusted backend only:** start a recording.
+- **Host or trusted backend:** hand in a transcript. It needs everyone's consent and replaces the
+  earlier supplied one.
+- **Participant or trusted backend:** read the transcript.
 
 Errors: `404` unknown or not yours, `403` host-only or trusted-only action, `409` wrong status or
 consent missing, `422` unknown member, team, project or channel, or a bad segment.

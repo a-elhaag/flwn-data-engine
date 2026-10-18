@@ -48,24 +48,19 @@ workspace or missing scope or service-only route or inactive member, `404` memor
 
 ## Routes
 
-| Method | Path | Scope | Purpose | MCP tool |
-| --- | --- | --- | --- | --- |
-| POST | `/workspaces/{ws}/memories` | write | Store one memory. Returns `point_id`, `deduplicated` | `memory_remember` |
-| POST | `/workspaces/{ws}/memories/batch` | write | Store 1-50 memories, batched embedding | `memory_ingest` |
-| POST | `/workspaces/{ws}/memories/recall` | read | Ranked search. Body: `query`, `agent`, `limit`, `sources` | `memory_recall` |
-| GET | `/workspaces/{ws}/memories` | read | Page through memories. `limit`, `cursor`, `source`, `agent`, `include_superseded` | `memory_browse` |
-| GET | `/workspaces/{ws}/memories/{id}` | read | One memory incl. `raw_text` | `memory_open` |
-| GET | `/workspaces/{ws}/memories/stats` | read | Counts, by source | `memory_pulse` |
-| PATCH | `/workspaces/{ws}/memories/{id}` | write | Replace text, keep id and history | `memory_revise` |
-| PUT | `/workspaces/{ws}/memories/{id}/pin` | write | `{"pinned": true|false}` | `memory_anchor` |
-| DELETE | `/workspaces/{ws}/memories/{id}` | delete | Delete one; idempotent, 204 | `memory_forget` |
-| POST | `/workspaces/{ws}/memories/cleanup` | service | Sweep. `retention_days`, `dry_run` | `memory_cleanup` (scope `memory:maintain`) |
-| POST | `/workspaces/{ws}/sprint-completed` | service | Same as cleanup, for sprint end | `memory_cleanup` |
-| POST | `/workspaces/{ws}/memories/organize` | service | Dedupe/supersede. `dry_run`, `max_clusters` | - |
-| DELETE | `/workspaces/{ws}/memories?confirm={ws}` | service | Purge the whole workspace | - |
-| POST | `/auth/tokens` | service | Mint agent token | - |
-| GET | `/healthz` | none | Liveness | - |
-| GET | `/readyz` | service | Database (with pgvector), Foundry and storage readiness | - |
+Every route, with parameters, schemas and examples, is in the Swagger UI at `/docs`. What is not
+there is which MCP tool mirrors which route, and which routes are service-key only:
+
+| Route | MCP tool |
+| --- | --- |
+| `POST /memories`, `POST /memories/batch` | `memory_remember`, `memory_ingest` |
+| `POST /memories/recall` | `memory_recall` |
+| `GET /memories`, `GET /memories/{id}` | `memory_browse`, `memory_open` |
+| `GET /memories/stats` | `memory_pulse` |
+| `PATCH /memories/{id}`, `PUT /memories/{id}/pin` | `memory_revise`, `memory_anchor` |
+| `DELETE /memories/{id}` (idempotent, 204) | `memory_forget` |
+| `POST /memories/cleanup`, `POST /sprint-completed` (service key only) | `memory_cleanup` (scope `memory:maintain`) |
+| `POST /memories/organize`, `DELETE /memories?confirm={workspace_id}` (service key only) | none |
 
 Browse pages by id; `next_cursor` is the last id of the page. Limits: text 1-100000 chars, recall `limit` 1-100, batch 1-50, retention 1-36500 days.
 

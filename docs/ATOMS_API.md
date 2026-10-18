@@ -155,24 +155,16 @@ owner/admin raises them. Atom tokens cannot contain
 `atoms:admin`. The service key alone does not impersonate a human administrator. Never attach
 it to runtime atom requests: valid service-key authentication takes precedence over REST bearer auth.
 
-| Method and suffix | Body / purpose |
-| --- | --- |
-| `POST /` | `name`, explicit `max_runs_per_day`, `max_cost_per_day`, `max_actions_per_day`; optional description, kind (workspace/personal), owner_member_id, model_tier (small/medium) |
-| `GET /`, `GET /{id}` | Nondeleted configuration and operational state |
-| `PATCH /{id}` | Name/description/model tier/caps/status (draft/paused/killed); activation uses its own route |
-| `DELETE /{id}` | Soft-delete and stop future execution; 204 |
-| `POST /{id}/versions` | instructions, policy (object), tools (array); immutable candidate content |
-| `POST /{id}/activate`, `POST /{id}/rollback` | version_id; human-approved pointer change |
-| `PUT /{id}/grants` | resource_type, optional resource_id (null = wildcard), level (summary/read/write), constraints (object) |
-| `DELETE /{id}/grants/{grant_id}` | Immediate revocation; 204 |
-| `POST /{id}/schedules` | Exactly cron or interval_minutes >=5; timezone=UTC, enabled=true, optional aware next_run_at |
-| `PUT /{id}/schedules/{schedule_id}` | Replace schedule configuration; cursor is not caller-editable |
-| `DELETE /{id}/schedules/{schedule_id}` | Delete schedule, preserve run history; `{deleted: true}` |
-| `PUT /{id}/connections` | Upsert by toolkit using connection fields below |
-| `PUT /{id}/connections/{connection_id}` | Replace connection configuration by ID |
-| `DELETE /{id}/connections/{connection_id}` | Remove connection; `{deleted: true}` |
-| `POST /{id}/skills` | skill_id, skill_version, catalog=false |
-| `PATCH /{id}/skills/{attachment_id}` | enabled (boolean) |
+Every route (create, list, get, configure, delete, versions, activate and rollback, grants,
+schedules, connections, skill attachments), with its body and an example, is in the Swagger UI at
+`/docs` under **Atoms**. Rules the schema cannot show:
+
+- `PUT` requests replace the configuration; they are not sparse patches.
+- A schedule takes exactly one of `cron` or `interval_minutes` (at least 5). Its cursor cannot be
+  edited by the caller.
+- A grant with a null `resource_id` is a wildcard for the whole resource type.
+- Deleting an atom is a soft delete and stops future execution. Revoking a grant is immediate.
+- Activation and rollback change the active-version pointer and need a human.
 
 Connection bodies require toolkit, composio_user_id, toolkit_version, permission_ceiling;
 optional composio_account_ref, allowed_tools=[], status=unknown. An active connection requires
@@ -339,15 +331,15 @@ atom tools total). The data engine persists decisions/claims/outcomes; the AI en
 when approval is needed and performs external execution. Approval never expands grants or
 connection ceilings.
 
-| Method and suffix | Authentication | Body / result |
-| --- | --- | --- |
-| `POST` (base path) | Originating run token, `atoms:run` | Creation body below; 201, approval record |
-| `GET /ready?limit=100` | Service key only | Approved, unexpired, no execution run; bare array |
-| `GET /{approval_id}` | Originating or execution run token, `atoms:run` | Stored approval record |
-| `PUT /{approval_id}/decision` | Service key + acting human | `{"status":"approved","comment":"Reviewed"}`; status approved/rejected |
-| `POST /{approval_id}/execution-run` | Service key only | `{"estimated_cost":"0","estimated_actions":1}`; dedicated run |
-| `POST /{approval_id}/claim` | Execution run token, `atoms:run` | No body; `{"execute":true,"approval":{...}}` once |
-| `PUT /{approval_id}/outcome` | Execution run token, `atoms:run` | `{"status":"succeeded","result":{...}}`; stored approval |
+Routes, bodies and examples are in the Swagger UI at `/docs` under **Approvals**. Who calls what:
+
+- **Run token with `atoms:run`:** create an approval, get it, claim it and record its outcome. The
+  originating run token creates; the execution run token claims and records the outcome.
+- **Service key only:** list the approved and unexpired approvals that have no execution run yet
+  (a bare array, `?limit=100`), and bootstrap an execution run.
+- **Service key plus an acting human:** decide (`approved` or `rejected`).
+- Claim returns `{"execute": true, "approval": {...}}` once; a repeated claim never authorizes
+  another attempt.
 
 Approval responses are flat objects with these fields (nullable fields remain present):
 

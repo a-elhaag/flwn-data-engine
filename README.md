@@ -130,10 +130,11 @@ confirm that resources are provisioned or that a deployment is healthy.
 - [`docs/ATOMS_AI_ENGINE_INTEGRATION.md`](docs/ATOMS_AI_ENGINE_INTEGRATION.md): AI-engine scheduler/worker handoff, request examples, retries and acceptance checklist.
 - [`docs/MEMORY_API.md`](docs/MEMORY_API.md): memory routes, auth, behavior, limits.
 - [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and the agent usage guide.
-- [`docs/AI_ENGINE_UPDATE.md`](docs/AI_ENGINE_UPDATE.md): what the AI engine must update.
 - [`docs/CONFLICTS_API.md`](docs/CONFLICTS_API.md): decision conflict flags and human resolution.
 - [`docs/MEETINGS_API.md`](docs/MEETINGS_API.md): meetings, consent, recordings, transcripts.
 - [`docs/FILES_API.md`](docs/FILES_API.md): file upload, download and storage layout.
+- [`docs/CRUD_STATUS.md`](docs/CRUD_STATUS.md): which resources have full, partial or no CRUD.
+- [`docs/ATOMIZER_AND_ATOM_TOOLS_TASK.md`](docs/ATOMIZER_AND_ATOM_TOOLS_TASK.md): specified atom tools and Atomizer support, not built yet.
 - [`docs/schema-graph.html`](docs/schema-graph.html): the database as an interactive graph.
 
 ## Known gaps
@@ -142,4 +143,4 @@ confirm that resources are provisioned or that a deployment is healthy.
   always returns the best few, even when none is a good match.
 - File search has no relevance cut-off yet: it returns the best few chunks even when none matches.
 - Writes embed synchronously; there is no background worker.
-- Task, project and workspace CRUD endpoints are not built; the tables exist.
+- Several tables still have no REST API (sprints, milestones, labels, folders, invitations and more). See [`docs/CRUD_STATUS.md`](docs/CRUD_STATUS.md) for the full list.

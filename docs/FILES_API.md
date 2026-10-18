@@ -31,14 +31,10 @@ trusted backend calls (see [MEMORY_API.md](MEMORY_API.md#who-is-acting)).
 
 ## Routes
 
-| Method | Path | Scope | Result |
-| --- | --- | --- | --- |
-| POST | `/workspaces/{ws}/files` | files:write | Upload ticket (201) |
-| POST | `/workspaces/{ws}/files/{id}/complete` | files:write | The file, now `ready` |
-| GET | `/workspaces/{ws}/files` | files:read | Page of files. `limit`, `offset`, `kind`, `project_id`, `folder_id` |
-| GET | `/workspaces/{ws}/files/{id}` | files:read | One file |
-| GET | `/workspaces/{ws}/files/{id}/download` | files:read | Signed read link, valid `DOWNLOAD_URL_TTL_SECONDS` (default 5 minutes) |
-| DELETE | `/workspaces/{ws}/files/{id}` | files:delete | Hides the file and deletes its blob (204) |
+Endpoints, parameters and schemas are in the Swagger UI at `/docs`. Scopes: `files:write` to start
+and complete uploads and to reindex, `files:read` to list, get, download and search, `files:delete`
+to delete. Delete hides the file and deletes its blob (204). A download link is valid for
+`DOWNLOAD_URL_TTL_SECONDS` (default 5 minutes).
 
 Status codes: `404` unknown file or workspace, `409` not uploaded yet (complete, download),
 `422` invalid input, too large, wrong size, or an unknown project, folder or team, `503` storage
