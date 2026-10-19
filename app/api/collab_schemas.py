@@ -69,6 +69,7 @@ class CommentPage(BaseModel):
     items: list[CommentOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class DocCreate(BaseModel):
@@ -157,6 +158,7 @@ class DocPage(BaseModel):
     items: list[DocOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class BlockCreate(BaseModel):
@@ -209,6 +211,7 @@ class BlockPage(BaseModel):
     items: list[BlockOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class ChannelCreate(BaseModel):
@@ -268,6 +271,7 @@ class ChannelPage(BaseModel):
     items: list[ChannelOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class ChannelMembersUpdate(BaseModel):
@@ -326,3 +330,4 @@ class MessagePage(BaseModel):
     items: list[MessageOut]
     limit: int
     offset: int
+    has_more: bool = False

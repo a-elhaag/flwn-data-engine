@@ -1,14 +1,17 @@
 """Trusted workspace project and task management."""
 
+import re
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.db import events
-from app.db.models.identity import Member, Team, Workspace
+from app.db.models.identity import Member, Team, TeamMember, Workspace
 from app.db.models.planning import Backlog, Milestone, Project, Sprint, Task, WorkItem
 from app.db.session import session_for
+
+TASK_KEY = re.compile(r"^([A-Z][A-Z0-9]{0,9})-([1-9][0-9]*)$")
 
 
 class PlanningNotFound(LookupError):
@@ -102,6 +105,19 @@ def _check_project_refs(session, workspace_id, fields):
         fields["lead_id"] = lead_id
 
 
+def _member_in_workspace(session, workspace_id, member_id):
+    found = session.scalar(
+        select(Member.id).where(
+            Member.workspace_id == workspace_id,
+            Member.id == uuid.UUID(str(member_id)),
+            Member.deleted_at.is_(None),
+        )
+    )
+    if found is None:
+        raise PlanningNotFound("member not found")
+    return found
+
+
 def _task_view(session, row):
     project = session.get(Project, row.project_id)
     return {
@@ -133,8 +149,9 @@ def _task_view(session, row):
 
 
 class ProjectService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -157,17 +174,40 @@ class ProjectService:
             _workspace(session, self.workspace_id)
             return _project(session, self.workspace_id, project_id)
 
+    def for_member(self, member_id, limit=50, offset=0):
+        """Projects a member leads or whose team they belong to."""
+        with session_for(str(self.workspace_id)) as session:
+            member = _member_in_workspace(session, self.workspace_id, member_id)
+            on_team = (
+                select(TeamMember.team_id)
+                .where(TeamMember.workspace_id == self.workspace_id, TeamMember.member_id == member)
+                .scalar_subquery()
+            )
+            return list(
+                session.scalars(
+                    select(Project)
+                    .where(
+                        Project.workspace_id == self.workspace_id,
+                        Project.deleted_at.is_(None),
+                        or_(Project.lead_id == member, Project.team_id.in_(on_team)),
+                    )
+                    .order_by(Project.created_at, Project.id)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+
     def create(self, **fields):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             _check_project_refs(session, self.workspace_id, fields)
-            row = Project(workspace_id=self.workspace_id, **fields)
+            row = Project(workspace_id=self.workspace_id, created_by=self.actor, **fields)
             session.add(row)
             session.flush()
             backlog = Backlog(workspace_id=self.workspace_id, project_id=row.id, name="Backlog")
             session.add(backlog)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "project", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "project", row.id, "created")
             return row
 
     def update(self, project_id, **fields):
@@ -179,7 +219,7 @@ class ProjectService:
                 setattr(row, key, value)
             session.flush()
             events.record(
-                session, str(self.workspace_id), None, "project", row.id, "updated", fields
+                session, str(self.workspace_id), self.actor, "project", row.id, "updated", fields
             )
             return row
 
@@ -209,18 +249,21 @@ class ProjectService:
                 )
                 for task in tasks:
                     task.deleted_at = now
-                    events.record(session, str(self.workspace_id), None, "task", task.id, "deleted")
+                    events.record(
+                        session, str(self.workspace_id), self.actor, "task", task.id, "deleted"
+                    )
                 events.record(
-                    session, str(self.workspace_id), None, "work_item", item.id, "deleted"
+                    session, str(self.workspace_id), self.actor, "work_item", item.id, "deleted"
                 )
             row.deleted_at = now
             session.flush()
-            events.record(session, str(self.workspace_id), None, "project", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "project", row.id, "deleted")
 
 
 class WorkItemService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, project_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -261,13 +304,16 @@ class WorkItemService:
                 session.flush()
             row = WorkItem(
                 workspace_id=self.workspace_id,
+                created_by=self.actor,
                 project_id=project.id,
                 backlog_id=backlog.id,
                 **fields,
             )
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "work_item", row.id, "created")
+            events.record(
+                session, str(self.workspace_id), self.actor, "work_item", row.id, "created"
+            )
             return row
 
     def update(self, project_id, work_item_id, **fields):
@@ -278,7 +324,7 @@ class WorkItemService:
                 setattr(row, key, value)
             session.flush()
             events.record(
-                session, str(self.workspace_id), None, "work_item", row.id, "updated", fields
+                session, str(self.workspace_id), self.actor, "work_item", row.id, "updated", fields
             )
             return row
 
@@ -297,27 +343,94 @@ class WorkItemService:
             )
             for task in tasks:
                 task.deleted_at = now
-                events.record(session, str(self.workspace_id), None, "task", task.id, "deleted")
+                events.record(
+                    session, str(self.workspace_id), self.actor, "task", task.id, "deleted"
+                )
             row.deleted_at = now
             session.flush()
-            events.record(session, str(self.workspace_id), None, "work_item", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "work_item", row.id, "deleted"
+            )
 
 
 class TaskService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
-    def list(self, project_id, limit=50, offset=0):
+    def list(
+        self,
+        project_id,
+        limit=50,
+        offset=0,
+        *,
+        assignee_id=None,
+        status=None,
+        sprint_id=None,
+        backlog=None,
+    ):
+        """backlog=True: tasks in no sprint. backlog=False: tasks in a sprint."""
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
-            rows = session.scalars(
+            query = select(Task).where(
+                Task.workspace_id == self.workspace_id,
+                Task.project_id == project.id,
+                Task.deleted_at.is_(None),
+            )
+            if assignee_id is not None:
+                query = query.where(Task.assignee_id == assignee_id)
+            if status is not None:
+                query = query.where(Task.status == status)
+            if sprint_id is not None:
+                query = query.where(Task.sprint_id == sprint_id)
+            if backlog is not None:
+                query = query.where(
+                    Task.sprint_id.is_(None) if backlog else Task.sprint_id.is_not(None)
+                )
+            rows = session.scalars(query.order_by(Task.number, Task.id).limit(limit).offset(offset))
+            return [_task_view(session, row) for row in rows]
+
+    def by_key(self, key):
+        """A task by its readable identifier, such as FLWN-12."""
+        found = TASK_KEY.match(key)
+        if found is None:
+            raise ValueError("task key looks like FLWN-12")
+        with session_for(str(self.workspace_id)) as session:
+            row = session.scalar(
                 select(Task)
+                .join(
+                    Project,
+                    (Project.workspace_id == Task.workspace_id) & (Project.id == Task.project_id),
+                )
                 .where(
                     Task.workspace_id == self.workspace_id,
-                    Task.project_id == project.id,
+                    Project.key == found.group(1),
+                    Project.deleted_at.is_(None),
+                    Task.number == int(found.group(2)),
                     Task.deleted_at.is_(None),
                 )
-                .order_by(Task.number, Task.id)
+            )
+            if row is None:
+                raise PlanningNotFound("task not found")
+            return _task_view(session, row)
+
+    def assigned_to(self, member_id, limit=50, offset=0):
+        """Every open-or-closed task assigned to a member, across the workspace's projects."""
+        with session_for(str(self.workspace_id)) as session:
+            member = _member_in_workspace(session, self.workspace_id, member_id)
+            rows = session.scalars(
+                select(Task)
+                .join(
+                    Project,
+                    (Project.workspace_id == Task.workspace_id) & (Project.id == Task.project_id),
+                )
+                .where(
+                    Task.workspace_id == self.workspace_id,
+                    Task.assignee_id == member,
+                    Task.deleted_at.is_(None),
+                    Project.deleted_at.is_(None),
+                )
+                .order_by(Task.created_at, Task.id)
                 .limit(limit)
                 .offset(offset)
             )
@@ -337,6 +450,7 @@ class TaskService:
             self._validate_task_refs(session, project, fields)
             row = Task(
                 workspace_id=self.workspace_id,
+                created_by=self.actor,
                 project_id=project.id,
                 work_item_id=work_item.id,
                 **fields,
@@ -344,7 +458,7 @@ class TaskService:
             session.add(row)
             session.flush()
             session.refresh(row)  # `number` is assigned by a database trigger
-            events.record(session, str(self.workspace_id), None, "task", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "task", row.id, "created")
             return _task_view(session, row)
 
     def update(self, project_id, task_id, **fields):
@@ -360,7 +474,9 @@ class TaskService:
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "task", row.id, "updated", fields)
+            events.record(
+                session, str(self.workspace_id), self.actor, "task", row.id, "updated", fields
+            )
             return _task_view(session, row)
 
     def delete(self, project_id, task_id):
@@ -369,7 +485,7 @@ class TaskService:
             row = _task(session, self.workspace_id, project.id, task_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "task", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "task", row.id, "deleted")
 
     def _validate_task_refs(self, session, project, fields, task_id=None):
         for key, model in (("sprint_id", Sprint), ("milestone_id", Milestone)):
@@ -418,3 +534,71 @@ class TaskService:
             ):
                 raise PlanningNotFound("parent task not found")
             fields["parent_task_id"] = value
+
+
+def _sprint(session, workspace_id, project_id, sprint_id):
+    row = session.scalar(
+        select(Sprint).where(
+            Sprint.workspace_id == workspace_id,
+            Sprint.project_id == project_id,
+            Sprint.id == uuid.UUID(str(sprint_id)),
+        )
+    )
+    if row is None:
+        raise PlanningNotFound("sprint not found")
+    return row
+
+
+class SprintService:
+    def __init__(self, workspace_id, actor=None):
+        self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
+
+    def list(self, project_id, status=None, limit=50, offset=0):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            query = select(Sprint).where(
+                Sprint.workspace_id == self.workspace_id, Sprint.project_id == project.id
+            )
+            if status is not None:
+                query = query.where(Sprint.status == status)
+            return list(
+                session.scalars(
+                    query.order_by(Sprint.created_at, Sprint.id).limit(limit).offset(offset)
+                )
+            )
+
+    def get(self, project_id, sprint_id):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            return _sprint(session, self.workspace_id, project.id, sprint_id)
+
+    def create(self, project_id, **fields):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = Sprint(workspace_id=self.workspace_id, project_id=project.id, **fields)
+            session.add(row)
+            session.flush()
+            events.record(session, str(self.workspace_id), self.actor, "sprint", row.id, "created")
+            return row
+
+    def update(self, project_id, sprint_id, **fields):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            for key, value in fields.items():
+                setattr(row, key, value)
+            session.flush()
+            events.record(
+                session, str(self.workspace_id), self.actor, "sprint", row.id, "updated", fields
+            )
+            return row
+
+    def delete(self, project_id, sprint_id):
+        """Hard delete. The database clears sprint_id on its tasks, which go back to the backlog."""
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            session.delete(row)
+            session.flush()
+            events.record(session, str(self.workspace_id), self.actor, "sprint", row.id, "deleted")

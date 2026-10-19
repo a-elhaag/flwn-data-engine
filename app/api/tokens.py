@@ -31,6 +31,13 @@ SCOPE_SKILLS_READ = "skills:read"
 SCOPE_SKILLS_WRITE = "skills:write"
 SCOPE_ATOMS_ADMIN = "atoms:admin"
 SCOPE_AGGREGATE_READ = "aggregate:read"
+SCOPE_IDENTITY_READ = "identity:read"  # workspace, members, teams
+SCOPE_IDENTITY_WRITE = "identity:write"
+SCOPE_PLANNING_READ = "planning:read"  # projects, work items, tasks, sprints
+SCOPE_PLANNING_WRITE = "planning:write"
+SCOPE_COLLAB_READ = "collab:read"  # docs, channels, comments
+SCOPE_COLLAB_WRITE = "collab:write"
+SCOPE_ADMIN = "admin"  # workspace administrator: satisfies every scope check; never for atoms
 CONTEXTS = frozenset(
     {"personal", "workspace"}
 )  # an atom token's data context: the atom's kind, fixed at mint
@@ -64,6 +71,13 @@ AGENT_SCOPES = frozenset(
         SCOPE_SKILLS_WRITE,
         SCOPE_ATOMS_ADMIN,
         SCOPE_AGGREGATE_READ,
+        SCOPE_IDENTITY_READ,
+        SCOPE_IDENTITY_WRITE,
+        SCOPE_PLANNING_READ,
+        SCOPE_PLANNING_WRITE,
+        SCOPE_COLLAB_READ,
+        SCOPE_COLLAB_WRITE,
+        SCOPE_ADMIN,
     }
 )
 
@@ -151,8 +165,8 @@ def _atom_claims(member_id, atom_id, run_id, scopes, ttl_seconds, ctx):
             raise TokenError("ctx must be personal or workspace")
         if not (atom_id and run_id and member_id):
             raise TokenError("atom tokens require atom_id, run_id and member_id")
-        if SCOPE_ATOMS_ADMIN in scopes:
-            raise TokenError("atoms:admin is forbidden for atom tokens")
+        if SCOPE_ATOMS_ADMIN in scopes or SCOPE_ADMIN in scopes:
+            raise TokenError("admin scopes are forbidden for atom tokens")
         if not 1 <= ttl_seconds <= 900:
             raise TokenError("atom ttl_seconds must be 1-900")
 

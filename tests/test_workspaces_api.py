@@ -1,7 +1,7 @@
-from harness import MemoryHarness
+from harness import CrudHarness
 
 
-class WorkspacesApiTests(MemoryHarness):
+class WorkspacesApiTests(CrudHarness):
     def test_workspace_crud_and_soft_delete(self):
         created = self.client.post(
             "/workspaces",
@@ -44,5 +44,5 @@ class WorkspacesApiTests(MemoryHarness):
         self.assertEqual(conflict.status_code, 409, conflict.text)
 
     def test_workspace_routes_require_service_credentials(self):
-        response = self.client.get("/workspaces", headers={"X-Data-API-Key": ""})
+        response = self.client.get("/workspaces", headers=self.NO_TOKEN)
         self.assertEqual(response.status_code, 401)

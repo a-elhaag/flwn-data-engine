@@ -32,6 +32,13 @@ def mint_token(request: TokenRequest) -> TokenResponse:
         raise HTTPException(
             status_code=422, detail="Member not found or not active in this workspace"
         )
+    subject = request.subject
+    owner = members.user_id(workspace_id, member_id) if member_id else None
+    if owner:  # a human's token is about that person: its subject is their user id
+        if "subject" not in request.model_fields_set:
+            subject = owner
+        elif subject != owner:
+            raise HTTPException(status_code=422, detail="subject must be the member's user id")
     from app.atoms.access import (
         AtomAccessError,
         AtomContext,
@@ -57,7 +64,7 @@ def mint_token(request: TokenRequest) -> TokenResponse:
         token, expires_at = tokens.mint(
             workspace_id,
             set(request.scopes),
-            request.subject,
+            subject,
             ttl_seconds,
             member_id,
             atom_id=atom_id,

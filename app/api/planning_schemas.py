@@ -92,6 +92,7 @@ class ProjectPage(BaseModel):
     items: list[ProjectOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class WorkItemCreate(BaseModel):
@@ -152,6 +153,7 @@ class WorkItemPage(BaseModel):
     items: list[WorkItemOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class TaskCreate(BaseModel):
@@ -237,3 +239,63 @@ class TaskPage(BaseModel):
     items: list[TaskOut]
     limit: int
     offset: int
+    has_more: bool = False
+
+
+SPRINT_STATUSES = {"planned", "active", "completed"}
+
+
+class SprintCreate(BaseModel):
+    name: NonBlank
+    goal: Annotated[str, Field(max_length=10000)] | None = None
+    status: str = "planned"
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_sprint(self):
+        if self.status not in SPRINT_STATUSES:
+            raise ValueError("invalid sprint status")
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be before start_date")
+        return self
+
+
+class SprintUpdate(BaseModel):
+    name: NonBlank | None = None
+    goal: Annotated[str, Field(max_length=10000)] | None = None
+    status: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @model_validator(mode="after")
+    def validate_sprint_update(self):
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        if self.status is not None and self.status not in SPRINT_STATUSES:
+            raise ValueError("invalid sprint status")
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be before start_date")
+        return self
+
+
+class SprintOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    name: str
+    goal: str | None
+    status: str
+    start_date: date | None
+    end_date: date | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SprintPage(BaseModel):
+    items: list[SprintOut]
+    limit: int
+    offset: int
+    has_more: bool = False

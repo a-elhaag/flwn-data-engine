@@ -1,7 +1,7 @@
-from harness import MemoryHarness
+from harness import CrudHarness
 
 
-class IdentityApiTests(MemoryHarness):
+class IdentityApiTests(CrudHarness):
     def test_member_crud_links_human_profile_to_user(self):
         response = self.client.post(
             f"/workspaces/{self.team_a}/members",
@@ -96,7 +96,5 @@ class IdentityApiTests(MemoryHarness):
         )
 
     def test_member_routes_require_service_credentials(self):
-        response = self.client.get(
-            f"/workspaces/{self.team_a}/members", headers={"X-Data-API-Key": ""}
-        )
+        response = self.client.get(f"/workspaces/{self.team_a}/members", headers=self.NO_TOKEN)
         self.assertEqual(response.status_code, 401)

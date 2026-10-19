@@ -52,6 +52,7 @@ class WorkspacePage(BaseModel):
     items: list[WorkspaceOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class MemberCreate(BaseModel):
@@ -186,13 +187,60 @@ class MemberPage(BaseModel):
     items: list[MemberOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class TeamPage(BaseModel):
     items: list[TeamOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class TeamMembersUpdate(BaseModel):
     member_ids: list[UUID] = Field(max_length=500)
+
+
+Email = Annotated[str, Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+
+
+class UserCreate(BaseModel):
+    email: Email
+    name: NonBlank
+    avatar_url: Annotated[str, Field(max_length=2000)] | None = None
+    settings: dict = Field(default_factory=dict)
+
+
+class UserUpdate(BaseModel):
+    email: Email | None = None
+    name: NonBlank | None = None
+    avatar_url: Annotated[str, Field(max_length=2000)] | None = None
+    settings: dict | None = None
+
+    @model_validator(mode="after")
+    def has_updates(self):
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        for field in self.model_fields_set - {"avatar_url"}:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: str
+    name: str
+    avatar_url: str | None
+    settings: dict
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserPage(BaseModel):
+    items: list[UserOut]
+    limit: int
+    offset: int
+    has_more: bool = False

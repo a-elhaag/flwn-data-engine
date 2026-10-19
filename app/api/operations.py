@@ -288,11 +288,32 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "List workspaces",
         "Paginated with `limit` and `offset`. Trusted backend only.",
     ),
-    f"GET {W}": ("Get a workspace", "Trusted backend only."),
-    f"PATCH {W}": ("Update a workspace", "Only the fields you send change. Trusted backend only."),
+    f"GET {W}": ("Get a workspace", "Needs a token for this workspace with `identity:read`."),
+    f"PATCH {W}": (
+        "Update a workspace",
+        "Only the fields you send change. Needs a token with the `admin` scope.",
+    ),
     f"DELETE {W}": (
         "Delete a workspace",
-        "Deletes the workspace. Irreversible. Trusted backend only.",
+        "Soft delete. Needs a token with the `admin` scope.",
+    ),
+    # Users
+    "POST /users": (
+        "Create a user",
+        "Trusted backend only. A user is a person's global account; they join workspaces as members. Email is unique ignoring case.",
+    ),
+    "GET /users": (
+        "List users",
+        "Trusted backend only. Optional `email` finds one account, ignoring case. Paginated with `limit` and `offset`.",
+    ),
+    "GET /users/{user_id}": ("Get a user", "Trusted backend only."),
+    "PATCH /users/{user_id}": (
+        "Update a user",
+        "Only the fields you send change. Trusted backend only.",
+    ),
+    "DELETE /users/{user_id}": (
+        "Delete a user",
+        "Soft delete. Their memberships are not changed. Trusted backend only. Returns 204.",
     ),
     # Identity
     f"POST {W}/members": (
@@ -353,7 +374,19 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"GET {W}/projects/{{project_id}}/tasks": (
         "List tasks",
-        "Paginated with `limit` and `offset`.",
+        "Filter by `assignee_id`, `status`, `sprint_id`, or `backlog` (`true`: in no sprint). Paginated with `limit` and `offset`; `has_more` says whether another page follows.",
+    ),
+    f"GET {W}/tasks/by-key/{{key}}": (
+        "Get a task by its key",
+        "The readable identifier, such as `FLWN-12`: the project key, a hyphen and the task number.",
+    ),
+    f"GET {W}/members/{{member_id}}/tasks": (
+        "List a member's tasks",
+        "Every task assigned to the member, across the workspace's projects. Paginated.",
+    ),
+    f"GET {W}/members/{{member_id}}/projects": (
+        "List a member's projects",
+        "Projects the member leads or whose team they belong to. Paginated.",
     ),
     f"GET {W}/projects/{{project_id}}/tasks/{{task_id}}": ("Get a task", "Returns one task."),
     f"PATCH {W}/projects/{{project_id}}/tasks/{{task_id}}": (
@@ -361,6 +394,26 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Only the fields you send change.",
     ),
     f"DELETE {W}/projects/{{project_id}}/tasks/{{task_id}}": ("Delete a task", "Returns 204."),
+    f"POST {W}/projects/{{project_id}}/sprints": (
+        "Create a sprint",
+        "Status is `planned`, `active` or `completed`. `end_date` cannot be before `start_date`.",
+    ),
+    f"GET {W}/projects/{{project_id}}/sprints": (
+        "List sprints",
+        "Optional `status` filter. Paginated with `limit` and `offset`.",
+    ),
+    f"GET {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
+        "Get a sprint",
+        "Returns one sprint.",
+    ),
+    f"PATCH {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
+        "Update a sprint",
+        "Only the fields you send change.",
+    ),
+    f"DELETE {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
+        "Delete a sprint",
+        "Hard delete. Its tasks are kept and go back to the backlog (`sprint_id` becomes null). Returns 204.",
+    ),
     # Collaboration
     f"POST {W}/comments": (
         "Create a comment",

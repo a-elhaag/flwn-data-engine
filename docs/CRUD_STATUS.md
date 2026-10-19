@@ -10,12 +10,14 @@ Legend: **C** create, **R** read (list and get), **U** update, **D** delete.
 
 | Area | Resource | C | R | U | D | Notes |
 |---|---|---|---|---|---|---|
+| Identity | Users | yes | yes | yes | yes | Global accounts, backend only. Delete is a soft delete. |
 | Identity | Workspaces | yes | yes | yes | yes | Delete is a soft delete. |
 | Identity | Members | yes | yes | yes | yes | |
 | Identity | Teams | yes | yes | yes | yes | Team members are replaced as a whole list. |
 | Planning | Projects | yes | yes | yes | yes | |
 | Planning | Work items | yes | yes | yes | yes | |
-| Planning | Tasks | yes | yes | yes | yes | The "tickets". Numbered per project (`DATA-1`). |
+| Planning | Sprints | yes | yes | yes | yes | Delete is hard; its tasks go back to the backlog. |
+| Planning | Tasks | yes | yes | yes | yes | The "tickets". Numbered per project (`DATA-1`). Also by key, with filters, and per member. |
 | Collaboration | Comments | yes | yes | yes | yes | On tasks, work items, projects, project updates, sprints and docs. |
 | Collaboration | Docs | yes | yes | yes | yes | |
 | Collaboration | Doc blocks | yes | yes | yes | yes | |

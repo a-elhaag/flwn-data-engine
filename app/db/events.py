@@ -1,5 +1,6 @@
 """The audit log: who did what to which thing. Rows are only ever added (a trigger blocks updates)."""
 
+import json
 import uuid
 
 from sqlalchemy.orm import Session
@@ -24,6 +25,6 @@ def record(
             entity_type=entity_type,
             entity_id=uuid.UUID(str(entity_id)) if entity_id else None,
             action=action,
-            changes=changes or {},
+            changes=json.loads(json.dumps(changes or {}, default=str)),  # dates and UUIDs
         )
     )

@@ -12,6 +12,7 @@ from app.api.routes import (
     planning,
     skills,
     system,
+    users,
     workspaces,
 )
 
@@ -24,6 +25,7 @@ router.include_router(conflicts.router, tags=["Decision conflicts"])
 router.include_router(atoms.router, tags=["Atoms"])
 router.include_router(approvals.router, tags=["Approvals"])
 router.include_router(skills.router, tags=["Skills"])
+router.include_router(users.router, tags=["Users"])
 router.include_router(workspaces.router, tags=["Workspaces"])
 router.include_router(identity.router, tags=["Identity"])
 router.include_router(planning.router, tags=["Planning"])

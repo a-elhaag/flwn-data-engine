@@ -86,8 +86,19 @@ def service_only(
     return Principal(subject="service", service=True)
 
 
-def allow(scope: str | None, *, allow_finished: bool = False):
-    """Dependency factory. scope=None means service callers only."""
+def allow(
+    scope: str | None,
+    *,
+    allow_finished: bool = False,
+    write_scope: str | None = None,
+    service: bool = True,
+):
+    """Dependency factory. scope=None means service callers only.
+
+    write_scope: the scope for requests that change data (any method but GET and HEAD); scope
+    then covers reads only. service=False makes the route token-only: the service key is refused.
+    A token holding the `admin` scope passes every scope check except scope=None.
+    """
 
     async def dependency(
         request: Request,
@@ -96,16 +107,19 @@ def allow(scope: str | None, *, allow_finished: bool = False):
         authorization: Annotated[str | None, Header()] = None,
         x_acting_member_id: Annotated[str | None, Header()] = None,
     ) -> Principal:
+        needed = write_scope if write_scope and request.method not in ("GET", "HEAD") else scope
         principal = _principal(x_data_api_key, authorization)
+        if principal.service and not service:
+            raise HTTPException(status_code=401, detail="Bearer token required")
         if principal.service:
             principal = _acting_for(principal, workspace_id, x_acting_member_id)
         else:
-            if scope is None:
+            if needed is None:
                 raise HTTPException(status_code=403, detail="Service credentials required")
             if principal.workspace_id != str(workspace_id):
                 raise HTTPException(status_code=403, detail="Token not valid for workspace")
-            if scope not in principal.scopes:
-                raise HTTPException(status_code=403, detail=f"Missing scope {scope}")
+            if needed not in principal.scopes and tokens.SCOPE_ADMIN not in principal.scopes:
+                raise HTTPException(status_code=403, detail=f"Missing scope {needed}")
             if principal.member_id and not members.is_active(
                 str(workspace_id), principal.member_id
             ):
@@ -144,3 +158,28 @@ def allow(scope: str | None, *, allow_finished: bool = False):
             yield principal
 
     return Depends(dependency)
+
+
+def viewer(request: Request) -> members.Viewer:
+    """The caller as the services see them. Needs the permission check to have run."""
+    principal = request.state.principal
+    return members.Viewer(
+        UUID(principal.member_id) if principal.member_id else None,
+        tokens.SCOPE_ADMIN in principal.scopes,
+    )
+
+
+def author(request: Request, requested: UUID | None) -> UUID:
+    """The member a write is attributed to: always the token's own, never one the body names."""
+    mine = viewer(request).member_id
+    if mine is None:
+        raise HTTPException(status_code=403, detail="A member-bound token is required to write")
+    if requested is not None and requested != mine:
+        raise HTTPException(status_code=403, detail="author_id must be the token's own member")
+    return mine
+
+
+def actor(request: Request) -> str | None:
+    """The member id to record as the author of a change."""
+    mine = viewer(request).member_id
+    return str(mine) if mine else None

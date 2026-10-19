@@ -3,7 +3,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, exists, false, or_, select, true
 
 from app.db import events
 from app.db.models.collab import (
@@ -19,6 +19,7 @@ from app.db.models.files import File
 from app.db.models.identity import Member, Team, Workspace
 from app.db.models.planning import Project, ProjectUpdate, Sprint, Task, WorkItem
 from app.db.session import session_for
+from app.members import Viewer
 
 COMMENT_TARGETS = {
     "task": Task,
@@ -35,6 +36,10 @@ class CollaborationNotFound(LookupError):
 
 
 class CollaborationConflict(ValueError):
+    pass
+
+
+class CollaborationForbidden(PermissionError):
     pass
 
 
@@ -84,17 +89,54 @@ def _doc(session, workspace_id, doc_id):
     return row
 
 
-def _channel(session, workspace_id, channel_id):
+def _channel_visible(viewer: Viewer):
+    """Members see their channels. Direct and agent channels are members-only, even for an admin;
+    an admin also sees private group, team and project channels; everyone sees the open ones."""
+    is_member = (
+        exists().where(
+            ChannelMember.workspace_id == Channel.workspace_id,
+            ChannelMember.channel_id == Channel.id,
+            ChannelMember.member_id == viewer.member_id,
+        )
+        if viewer.member_id
+        else false()
+    )
+    open_to_viewer = and_(
+        Channel.type.notin_(("dm", "agent")),
+        or_(Channel.is_private.is_(False), true() if viewer.admin else false()),
+    )
+    return or_(is_member, open_to_viewer)
+
+
+def _channel(session, workspace_id, channel_id, viewer: Viewer):
+    """A channel the viewer may see; one they may not is reported as missing."""
     row = session.scalar(
         select(Channel).where(
             Channel.workspace_id == workspace_id,
             Channel.id == uuid.UUID(str(channel_id)),
             Channel.archived_at.is_(None),
+            _channel_visible(viewer),
         )
     )
     if row is None:
         raise CollaborationNotFound("channel not found")
     return row
+
+
+def _require_channel_owner(session, channel, viewer: Viewer):
+    """Changing who is in a channel, or its privacy, is for its owners and administrators."""
+    if viewer.admin:
+        return
+    owner = viewer.member_id and session.scalar(
+        select(ChannelMember.member_id).where(
+            ChannelMember.workspace_id == channel.workspace_id,
+            ChannelMember.channel_id == channel.id,
+            ChannelMember.member_id == viewer.member_id,
+            ChannelMember.role == "owner",
+        )
+    )
+    if not owner:
+        raise CollaborationForbidden("only a channel owner or an administrator can do this")
 
 
 def _message(session, workspace_id, channel_id, message_id):
@@ -157,8 +199,9 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
 
 
 class CommentService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, target_type, target_id, limit=50, offset=0):
         model = COMMENT_TARGETS[target_type]
@@ -239,7 +282,7 @@ class CommentService:
             row = Comment(workspace_id=self.workspace_id, **values)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "comment", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "comment", row.id, "created")
             return row
 
     def update(self, comment_id, **fields):
@@ -258,7 +301,7 @@ class CommentService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "comment",
                 row.id,
                 "updated",
@@ -272,7 +315,7 @@ class CommentService:
             row = self._get_comment(session, comment_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "comment", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "comment", row.id, "deleted")
 
     def _get_comment(self, session, comment_id):
         row = session.scalar(
@@ -288,8 +331,9 @@ class CommentService:
 
 
 class DocService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, project_id=None, parent_doc_id=None, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -320,10 +364,10 @@ class DocService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             _check_doc_refs(session, self.workspace_id, fields)
-            row = Doc(workspace_id=self.workspace_id, **fields)
+            row = Doc(workspace_id=self.workspace_id, created_by=self.actor, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "doc", row.id, "created")
             return row
 
     def update(self, doc_id, **fields):
@@ -337,7 +381,7 @@ class DocService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "doc",
                 row.id,
                 "updated",
@@ -369,11 +413,11 @@ class DocService:
                         child.deleted_at = now
                         frontier.append(child.id)
                         events.record(
-                            session, str(self.workspace_id), None, "doc", child.id, "deleted"
+                            session, str(self.workspace_id), self.actor, "doc", child.id, "deleted"
                         )
             row.deleted_at = now
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "doc", row.id, "deleted")
 
     def blocks(self, doc_id, limit=100, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -409,7 +453,9 @@ class DocService:
             row = DocBlock(workspace_id=self.workspace_id, doc_id=doc.id, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc_block", row.id, "created")
+            events.record(
+                session, str(self.workspace_id), self.actor, "doc_block", row.id, "created"
+            )
             return row
 
     def update_block(self, doc_id, block_id, **fields):
@@ -449,7 +495,7 @@ class DocService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "doc_block",
                 row.id,
                 "updated",
@@ -463,7 +509,9 @@ class DocService:
             row = self._block(session, doc.id, block_id)
             session.delete(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc_block", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "doc_block", row.id, "deleted"
+            )
 
     def _block(self, session, doc_id, block_id):
         row = session.scalar(
@@ -479,8 +527,10 @@ class DocService:
 
 
 class ChannelService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, viewer: Viewer):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.viewer = viewer
+        self.actor = str(viewer.member_id) if viewer.member_id else None
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -491,6 +541,7 @@ class ChannelService:
                     .where(
                         Channel.workspace_id == self.workspace_id,
                         Channel.archived_at.is_(None),
+                        _channel_visible(self.viewer),
                     )
                     .order_by(Channel.created_at, Channel.id)
                     .limit(limit)
@@ -501,7 +552,7 @@ class ChannelService:
     def get(self, channel_id):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
-            return _channel(session, self.workspace_id, channel_id)
+            return _channel(session, self.workspace_id, channel_id, self.viewer)
 
     def create(self, member_ids=None, **fields):
         with session_for(str(self.workspace_id)) as session:
@@ -516,29 +567,43 @@ class ChannelService:
                         raise CollaborationNotFound(f"{key.removesuffix('_id')} not found")
                     fields[key] = value
             member_ids = {uuid.UUID(str(item)) for item in (member_ids or [])}
+            creator = self.viewer.member_id
+            if creator:
+                member_ids.add(creator)
             self._validate_members(session, member_ids)
-            row = Channel(workspace_id=self.workspace_id, **fields)
+            row = Channel(workspace_id=self.workspace_id, created_by=creator, **fields)
             session.add(row)
             session.flush()
             session.add_all(
                 ChannelMember(
-                    workspace_id=self.workspace_id, channel_id=row.id, member_id=member_id
+                    workspace_id=self.workspace_id,
+                    channel_id=row.id,
+                    member_id=member_id,
+                    role="owner" if member_id == creator else "member",
                 )
                 for member_id in sorted(member_ids, key=str)
             )
-            events.record(session, str(self.workspace_id), None, "channel", row.id, "created")
+            events.record(
+                session,
+                str(self.workspace_id),
+                str(creator) if creator else None,
+                "channel",
+                row.id,
+                "created",
+            )
             return row
 
     def update(self, channel_id, **fields):
         with session_for(str(self.workspace_id)) as session:
-            row = _channel(session, self.workspace_id, channel_id)
+            row = _channel(session, self.workspace_id, channel_id, self.viewer)
+            _require_channel_owner(session, row, self.viewer)
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "channel",
                 row.id,
                 "updated",
@@ -548,14 +613,18 @@ class ChannelService:
 
     def archive(self, channel_id):
         with session_for(str(self.workspace_id)) as session:
-            row = _channel(session, self.workspace_id, channel_id)
+            row = _channel(session, self.workspace_id, channel_id, self.viewer)
+            _require_channel_owner(session, row, self.viewer)
             row.archived_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "channel", row.id, "archived")
+            events.record(
+                session, str(self.workspace_id), self.actor, "channel", row.id, "archived"
+            )
 
     def replace_members(self, channel_id, member_ids):
         with session_for(str(self.workspace_id)) as session:
-            channel = _channel(session, self.workspace_id, channel_id)
+            channel = _channel(session, self.workspace_id, channel_id, self.viewer)
+            _require_channel_owner(session, channel, self.viewer)
             ids = {uuid.UUID(str(item)) for item in member_ids}
             self._validate_members(session, ids)
             session.execute(
@@ -573,7 +642,7 @@ class ChannelService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "channel",
                 channel.id,
                 "members_replaced",
@@ -601,12 +670,14 @@ class ChannelService:
 
 
 class MessageService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, viewer: Viewer):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.viewer = viewer
+        self.actor = str(viewer.member_id) if viewer.member_id else None
 
     def list(self, channel_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
-            channel = _channel(session, self.workspace_id, channel_id)
+            channel = _channel(session, self.workspace_id, channel_id, self.viewer)
             return list(
                 session.scalars(
                     select(Message)
@@ -623,12 +694,12 @@ class MessageService:
 
     def get(self, channel_id, message_id):
         with session_for(str(self.workspace_id)) as session:
-            channel = _channel(session, self.workspace_id, channel_id)
+            channel = _channel(session, self.workspace_id, channel_id, self.viewer)
             return self._get(session, channel.id, message_id)
 
     def create(self, channel_id, **fields):
         with session_for(str(self.workspace_id)) as session:
-            channel = _channel(session, self.workspace_id, channel_id)
+            channel = _channel(session, self.workspace_id, channel_id, self.viewer)
             fields["author_id"] = _active_member(
                 session, self.workspace_id, fields.get("author_id")
             )
@@ -639,13 +710,14 @@ class MessageService:
             row = Message(workspace_id=self.workspace_id, channel_id=channel.id, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "message", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "message", row.id, "created")
             return row
 
     def update(self, channel_id, message_id, **fields):
         with session_for(str(self.workspace_id)) as session:
-            channel = _channel(session, self.workspace_id, channel_id)
+            channel = _channel(session, self.workspace_id, channel_id, self.viewer)
             row = self._get(session, channel.id, message_id)
+            self._require_author(row)
             pinned = fields.pop("pinned", None)
             for key, value in fields.items():
                 setattr(row, key, value)
@@ -657,7 +729,7 @@ class MessageService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "message",
                 row.id,
                 "updated",
@@ -667,11 +739,17 @@ class MessageService:
 
     def delete(self, channel_id, message_id):
         with session_for(str(self.workspace_id)) as session:
-            channel = _channel(session, self.workspace_id, channel_id)
+            channel = _channel(session, self.workspace_id, channel_id, self.viewer)
             row = self._get(session, channel.id, message_id)
+            self._require_author(row)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "message", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "message", row.id, "deleted")
 
     def _get(self, session, channel_id, message_id):
         return _message(session, self.workspace_id, channel_id, message_id)
+
+    def _require_author(self, message):
+        mine = self.viewer.member_id
+        if not self.viewer.admin and (mine is None or message.author_id != mine):
+            raise CollaborationForbidden("only the author or an administrator can change a message")
