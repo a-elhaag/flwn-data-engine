@@ -274,6 +274,17 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
   - Atoms, approvals, skills, memory, files, meetings and conflicts routes still accept the service key as well as tokens.
 - **Revisit if:** a trusted internal service must call CRUD routes without a user. Give it its own token type instead of re-allowing the key.
 
+### D30. User-account routes are added and stay backend-only
+
+- **Change:** `POST/GET /users`, `GET/PATCH/DELETE /users/{user_id}`, all behind the service key. Delete is a soft delete. Email is unique ignoring case.
+- **Old design:** `dev` had the global `users` table but no routes. The feature branch had `/users` routes behind the service key and the organization header.
+- **Why it did not work as is:** a user belongs to no single workspace, so there is no workspace to put in a token and no row-level security rule that fits. A workspace token must not be able to read or edit accounts across workspaces.
+- **New design:** the backend, which authenticates people, manages accounts. Tokens never touch the `users` table through the API.
+- **Why it is better:** the one table that spans tenants is reachable only by the trusted backend. Workspace tokens stay confined to their workspace.
+- **Known gap:** deleting a user does not suspend their memberships. Until it does, suspend the members as well.
+- **Tests:** three tests (CRUD and soft delete, unique and validated email, tokens refused). The full suite passes: 366 tests, 1 skipped.
+- **Revisit if:** people need to edit their own profile through the engine. That would be a `users:self` rule where the token's `sub` equals the user id.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.

@@ -288,11 +288,29 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "List workspaces",
         "Paginated with `limit` and `offset`. Trusted backend only.",
     ),
-    f"GET {W}": ("Get a workspace", "Trusted backend only."),
-    f"PATCH {W}": ("Update a workspace", "Only the fields you send change. Trusted backend only."),
+    f"GET {W}": ("Get a workspace", "Needs a token for this workspace with `identity:read`."),
+    f"PATCH {W}": (
+        "Update a workspace",
+        "Only the fields you send change. Needs a token with the `admin` scope.",
+    ),
     f"DELETE {W}": (
         "Delete a workspace",
-        "Deletes the workspace. Irreversible. Trusted backend only.",
+        "Soft delete. Needs a token with the `admin` scope.",
+    ),
+    # Users
+    "POST /users": (
+        "Create a user",
+        "Trusted backend only. A user is a person's global account; they join workspaces as members. Email is unique ignoring case.",
+    ),
+    "GET /users": ("List users", "Trusted backend only. Paginated with `limit` and `offset`."),
+    "GET /users/{user_id}": ("Get a user", "Trusted backend only."),
+    "PATCH /users/{user_id}": (
+        "Update a user",
+        "Only the fields you send change. Trusted backend only.",
+    ),
+    "DELETE /users/{user_id}": (
+        "Delete a user",
+        "Soft delete. Their memberships are not changed. Trusted backend only. Returns 204.",
     ),
     # Identity
     f"POST {W}/members": (
