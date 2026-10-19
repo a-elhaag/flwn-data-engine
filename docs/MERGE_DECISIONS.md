@@ -317,6 +317,17 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
   - Comment and doc updates and deletes are attributed in the audit log, but there is still no "only the author can edit a comment" rule.
 - **Revisit if:** the backend needs to mint a token for a person who has no member in the workspace yet. Today such a token has no member to bind and cannot write.
 
+### D33. Tests, Postman and README: ported by intent, not by copy
+
+- **Change:** two feature-branch ideas are now tests on `dev`: the full journey (`tests/test_flow.py`) and "another tenant sees every row as missing" (`tests/test_tenant_isolation.py`, covering members, teams, projects, work items, sprints, tasks, docs and channels, and the 401 and 403 cases). Postman is now an OpenAPI import generated from the app (`docs/postman/`, `./run.sh openapi`) plus a small environment file. The README describes migrations, who can call what, and the new docs.
+- **Old design:** about 2,400 lines of pytest tests, a 3,400-line hand-made Postman collection and README text, all written for organizations, the `X-Organization-Id` header, camelCase bodies, uppercase enums and routes such as `/organizations/{id}/members` and `/tasks/by-key/...`.
+- **Why it did not work:** almost every line names something that no longer exists (D2, D6, D7, D12). Rewriting them one by one would have kept the old shape and tested nothing new. The unit tests in particular check the camelCase aliasing, the old error envelope and the feature's own schemas.
+- **New design:** keep what tests behaviour that still matters, and write it against the real routes, real tokens and a real database. Generate the Postman collection from the app's own OpenAPI description so it cannot drift.
+- **Why it is better:** the tests exercise the same auth path as production, and the API reference can never disagree with the code.
+- **Not ported:** the feature branch's per-resource integration tests, its unit tests for camelCase, error mapping and schema validation, and its hand-made Postman collection. `dev` already has equivalent coverage in `test_planning_api`, `test_identity_api`, `test_collaboration_api` and the new auth tests.
+- **Tests:** the full suite passes: 380 tests, 1 skipped.
+- **Capabilities found only on the feature branch (not ported, awaiting a decision):** look up a task by key (`FLWN-12`), filter tasks by assignee and backlog, "my tasks" and "my projects" for a member, find a user by email, `hasMore` in paged lists, and archive instead of delete for projects.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.
