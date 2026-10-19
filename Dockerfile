@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
+COPY migrations ./migrations
+COPY alembic.ini ./
 RUN useradd --system --uid 10001 flwn
 USER flwn
 EXPOSE 8002

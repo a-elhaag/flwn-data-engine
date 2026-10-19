@@ -249,6 +249,17 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Tests:** four new tests (lifecycle and task release on delete, date and status validation, isolation by project and workspace, service-credential check). The full suite passes against a real Postgres: 354 tests, 1 skipped.
 - **Revisit if:** sprints need to belong to a team. That comes back together with `project_teams` (D14).
 
+### D28. The Alembic baseline is a frozen schema dump, checked against the install script
+
+- **Change:** `alembic.ini`, `migrations/env.py` and `migrations/versions/0001_baseline.py` (plus `0001_baseline.sql`). `./run.sh migrate` runs `alembic upgrade head`. The Dockerfile copies `migrations/` and `alembic.ini`. `alembic` moved to `requirements.txt`.
+- **Old design:** two options were open: hand-write about 60 `op.create_table` calls, or have the baseline call `Base.metadata.create_all`.
+- **Why they did not work:** a hand-written baseline would miss what the models cannot express (290 RLS policies, 40 triggers, 19 functions, the pgvector extension) and would drift from the real schema. A baseline that calls the live models builds a different database every time the models change, so later migrations would fail on a fresh install.
+- **New design:** the baseline runs a frozen `pg_dump` of the schema built by `app.db.install`, with the session `SET` lines removed. Every later change is a normal Alembic migration on top of it. `migrations/env.py` connects as `DATABASE_ADMIN_URL`.
+- **Why it is better:** a fresh database from `alembic upgrade head` is identical to the installed one today and stays identical to what it was when the baseline was cut. RLS, triggers and functions come along for free and are not forgotten.
+- **Proof:** `tests/test_migrations.py` builds a database by migration and compares it with the installed one (tables and RLS flags, policies, triggers, functions, indexes, constraints), then checks that the models show no drift. Index predicates and CHECK text are compared by name and kind, because `pg_dump` restores print them differently without changing their meaning.
+- **Kept for now:** `app/db/install.py` still exists, and the tests build their database with it. When the team trusts migrations in production, switch the tests to `alembic upgrade head` and retire the install script. Until then the new test fails if the two ever differ.
+- **Revisit if:** the production Postgres is a different major version than the one that made the dump (16.2). Re-run the migration test against it.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.

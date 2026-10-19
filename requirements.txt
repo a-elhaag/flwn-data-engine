@@ -12,3 +12,4 @@ PyJWT>=2.8
 sqlalchemy>=2.0.40
 psycopg[binary]>=3.2
 pgvector>=0.4
+alembic>=1.14
