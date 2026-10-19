@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app import dev_session
@@ -17,12 +17,15 @@ class DevSession(BaseModel):
 
 
 @router.post("/session")
-def dev_sign_in(body: DevSession):
-    if not dev_session.enabled():
+def dev_sign_in(request: Request, body: DevSession):
+    if not (dev_session.enabled() and dev_session.loopback(request.client.host)):
         raise HTTPException(status_code=404, detail="Not Found")
     if not tokens_enabled():
         raise HTTPException(status_code=503, detail="Set MEMORY_TOKEN_SECRET to issue tokens")
-    return dev_session.sign_in(body.email, body.name)
+    try:
+        return dev_session.sign_in(body.email, body.name)
+    except dev_session.RealUser as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
 def tokens_enabled() -> bool:

@@ -10,9 +10,11 @@ from app.api import tokens as t
 class DevSessionTests(CrudHarness):
     def setUp(self):
         super().setUp()
-        patcher = patch.object(dev_session, "enabled", return_value=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # the test client connects as "testclient", not from loopback
+        for name in ("enabled", "loopback"):
+            patcher = patch.object(dev_session, name, return_value=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.email = f"{uuid.uuid4().hex[:8]}@example.com"
         self.addCleanup(self.cleanup)
 
@@ -70,6 +72,9 @@ class DevSessionTests(CrudHarness):
             ("postgresql+psycopg://u:p@flwn.postgres.database.azure.com/db", False),
             ("postgresql+psycopg://u:p@10.0.0.5/db", False),
             ("postgresql+psycopg://u:p@localhost.evil.example.com/db", False),
+            ("postgresql+psycopg://u:p@localhost/db?hostaddr=10.0.0.5", False),
+            ("postgresql+psycopg://u:p@localhost,10.0.0.5/db", False),
+            ("postgresql+psycopg://u:p@/db", True),
         ):
             with self.subTest(url=url), patch.object(dev_session, "database_url", return_value=url):
                 self.assertEqual(dev_session.enabled(), expected)
@@ -88,3 +93,47 @@ class DevSessionTests(CrudHarness):
     def test_route_is_not_in_the_api_docs(self):
         paths = self.client.get("/openapi.json").json()["paths"]
         self.assertNotIn("/dev/session", paths)
+
+    def test_a_real_account_is_refused_and_not_touched(self):
+        (real,) = self.sql(
+            "insert into users (email, name) values (:e, 'Real') returning id", e=self.email
+        )
+        self.addCleanup(self.sql, "delete from members where user_id = :i", i=real["id"])
+        self.addCleanup(self.sql, "delete from users where id = :i", i=real["id"])
+        response = self.client.post(
+            "/dev/session", json={"email": self.email.upper()}, headers={"X-Data-API-Key": ""}
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        (n,) = self.sql("select count(*) as n from members where user_id = :i", i=real["id"])
+        self.assertEqual(n["n"], 0)
+
+    def test_only_loopback_callers_are_served(self):
+        patch.stopall()  # the setUp patches would answer for the real checks
+        self.assertTrue(all(dev_session.loopback(h) for h in ("127.0.0.1", "::1", "localhost")))
+        self.assertFalse(any(dev_session.loopback(h) for h in ("10.0.0.5", "203.0.113.9", None)))
+        with patch.object(dev_session, "enabled", return_value=True):
+            response = self.client.post(  # the test client's address is not loopback
+                "/dev/session", json={"email": self.email}, headers={"X-Data-API-Key": ""}
+            )
+        self.assertEqual(response.status_code, 404)
+
+    def test_a_hostless_url_is_remote_when_the_environment_points_elsewhere(self):
+        patch.stopall()
+        url = "postgresql+psycopg://u:p@/db"
+        with patch.object(dev_session, "database_url", return_value=url):
+            for name in dev_session.PG_ENV:
+                with self.subTest(env=name), patch.dict("os.environ", {name: "db.example.com"}):
+                    self.assertFalse(dev_session.enabled())
+
+    def test_a_real_workspace_with_the_shared_name_is_not_reused(self):
+        self.sql("delete from workspaces where slug = 'dev-shared'")
+        (real,) = self.sql(
+            "insert into workspaces (name, slug) values ('Real', 'dev-shared') returning id"
+        )
+        self.addCleanup(self.sql, "delete from workspaces where id = :i", i=real["id"])
+        response = self.client.post(
+            "/dev/session", json={"email": self.email}, headers={"X-Data-API-Key": ""}
+        )
+        self.assertEqual(response.status_code, 409, response.text)
+        (n,) = self.sql("select count(*) as n from members where workspace_id = :w", w=real["id"])
+        self.assertEqual(n["n"], 0)
