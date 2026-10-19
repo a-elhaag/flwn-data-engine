@@ -10,6 +10,7 @@ There is no switch to turn it on elsewhere.
 
 import hashlib
 import os
+import re
 
 from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
@@ -54,6 +55,21 @@ class RealUser(PermissionError):  # a real account or workspace is in the way
 
 def loopback(client_host: str | None) -> bool:
     return client_host in LOOPBACK
+
+
+HOST_HEADER = re.compile(r"^(localhost|127\.0\.0\.1|\[::1\])(:[0-9]{1,5})?$", re.I)
+PROXY_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "origin")
+
+
+def direct(headers) -> bool:
+    """A request made straight to this machine's address, not through a browser page or a proxy.
+
+    A web page can make a visitor's browser call 127.0.0.1 (DNS rebinding); such a request names
+    another site in Host and carries Origin. A local reverse proxy adds Forwarded headers.
+    """
+    return bool(HOST_HEADER.match(headers.get("host", ""))) and not any(
+        name in headers for name in PROXY_HEADERS
+    )
 
 
 def _claim_user(email: str) -> None:

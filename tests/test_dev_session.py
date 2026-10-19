@@ -11,7 +11,7 @@ class DevSessionTests(CrudHarness):
     def setUp(self):
         super().setUp()
         # the test client connects as "testclient", not from loopback
-        for name in ("enabled", "loopback"):
+        for name in ("enabled", "loopback", "direct"):
             patcher = patch.object(dev_session, name, return_value=True)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -137,3 +137,19 @@ class DevSessionTests(CrudHarness):
         self.assertEqual(response.status_code, 409, response.text)
         (n,) = self.sql("select count(*) as n from members where workspace_id = :w", w=real["id"])
         self.assertEqual(n["n"], 0)
+
+    def test_browser_and_proxy_requests_are_not_direct(self):
+        patch.stopall()
+        for headers, expected in (
+            ({"host": "localhost:8002"}, True),
+            ({"host": "127.0.0.1:8002"}, True),
+            ({"host": "[::1]:8002"}, True),
+            ({"host": "evil.example.com"}, False),  # DNS rebinding names its own site
+            ({"host": "localhost.evil.example.com"}, False),
+            ({"host": "localhost:8002", "origin": "https://evil.example.com"}, False),
+            ({"host": "localhost:8002", "x-forwarded-for": "203.0.113.9"}, False),
+            ({"host": "localhost:8002", "forwarded": "for=203.0.113.9"}, False),
+            ({}, False),
+        ):
+            with self.subTest(headers=headers):
+                self.assertEqual(dev_session.direct(headers), expected)

@@ -18,7 +18,11 @@ class DevSession(BaseModel):
 
 @router.post("/session")
 def dev_sign_in(request: Request, body: DevSession):
-    if not (dev_session.enabled() and dev_session.loopback(request.client.host)):
+    if not (
+        dev_session.enabled()
+        and dev_session.loopback(request.client.host)
+        and dev_session.direct(request.headers)
+    ):
         raise HTTPException(status_code=404, detail="Not Found")
     if not tokens_enabled():
         raise HTTPException(status_code=503, detail="Set MEMORY_TOKEN_SECRET to issue tokens")
