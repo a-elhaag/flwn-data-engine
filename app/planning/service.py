@@ -418,3 +418,70 @@ class TaskService:
             ):
                 raise PlanningNotFound("parent task not found")
             fields["parent_task_id"] = value
+
+
+def _sprint(session, workspace_id, project_id, sprint_id):
+    row = session.scalar(
+        select(Sprint).where(
+            Sprint.workspace_id == workspace_id,
+            Sprint.project_id == project_id,
+            Sprint.id == uuid.UUID(str(sprint_id)),
+        )
+    )
+    if row is None:
+        raise PlanningNotFound("sprint not found")
+    return row
+
+
+class SprintService:
+    def __init__(self, workspace_id):
+        self.workspace_id = uuid.UUID(str(workspace_id))
+
+    def list(self, project_id, status=None, limit=50, offset=0):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            query = select(Sprint).where(
+                Sprint.workspace_id == self.workspace_id, Sprint.project_id == project.id
+            )
+            if status is not None:
+                query = query.where(Sprint.status == status)
+            return list(
+                session.scalars(
+                    query.order_by(Sprint.created_at, Sprint.id).limit(limit).offset(offset)
+                )
+            )
+
+    def get(self, project_id, sprint_id):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            return _sprint(session, self.workspace_id, project.id, sprint_id)
+
+    def create(self, project_id, **fields):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = Sprint(workspace_id=self.workspace_id, project_id=project.id, **fields)
+            session.add(row)
+            session.flush()
+            events.record(session, str(self.workspace_id), None, "sprint", row.id, "created")
+            return row
+
+    def update(self, project_id, sprint_id, **fields):
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            for key, value in fields.items():
+                setattr(row, key, value)
+            session.flush()
+            events.record(
+                session, str(self.workspace_id), None, "sprint", row.id, "updated", fields
+            )
+            return row
+
+    def delete(self, project_id, sprint_id):
+        """Hard delete. The database clears sprint_id on its tasks, which go back to the backlog."""
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            session.delete(row)
+            session.flush()
+            events.record(session, str(self.workspace_id), None, "sprint", row.id, "deleted")

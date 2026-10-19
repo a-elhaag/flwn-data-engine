@@ -238,6 +238,17 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **New design:** a pre-request step or a first request obtains the token, and all other requests reuse it.
 - **Why it is better:** the collection exercises the same auth path as the real clients.
 
+### D27. Sprint routes added to `dev`'s planning API; audit log accepts dates and UUIDs
+
+- **Change:** `POST/GET /workspaces/{id}/projects/{project_id}/sprints`, and `GET/PATCH/DELETE .../sprints/{sprint_id}`. The list route filters by `status`. Deleting a sprint is a hard delete, and its tasks go back to the backlog.
+- **Old design:** the feature branch created sprints under `/projects/{projectId}/teams/{teamId}/sprints`, and a sprint belonged to a project-team pair. `dev` had the `sprints` table but no routes.
+- **Why it did not work:** the team-scoped route depends on `project_teams`, which we do not port (D14). Its routes also depend on `organization_id` and the header (D2).
+- **New design:** sprints belong to a project, like work items and tasks, and use the same service class, the same schema style and the same workspace-scoped session as the other planning routes. Dates are validated (`end_date` not before `start_date`), as is status (`planned`, `active`, `completed`).
+- **Why it is better:** one pattern for every planning resource, and workspace isolation comes from the existing RLS-aware session.
+- **Also fixed:** `app/db/events.py` stored the changed fields as JSON, which failed on dates and UUIDs. Updating a sprint's dates crashed; updating a project's `team_id` or dates would have crashed the same way. The audit log now converts such values to strings, once, in the shared function.
+- **Tests:** four new tests (lifecycle and task release on delete, date and status validation, isolation by project and workspace, service-credential check). The full suite passes against a real Postgres: 354 tests, 1 skipped.
+- **Revisit if:** sprints need to belong to a team. That comes back together with `project_teams` (D14).
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.

@@ -1,4 +1,4 @@
-"""Trusted CRUD for workspace projects, work items, and tasks."""
+"""Trusted CRUD for workspace projects, work items, sprints, and tasks."""
 
 from typing import Annotated
 from uuid import UUID
@@ -12,6 +12,10 @@ from app.api.planning_schemas import (
     ProjectOut,
     ProjectPage,
     ProjectUpdate,
+    SprintCreate,
+    SprintOut,
+    SprintPage,
+    SprintUpdate,
     TaskCreate,
     TaskOut,
     TaskPage,
@@ -25,6 +29,7 @@ from app.planning.service import (
     PlanningConflict,
     PlanningNotFound,
     ProjectService,
+    SprintService,
     TaskService,
     WorkItemService,
 )
@@ -153,4 +158,42 @@ def update_task(workspace_id: WorkspaceId, project_id: UUID, task_id: UUID, body
 @router.delete("/projects/{project_id}/tasks/{task_id}", status_code=204)
 def delete_task(workspace_id: WorkspaceId, project_id: UUID, task_id: UUID):
     _call(TaskService(str(workspace_id)).delete, str(project_id), str(task_id))
+    return Response(status_code=204)
+
+
+@router.post("/projects/{project_id}/sprints", status_code=201, response_model=SprintOut)
+def create_sprint(workspace_id: WorkspaceId, project_id: UUID, body: SprintCreate):
+    return _call(SprintService(str(workspace_id)).create, str(project_id), **body.model_dump())
+
+
+@router.get("/projects/{project_id}/sprints", response_model=SprintPage)
+def list_sprints(
+    workspace_id: WorkspaceId,
+    project_id: UUID,
+    status: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    items = _call(SprintService(str(workspace_id)).list, str(project_id), status, limit, offset)
+    return SprintPage(items=items, limit=limit, offset=offset)
+
+
+@router.get("/projects/{project_id}/sprints/{sprint_id}", response_model=SprintOut)
+def get_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
+    return _call(SprintService(str(workspace_id)).get, str(project_id), str(sprint_id))
+
+
+@router.patch("/projects/{project_id}/sprints/{sprint_id}", response_model=SprintOut)
+def update_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID, body: SprintUpdate):
+    return _call(
+        SprintService(str(workspace_id)).update,
+        str(project_id),
+        str(sprint_id),
+        **body.model_dump(exclude_unset=True),
+    )
+
+
+@router.delete("/projects/{project_id}/sprints/{sprint_id}", status_code=204)
+def delete_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
+    _call(SprintService(str(workspace_id)).delete, str(project_id), str(sprint_id))
     return Response(status_code=204)

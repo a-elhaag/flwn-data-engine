@@ -361,6 +361,26 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Only the fields you send change.",
     ),
     f"DELETE {W}/projects/{{project_id}}/tasks/{{task_id}}": ("Delete a task", "Returns 204."),
+    f"POST {W}/projects/{{project_id}}/sprints": (
+        "Create a sprint",
+        "Status is `planned`, `active` or `completed`. `end_date` cannot be before `start_date`.",
+    ),
+    f"GET {W}/projects/{{project_id}}/sprints": (
+        "List sprints",
+        "Optional `status` filter. Paginated with `limit` and `offset`.",
+    ),
+    f"GET {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
+        "Get a sprint",
+        "Returns one sprint.",
+    ),
+    f"PATCH {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
+        "Update a sprint",
+        "Only the fields you send change.",
+    ),
+    f"DELETE {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
+        "Delete a sprint",
+        "Hard delete. Its tasks are kept and go back to the backlog (`sprint_id` becomes null). Returns 204.",
+    ),
     # Collaboration
     f"POST {W}/comments": (
         "Create a comment",
