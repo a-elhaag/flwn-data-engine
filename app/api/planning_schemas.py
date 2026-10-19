@@ -92,6 +92,7 @@ class ProjectPage(BaseModel):
     items: list[ProjectOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class WorkItemCreate(BaseModel):
@@ -152,6 +153,7 @@ class WorkItemPage(BaseModel):
     items: list[WorkItemOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class TaskCreate(BaseModel):
@@ -237,6 +239,7 @@ class TaskPage(BaseModel):
     items: list[TaskOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 SPRINT_STATUSES = {"planned", "active", "completed"}
@@ -295,3 +298,4 @@ class SprintPage(BaseModel):
     items: list[SprintOut]
     limit: int
     offset: int
+    has_more: bool = False

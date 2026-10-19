@@ -17,7 +17,7 @@ Legend: **C** create, **R** read (list and get), **U** update, **D** delete.
 | Planning | Projects | yes | yes | yes | yes | |
 | Planning | Work items | yes | yes | yes | yes | |
 | Planning | Sprints | yes | yes | yes | yes | Delete is hard; its tasks go back to the backlog. |
-| Planning | Tasks | yes | yes | yes | yes | The "tickets". Numbered per project (`DATA-1`). |
+| Planning | Tasks | yes | yes | yes | yes | The "tickets". Numbered per project (`DATA-1`). Also by key, with filters, and per member. |
 | Collaboration | Comments | yes | yes | yes | yes | On tasks, work items, projects, project updates, sprints and docs. |
 | Collaboration | Docs | yes | yes | yes | yes | |
 | Collaboration | Doc blocks | yes | yes | yes | yes | |

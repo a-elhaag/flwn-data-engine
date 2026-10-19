@@ -35,14 +35,13 @@ def _email_available(session, email, *, exclude_id=None):
 
 
 class UserService:
-    def list(self, limit=50, offset=0):
+    def list(self, limit=50, offset=0, *, email=None):
         with service_session() as session:
+            query = select(User).where(User.deleted_at.is_(None))
+            if email is not None:
+                query = query.where(func.lower(User.email) == email.strip().lower())
             rows = session.scalars(
-                select(User)
-                .where(User.deleted_at.is_(None))
-                .order_by(User.created_at, User.id)
-                .limit(limit)
-                .offset(offset)
+                query.order_by(User.created_at, User.id).limit(limit).offset(offset)
             )
             return list(rows)
 

@@ -326,7 +326,18 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Why it is better:** the tests exercise the same auth path as production, and the API reference can never disagree with the code.
 - **Not ported:** the feature branch's per-resource integration tests, its unit tests for camelCase, error mapping and schema validation, and its hand-made Postman collection. `dev` already has equivalent coverage in `test_planning_api`, `test_identity_api`, `test_collaboration_api` and the new auth tests.
 - **Tests:** the full suite passes: 380 tests, 1 skipped.
-- **Capabilities found only on the feature branch (not ported, awaiting a decision):** look up a task by key (`FLWN-12`), filter tasks by assignee and backlog, "my tasks" and "my projects" for a member, find a user by email, `hasMore` in paged lists, and archive instead of delete for projects.
+- **Capabilities found only on the feature branch:** task by key, task filters, a member's tasks and projects, user lookup by email, and `hasMore` were added (D34). Archiving a project instead of deleting it was not (no decision to port it).
+
+### D34. Five feature-branch capabilities added to `dev`'s API
+
+- **Change:** (1) `GET /workspaces/{id}/tasks/by-key/FLWN-12`. (2) Task list filters `assignee_id`, `status`, `sprint_id` and `backlog`. (3) `GET /members/{id}/tasks` and `GET /members/{id}/projects`. (4) `GET /users?email=`. (5) A `has_more` field on every paged list of the workspace, member, team, user, project, work item, task, sprint, comment, doc, channel and message routes.
+- **Old design:** `dev` had none of these. The feature branch had them under organization-scoped, camelCase routes (`hasMore`, `/tasks/by-key/...`, `/members/{id}/tasks`).
+- **Why it did not work as is:** the routes belonged to the organization model and returned camelCase (D2, D7). The ideas are useful, and a client needs them: a task is referred to by `FLWN-12` in conversation, a board needs filters, and a pager needs to know when to stop.
+- **New design:** the same behaviour on `dev`'s workspace-scoped, token-checked routes, in snake_case. A member's projects are the ones they lead or whose team they belong to. A page asks for one row more than it returns, so `has_more` is exact, including when the last page is full. Statuses and keys are validated (422).
+- **Why it is better:** all of it runs through the existing token checks and row-level security, so none of it can read another workspace (tested for by-key and for foreign members). No new tables or columns.
+- **Tests:** five tests in `tests/test_planning_queries.py`. The full suite passes: 385 tests, 1 skipped.
+- **Known limits:** `has_more` is not on the memory, files, meetings, atoms and conflicts lists, which have their own paging. "My projects" ignores private-team visibility for projects, because projects have no private flag (D31).
+- **Revisit if:** projects need archiving, or a board needs sorting and free-text search.
 
 ## 3. Merge order
 

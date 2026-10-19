@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.auth import service_only
 from app.api.identity_schemas import UserCreate, UserOut, UserPage, UserUpdate
+from app.api.paging import split_page
 from app.identity.users import UserConflict, UserNotFound, UserService
 
 router = APIRouter(prefix="/users", dependencies=[Depends(service_only)])
@@ -31,11 +32,13 @@ def create_user(body: UserCreate):
 
 @router.get("", response_model=UserPage)
 def list_users(
+    email: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(UserService().list, limit, offset)
-    return UserPage(items=items, limit=limit, offset=offset)
+    items = _call(UserService().list, limit + 1, offset, email=email)
+    items, has_more = split_page(items, limit)
+    return UserPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/{user_id}", response_model=UserOut)

@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow
+from app.api.paging import split_page
 from app.api.planning_schemas import (
     ProjectCreate,
     ProjectOut,
@@ -26,6 +27,7 @@ from app.api.planning_schemas import (
     WorkItemPage,
     WorkItemUpdate,
 )
+from app.db.base import WORK_STATUSES
 from app.planning.service import (
     PlanningConflict,
     PlanningNotFound,
@@ -68,8 +70,9 @@ def list_projects(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(ProjectService(str(workspace_id), actor(request)).list, limit, offset)
-    return ProjectPage(items=items, limit=limit, offset=offset)
+    items = _call(ProjectService(str(workspace_id), actor(request)).list, limit + 1, offset)
+    items, has_more = split_page(items, limit)
+    return ProjectPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectOut)
@@ -114,9 +117,10 @@ def list_work_items(
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     items = _call(
-        WorkItemService(str(workspace_id), actor(request)).list, str(project_id), limit, offset
+        WorkItemService(str(workspace_id), actor(request)).list, str(project_id), limit + 1, offset
     )
-    return WorkItemPage(items=items, limit=limit, offset=offset)
+    items, has_more = split_page(items, limit)
+    return WorkItemPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/projects/{project_id}/work-items/{work_item_id}", response_model=WorkItemOut)
@@ -168,13 +172,27 @@ def list_tasks(
     request: Request,
     workspace_id: WorkspaceId,
     project_id: UUID,
+    assignee_id: UUID | None = None,
+    status: str | None = None,
+    sprint_id: UUID | None = None,
+    backlog: bool | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
+    if status is not None and status not in WORK_STATUSES:
+        raise HTTPException(422, "invalid status")
     items = _call(
-        TaskService(str(workspace_id), actor(request)).list, str(project_id), limit, offset
+        TaskService(str(workspace_id), actor(request)).list,
+        str(project_id),
+        limit + 1,
+        offset,
+        assignee_id=assignee_id,
+        status=status,
+        sprint_id=sprint_id,
+        backlog=backlog,
     )
-    return TaskPage(items=items, limit=limit, offset=offset)
+    items, has_more = split_page(items, limit)
+    return TaskPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskOut)
@@ -224,10 +242,11 @@ def list_sprints(
         SprintService(str(workspace_id), actor(request)).list,
         str(project_id),
         status,
-        limit,
+        limit + 1,
         offset,
     )
-    return SprintPage(items=items, limit=limit, offset=offset)
+    items, has_more = split_page(items, limit)
+    return SprintPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/projects/{project_id}/sprints/{sprint_id}", response_model=SprintOut)
@@ -257,3 +276,44 @@ def update_sprint(
 def delete_sprint(request: Request, workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
     _call(SprintService(str(workspace_id), actor(request)).delete, str(project_id), str(sprint_id))
     return Response(status_code=204)
+
+
+@router.get("/tasks/by-key/{key}", response_model=TaskOut)
+def get_task_by_key(request: Request, workspace_id: WorkspaceId, key: str):
+    return _call(TaskService(str(workspace_id), actor(request)).by_key, key)
+
+
+@router.get("/members/{member_id}/tasks", response_model=TaskPage)
+def list_member_tasks(
+    request: Request,
+    workspace_id: WorkspaceId,
+    member_id: UUID,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    items = _call(
+        TaskService(str(workspace_id), actor(request)).assigned_to,
+        str(member_id),
+        limit + 1,
+        offset,
+    )
+    items, has_more = split_page(items, limit)
+    return TaskPage(items=items, limit=limit, offset=offset, has_more=has_more)
+
+
+@router.get("/members/{member_id}/projects", response_model=ProjectPage)
+def list_member_projects(
+    request: Request,
+    workspace_id: WorkspaceId,
+    member_id: UUID,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    items = _call(
+        ProjectService(str(workspace_id), actor(request)).for_member,
+        str(member_id),
+        limit + 1,
+        offset,
+    )
+    items, has_more = split_page(items, limit)
+    return ProjectPage(items=items, limit=limit, offset=offset, has_more=has_more)

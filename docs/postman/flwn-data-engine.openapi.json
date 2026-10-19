@@ -7194,6 +7194,22 @@
         "operationId": "list_users_users_get",
         "parameters": [
           {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -7255,7 +7271,7 @@
             }
           }
         },
-        "description": "Trusted backend only. Paginated with `limit` and `offset`."
+        "description": "Trusted backend only. Optional `email` finds one account, ignoring case. Paginated with `limit` and `offset`."
       }
     },
     "/users/{user_id}": {
@@ -10224,6 +10240,72 @@
             }
           },
           {
+            "name": "assignee_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assignee Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "sprint_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sprint Id"
+            }
+          },
+          {
+            "name": "backlog",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Backlog"
+            }
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -10317,7 +10399,7 @@
             }
           }
         },
-        "description": "Paginated with `limit` and `offset`."
+        "description": "Filter by `assignee_id`, `status`, `sprint_id`, or `backlog` (`true`: in no sprint). Paginated with `limit` and `offset`; `has_more` says whether another page follows."
       }
     },
     "/workspaces/{workspace_id}/projects/{project_id}/tasks/{task_id}": {
@@ -11239,6 +11321,357 @@
           }
         },
         "description": "Hard delete. Its tasks are kept and go back to the backlog (`sprint_id` becomes null). Returns 204."
+      }
+    },
+    "/workspaces/{workspace_id}/tasks/by-key/{key}": {
+      "get": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "Get a task by its key",
+        "operationId": "get_task_by_key_workspaces__workspace_id__tasks_by_key__key__get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "x-data-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Data-Api-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "x-acting-member-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Acting-Member-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The readable identifier, such as `FLWN-12`: the project key, a hyphen and the task number."
+      }
+    },
+    "/workspaces/{workspace_id}/members/{member_id}/tasks": {
+      "get": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "List a member's tasks",
+        "operationId": "list_member_tasks_workspaces__workspace_id__members__member_id__tasks_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "x-data-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Data-Api-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "x-acting-member-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Acting-Member-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every task assigned to the member, across the workspace's projects. Paginated."
+      }
+    },
+    "/workspaces/{workspace_id}/members/{member_id}/projects": {
+      "get": {
+        "tags": [
+          "Planning"
+        ],
+        "summary": "List a member's projects",
+        "operationId": "list_member_projects_workspaces__workspace_id__members__member_id__projects_get",
+        "parameters": [
+          {
+            "name": "workspace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspace Id"
+            }
+          },
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "x-data-api-key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Data-Api-Key"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "x-acting-member-id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Acting-Member-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Projects the member leads or whose team they belong to. Paginated."
       }
     },
     "/workspaces/{workspace_id}/comments": {
@@ -14394,6 +14827,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -14793,6 +15231,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -15271,6 +15714,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -16371,6 +16819,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -17513,6 +17966,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -17966,6 +18424,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -18483,6 +18946,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -19317,6 +19785,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -20072,6 +20545,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -20506,6 +20984,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -21094,6 +21577,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -21360,6 +21848,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",
@@ -21604,6 +22097,11 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
           }
         },
         "type": "object",

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api import tokens
 from app.api.auth import actor, allow, service_only
 from app.api.identity_schemas import WorkspaceCreate, WorkspaceOut, WorkspacePage, WorkspaceUpdate
+from app.api.paging import split_page
 from app.identity.workspaces import WorkspaceConflict, WorkspaceNotFound, WorkspaceService
 
 router = APIRouter(prefix="/workspaces")
@@ -37,8 +38,9 @@ def list_workspaces(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(WorkspaceService().list, limit, offset)
-    return WorkspacePage(items=items, limit=limit, offset=offset)
+    items = _call(WorkspaceService().list, limit + 1, offset)
+    items, has_more = split_page(items, limit)
+    return WorkspacePage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get(

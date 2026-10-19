@@ -302,7 +302,10 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Create a user",
         "Trusted backend only. A user is a person's global account; they join workspaces as members. Email is unique ignoring case.",
     ),
-    "GET /users": ("List users", "Trusted backend only. Paginated with `limit` and `offset`."),
+    "GET /users": (
+        "List users",
+        "Trusted backend only. Optional `email` finds one account, ignoring case. Paginated with `limit` and `offset`.",
+    ),
     "GET /users/{user_id}": ("Get a user", "Trusted backend only."),
     "PATCH /users/{user_id}": (
         "Update a user",
@@ -371,7 +374,19 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"GET {W}/projects/{{project_id}}/tasks": (
         "List tasks",
-        "Paginated with `limit` and `offset`.",
+        "Filter by `assignee_id`, `status`, `sprint_id`, or `backlog` (`true`: in no sprint). Paginated with `limit` and `offset`; `has_more` says whether another page follows.",
+    ),
+    f"GET {W}/tasks/by-key/{{key}}": (
+        "Get a task by its key",
+        "The readable identifier, such as `FLWN-12`: the project key, a hyphen and the task number.",
+    ),
+    f"GET {W}/members/{{member_id}}/tasks": (
+        "List a member's tasks",
+        "Every task assigned to the member, across the workspace's projects. Paginated.",
+    ),
+    f"GET {W}/members/{{member_id}}/projects": (
+        "List a member's projects",
+        "Projects the member leads or whose team they belong to. Paginated.",
     ),
     f"GET {W}/projects/{{project_id}}/tasks/{{task_id}}": ("Get a task", "Returns one task."),
     f"PATCH {W}/projects/{{project_id}}/tasks/{{task_id}}": (

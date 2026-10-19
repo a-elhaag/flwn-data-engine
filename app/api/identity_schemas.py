@@ -52,6 +52,7 @@ class WorkspacePage(BaseModel):
     items: list[WorkspaceOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class MemberCreate(BaseModel):
@@ -186,12 +187,14 @@ class MemberPage(BaseModel):
     items: list[MemberOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class TeamPage(BaseModel):
     items: list[TeamOut]
     limit: int
     offset: int
+    has_more: bool = False
 
 
 class TeamMembersUpdate(BaseModel):
@@ -240,3 +243,4 @@ class UserPage(BaseModel):
     items: list[UserOut]
     limit: int
     offset: int
+    has_more: bool = False

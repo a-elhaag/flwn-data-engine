@@ -31,6 +31,7 @@ from app.api.collab_schemas import (
     MessagePage,
     MessageUpdate,
 )
+from app.api.paging import split_page
 from app.collaboration.service import (
     ChannelService,
     CollaborationConflict,
@@ -83,10 +84,11 @@ def list_comments(
         CommentService(str(workspace_id), actor(request)).list,
         target_type,
         str(target_id),
-        limit,
+        limit + 1,
         offset,
     )
-    return CommentPage(items=items, limit=limit, offset=offset)
+    items, has_more = split_page(items, limit)
+    return CommentPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/comments/{comment_id}", response_model=CommentOut)
@@ -129,10 +131,11 @@ def list_docs(
         DocService(str(workspace_id), actor(request)).list,
         str(project_id) if project_id else None,
         str(parent_doc_id) if parent_doc_id else None,
-        limit,
+        limit + 1,
         offset,
     )
-    return DocPage(items=items, limit=limit, offset=offset)
+    items, has_more = split_page(items, limit)
+    return DocPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/docs/{doc_id}", response_model=DocOut)
@@ -163,8 +166,11 @@ def list_doc_blocks(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(DocService(str(workspace_id), actor(request)).blocks, str(doc_id), limit, offset)
-    return BlockPage(items=items, limit=limit, offset=offset)
+    items = _call(
+        DocService(str(workspace_id), actor(request)).blocks, str(doc_id), limit + 1, offset
+    )
+    items, has_more = split_page(items, limit)
+    return BlockPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.post("/docs/{doc_id}/blocks", status_code=201, response_model=BlockOut)
@@ -209,8 +215,9 @@ def list_channels(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(ChannelService(str(workspace_id), viewer(request)).list, limit, offset)
-    return ChannelPage(items=items, limit=limit, offset=offset)
+    items = _call(ChannelService(str(workspace_id), viewer(request)).list, limit + 1, offset)
+    items, has_more = split_page(items, limit)
+    return ChannelPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/channels/{channel_id}", response_model=ChannelOut)
@@ -265,9 +272,10 @@ def list_messages(
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     items = _call(
-        MessageService(str(workspace_id), viewer(request)).list, str(channel_id), limit, offset
+        MessageService(str(workspace_id), viewer(request)).list, str(channel_id), limit + 1, offset
     )
-    return MessagePage(items=items, limit=limit, offset=offset)
+    items, has_more = split_page(items, limit)
+    return MessagePage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/channels/{channel_id}/messages/{message_id}", response_model=MessageOut)

@@ -19,6 +19,7 @@ from app.api.identity_schemas import (
     TeamPage,
     TeamUpdate,
 )
+from app.api.paging import split_page
 from app.identity.members_teams import (
     IdentityConflict,
     IdentityNotFound,
@@ -60,8 +61,9 @@ def list_members(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(MemberService(str(workspace_id)).list, limit, offset)
-    return MemberPage(items=items, limit=limit, offset=offset)
+    items = _call(MemberService(str(workspace_id)).list, limit + 1, offset)
+    items, has_more = split_page(items, limit)
+    return MemberPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/members/{member_id}", response_model=MemberOut)
@@ -96,8 +98,9 @@ def list_teams(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(TeamService(str(workspace_id), viewer(request)).list, limit, offset)
-    return TeamPage(items=items, limit=limit, offset=offset)
+    items = _call(TeamService(str(workspace_id), viewer(request)).list, limit + 1, offset)
+    items, has_more = split_page(items, limit)
+    return TeamPage(items=items, limit=limit, offset=offset, has_more=has_more)
 
 
 @router.get("/teams/{team_id}", response_model=TeamOut)

@@ -1,14 +1,17 @@
 """Trusted workspace project and task management."""
 
+import re
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.db import events
-from app.db.models.identity import Member, Team, Workspace
+from app.db.models.identity import Member, Team, TeamMember, Workspace
 from app.db.models.planning import Backlog, Milestone, Project, Sprint, Task, WorkItem
 from app.db.session import session_for
+
+TASK_KEY = re.compile(r"^([A-Z][A-Z0-9]{0,9})-([1-9][0-9]*)$")
 
 
 class PlanningNotFound(LookupError):
@@ -102,6 +105,19 @@ def _check_project_refs(session, workspace_id, fields):
         fields["lead_id"] = lead_id
 
 
+def _member_in_workspace(session, workspace_id, member_id):
+    found = session.scalar(
+        select(Member.id).where(
+            Member.workspace_id == workspace_id,
+            Member.id == uuid.UUID(str(member_id)),
+            Member.deleted_at.is_(None),
+        )
+    )
+    if found is None:
+        raise PlanningNotFound("member not found")
+    return found
+
+
 def _task_view(session, row):
     project = session.get(Project, row.project_id)
     return {
@@ -157,6 +173,29 @@ class ProjectService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             return _project(session, self.workspace_id, project_id)
+
+    def for_member(self, member_id, limit=50, offset=0):
+        """Projects a member leads or whose team they belong to."""
+        with session_for(str(self.workspace_id)) as session:
+            member = _member_in_workspace(session, self.workspace_id, member_id)
+            on_team = (
+                select(TeamMember.team_id)
+                .where(TeamMember.workspace_id == self.workspace_id, TeamMember.member_id == member)
+                .scalar_subquery()
+            )
+            return list(
+                session.scalars(
+                    select(Project)
+                    .where(
+                        Project.workspace_id == self.workspace_id,
+                        Project.deleted_at.is_(None),
+                        or_(Project.lead_id == member, Project.team_id.in_(on_team)),
+                    )
+                    .order_by(Project.created_at, Project.id)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
 
     def create(self, **fields):
         with session_for(str(self.workspace_id)) as session:
@@ -319,17 +358,79 @@ class TaskService:
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
-    def list(self, project_id, limit=50, offset=0):
+    def list(
+        self,
+        project_id,
+        limit=50,
+        offset=0,
+        *,
+        assignee_id=None,
+        status=None,
+        sprint_id=None,
+        backlog=None,
+    ):
+        """backlog=True: tasks in no sprint. backlog=False: tasks in a sprint."""
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
-            rows = session.scalars(
+            query = select(Task).where(
+                Task.workspace_id == self.workspace_id,
+                Task.project_id == project.id,
+                Task.deleted_at.is_(None),
+            )
+            if assignee_id is not None:
+                query = query.where(Task.assignee_id == assignee_id)
+            if status is not None:
+                query = query.where(Task.status == status)
+            if sprint_id is not None:
+                query = query.where(Task.sprint_id == sprint_id)
+            if backlog is not None:
+                query = query.where(
+                    Task.sprint_id.is_(None) if backlog else Task.sprint_id.is_not(None)
+                )
+            rows = session.scalars(query.order_by(Task.number, Task.id).limit(limit).offset(offset))
+            return [_task_view(session, row) for row in rows]
+
+    def by_key(self, key):
+        """A task by its readable identifier, such as FLWN-12."""
+        found = TASK_KEY.match(key)
+        if found is None:
+            raise ValueError("task key looks like FLWN-12")
+        with session_for(str(self.workspace_id)) as session:
+            row = session.scalar(
                 select(Task)
+                .join(
+                    Project,
+                    (Project.workspace_id == Task.workspace_id) & (Project.id == Task.project_id),
+                )
                 .where(
                     Task.workspace_id == self.workspace_id,
-                    Task.project_id == project.id,
+                    Project.key == found.group(1),
+                    Project.deleted_at.is_(None),
+                    Task.number == int(found.group(2)),
                     Task.deleted_at.is_(None),
                 )
-                .order_by(Task.number, Task.id)
+            )
+            if row is None:
+                raise PlanningNotFound("task not found")
+            return _task_view(session, row)
+
+    def assigned_to(self, member_id, limit=50, offset=0):
+        """Every open-or-closed task assigned to a member, across the workspace's projects."""
+        with session_for(str(self.workspace_id)) as session:
+            member = _member_in_workspace(session, self.workspace_id, member_id)
+            rows = session.scalars(
+                select(Task)
+                .join(
+                    Project,
+                    (Project.workspace_id == Task.workspace_id) & (Project.id == Task.project_id),
+                )
+                .where(
+                    Task.workspace_id == self.workspace_id,
+                    Task.assignee_id == member,
+                    Task.deleted_at.is_(None),
+                    Project.deleted_at.is_(None),
+                )
+                .order_by(Task.created_at, Task.id)
                 .limit(limit)
                 .offset(offset)
             )
