@@ -1,6 +1,7 @@
 """Who is acting: a member exists in the workspace and is active."""
 
 import uuid
+from dataclasses import dataclass
 
 from sqlalchemy import select
 
@@ -20,3 +21,11 @@ def is_active(workspace_id: str, member_id: str) -> bool:
             )
         )
         return found is not None
+
+
+@dataclass(frozen=True)
+class Viewer:
+    """Who is looking, for the services that hide things from some members."""
+
+    member_id: uuid.UUID | None
+    admin: bool

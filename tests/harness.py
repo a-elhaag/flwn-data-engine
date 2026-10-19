@@ -58,11 +58,15 @@ class WorkspaceTokenClient(TestClient):
     The service key is blanked on these requests: CRUD routes refuse it.
     """
 
+    member_for = None  # set by CrudHarness: the administrator member the token acts as
+
     def request(self, method, url, *, headers=None, **kwargs):
         headers = dict(headers or {})
         found = CRUD_WORKSPACE_PATH.match(str(url))
         if found and "Authorization" not in headers:
-            token, _ = tokens.mint(found.group(1), tokens.AGENT_SCOPES, "test-admin", 300)
+            workspace = found.group(1)
+            member = self.member_for(workspace) if self.member_for else None
+            token, _ = tokens.mint(workspace, tokens.AGENT_SCOPES, "test-admin", 300, member)
             headers["Authorization"] = f"Bearer {token}"
             headers["X-Data-API-Key"] = ""
         return super().request(method, url, headers=headers, **kwargs)
@@ -176,6 +180,17 @@ class CrudHarness(MemoryHarness):
     """For the token-only CRUD areas: workspaces, identity, planning, collaboration."""
 
     client_class = WorkspaceTokenClient
+
+    def setUp(self):
+        super().setUp()
+        self.admins = {}
+        self.client.member_for = self.admin_member
+
+    def admin_member(self, workspace: str) -> str:
+        """The member the default test token acts as, one per workspace."""
+        if workspace not in self.admins:
+            self.admins[workspace] = self.member(workspace)
+        return self.admins[workspace]
 
     def token_headers(self, workspace: str, *scopes: str, member: str | None = None) -> dict:
         """Authorization headers for a token with exactly these scopes."""

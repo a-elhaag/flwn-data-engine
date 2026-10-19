@@ -3,11 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
-from app.api.auth import WorkspaceId, allow
+from app.api.auth import WorkspaceId, allow, viewer
 from app.api.identity_schemas import (
     MemberCreate,
     MemberOut,
@@ -32,7 +32,7 @@ router = APIRouter(
         allow(tokens.SCOPE_IDENTITY_READ, write_scope=tokens.SCOPE_IDENTITY_WRITE, service=False)
     ],
 )
-# Changing who belongs to the workspace is for administrators.
+# Changing who belongs to the workspace or to a team is for administrators.
 ADMIN = allow(tokens.SCOPE_ADMIN, service=False)
 
 
@@ -85,40 +85,47 @@ def delete_member(workspace_id: WorkspaceId, member_id: UUID):
 
 
 @router.post("/teams", status_code=201, response_model=TeamOut)
-def create_team(workspace_id: WorkspaceId, body: TeamCreate):
-    return _call(TeamService(str(workspace_id)).create, **body.model_dump())
+def create_team(request: Request, workspace_id: WorkspaceId, body: TeamCreate):
+    return _call(TeamService(str(workspace_id), viewer(request)).create, **body.model_dump())
 
 
 @router.get("/teams", response_model=TeamPage)
 def list_teams(
+    request: Request,
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(TeamService(str(workspace_id)).list, limit, offset)
+    items = _call(TeamService(str(workspace_id), viewer(request)).list, limit, offset)
     return TeamPage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/teams/{team_id}", response_model=TeamOut)
-def get_team(workspace_id: WorkspaceId, team_id: UUID):
-    return _call(TeamService(str(workspace_id)).get, str(team_id))
+def get_team(request: Request, workspace_id: WorkspaceId, team_id: UUID):
+    return _call(TeamService(str(workspace_id), viewer(request)).get, str(team_id))
 
 
 @router.patch("/teams/{team_id}", response_model=TeamOut)
-def update_team(workspace_id: WorkspaceId, team_id: UUID, body: TeamUpdate):
+def update_team(request: Request, workspace_id: WorkspaceId, team_id: UUID, body: TeamUpdate):
+    if "visibility" in body.model_fields_set and not viewer(request).admin:
+        raise HTTPException(403, "only an administrator can change a team's visibility")
     return _call(
-        TeamService(str(workspace_id)).update,
+        TeamService(str(workspace_id), viewer(request)).update,
         str(team_id),
         **body.model_dump(exclude_unset=True),
     )
 
 
-@router.put("/teams/{team_id}/members", response_model=TeamOut)
-def replace_team_members(workspace_id: WorkspaceId, team_id: UUID, body: TeamMembersUpdate):
-    return _call(TeamService(str(workspace_id)).set_members, str(team_id), body.member_ids)
+@router.put("/teams/{team_id}/members", response_model=TeamOut, dependencies=[ADMIN])
+def replace_team_members(
+    request: Request, workspace_id: WorkspaceId, team_id: UUID, body: TeamMembersUpdate
+):
+    return _call(
+        TeamService(str(workspace_id), viewer(request)).set_members, str(team_id), body.member_ids
+    )
 
 
 @router.delete("/teams/{team_id}", status_code=204)
-def delete_team(workspace_id: WorkspaceId, team_id: UUID):
-    _call(TeamService(str(workspace_id)).delete, str(team_id))
+def delete_team(request: Request, workspace_id: WorkspaceId, team_id: UUID):
+    _call(TeamService(str(workspace_id), viewer(request)).delete, str(team_id))
     return Response(status_code=204)

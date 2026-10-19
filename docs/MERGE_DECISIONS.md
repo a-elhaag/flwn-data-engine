@@ -270,7 +270,7 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Tests:** `tests/test_crud_auth.py` (8 tests): key refused, workspace lock, read cannot write, scopes do not cross areas, admin-only routes, suspended member, admin never on agent tokens, workspace create stays backend-only. Existing CRUD tests now call through a test client that mints an admin token for the workspace in the URL. The full suite passes: 363 tests, 1 skipped.
 - **Not done yet (follow-ups):**
   - `sub` in a human's token is still a free-text label. D3 wants it to be the user id, checked at minting against the member's user.
-  - CRUD writes still record no author (`created_by` and the audit log's actor are empty). The token's member id is available to fill them.
+  - Planning and identity writes still record no author (`created_by` and the audit log's actor are empty). Messages, comments and channels now do (see D31).
   - Atoms, approvals, skills, memory, files, meetings and conflicts routes still accept the service key as well as tokens.
 - **Revisit if:** a trusted internal service must call CRUD routes without a user. Give it its own token type instead of re-allowing the key.
 
@@ -284,6 +284,26 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Known gap:** deleting a user does not suspend their memberships. Until it does, suspend the members as well.
 - **Tests:** three tests (CRUD and soft delete, unique and validated email, tokens refused). The full suite passes: 366 tests, 1 skipped.
 - **Revisit if:** people need to edit their own profile through the engine. That would be a `users:self` rule where the token's `sub` equals the user id.
+
+### D31. Authors come from the token, and private channels and teams are hidden
+
+- **Change:** (1) the author of a message or comment is always the token's member; a body that names someone else is refused (403), and so is a token bound to no member. (2) Channels, their messages and teams are filtered by who is looking. (3) Only a channel's owners and administrators can change its members or privacy, and only a message's author or an administrator can edit or delete it. (4) Changing a team's members or its visibility needs `admin`.
+- **Old design:** these routes were backend-only, so the backend decided who could see what and who a message was from. `author_id` was taken from the request body, and every list returned the whole workspace.
+- **Why it did not work:** once D29 let tokens call these routes, any holder of `collab:write` could post as any member, and any holder of `collab:read` could read private channels, direct messages and private teams. An automated security review of the D29 commit found this, and the code confirmed it.
+- **New design:** the visibility rule is applied in the service, in the same query that loads the data, so a hidden channel is reported as missing (404) and its existence is not revealed.
+  - Members see their own channels.
+  - Direct (`dm`) and agent channels are members-only, even for an admin.
+  - Private group, team and project channels are visible to their members and to an admin.
+  - Everything else is open to the workspace.
+  - A private team is visible to its members and to an admin.
+  - A channel's creator becomes its `owner`, and `ChannelService`, `MessageService` and `TeamService` now require the viewer, so a route cannot forget to pass one.
+- **Why it is better:** the rules cannot be bypassed by a new route that forgets a filter, and they hold even if the backend is wrong about the caller.
+- **Tests:** `tests/test_visibility.py` (7 tests): forged and missing authors, edit and delete by author or admin, private channels, direct and agent channels hidden from admin, channel ownership, private teams, team admin rules. The full suite passes: 373 tests, 1 skipped.
+- **Known limits:**
+  - Docs, projects and tasks have no private flag, so they are visible to the whole workspace. A project that belongs to a private team is not hidden.
+  - Pinning a message counts as editing it, so only the author or an administrator can pin.
+  - Comments are not hidden by the visibility of what they are attached to.
+- **Revisit if:** docs or projects need to be private. That needs a visibility column on them first.
 
 ## 3. Merge order
 

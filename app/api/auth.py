@@ -158,3 +158,22 @@ def allow(
             yield principal
 
     return Depends(dependency)
+
+
+def viewer(request: Request) -> members.Viewer:
+    """The caller as the services see them. Needs the permission check to have run."""
+    principal = request.state.principal
+    return members.Viewer(
+        UUID(principal.member_id) if principal.member_id else None,
+        tokens.SCOPE_ADMIN in principal.scopes,
+    )
+
+
+def author(request: Request, requested: UUID | None) -> UUID:
+    """The member a write is attributed to: always the token's own, never one the body names."""
+    mine = viewer(request).member_id
+    if mine is None:
+        raise HTTPException(status_code=403, detail="A member-bound token is required to write")
+    if requested is not None and requested != mine:
+        raise HTTPException(status_code=403, detail="author_id must be the token's own member")
+    return mine

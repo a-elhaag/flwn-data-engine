@@ -98,7 +98,7 @@ class CollaborationApiTests(CrudHarness):
         self.assertEqual(created.status_code, 201, created.text)
         channel = created.json()
         messages = f"{channels}/{channel['id']}/messages"
-        sent = self.client.post(messages, json={"author_id": member, "body": "Hello"})
+        sent = self.client.post(messages, json={"body": "Hello"})
         self.assertEqual(sent.status_code, 201, sent.text)
         self.assertEqual(sent.json()["metadata"], {})
         message = sent.json()

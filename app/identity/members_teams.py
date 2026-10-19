@@ -3,11 +3,12 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, false, func, or_, select, true
 
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
 from app.db.session import session_for
+from app.members import Viewer
 
 
 class IdentityNotFound(LookupError):
@@ -41,12 +42,28 @@ def _member(session, workspace_id, member_id):
     return row
 
 
-def _team(session, workspace_id, team_id):
+def _team_visible(viewer: Viewer):
+    """Workspace teams are open to all; a private team only to its members and administrators."""
+    is_member = (
+        exists().where(
+            TeamMember.workspace_id == Team.workspace_id,
+            TeamMember.team_id == Team.id,
+            TeamMember.member_id == viewer.member_id,
+        )
+        if viewer.member_id
+        else false()
+    )
+    return or_(Team.visibility == "workspace", is_member, true() if viewer.admin else false())
+
+
+def _team(session, workspace_id, team_id, viewer: Viewer):
+    """A team the viewer may see; one they may not is reported as missing."""
     row = session.scalar(
         select(Team).where(
             Team.workspace_id == uuid.UUID(str(workspace_id)),
             Team.id == uuid.UUID(str(team_id)),
             Team.deleted_at.is_(None),
+            _team_visible(viewer),
         )
     )
     if row is None:
@@ -174,8 +191,9 @@ class MemberService:
 
 
 class TeamService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, viewer: Viewer):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.viewer = viewer
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -183,7 +201,11 @@ class TeamService:
             return list(
                 session.scalars(
                     select(Team)
-                    .where(Team.workspace_id == self.workspace_id, Team.deleted_at.is_(None))
+                    .where(
+                        Team.workspace_id == self.workspace_id,
+                        Team.deleted_at.is_(None),
+                        _team_visible(self.viewer),
+                    )
                     .order_by(Team.created_at, Team.id)
                     .limit(limit)
                     .offset(offset)
@@ -193,7 +215,7 @@ class TeamService:
     def get(self, team_id):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
-            return _team(session, self.workspace_id, team_id)
+            return _team(session, self.workspace_id, team_id, self.viewer)
 
     def create(self, **fields):
         with session_for(str(self.workspace_id)) as session:
@@ -207,7 +229,7 @@ class TeamService:
     def update(self, team_id, **fields):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
-            row = _team(session, self.workspace_id, team_id)
+            row = _team(session, self.workspace_id, team_id, self.viewer)
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
@@ -217,7 +239,7 @@ class TeamService:
     def delete(self, team_id):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
-            row = _team(session, self.workspace_id, team_id)
+            row = _team(session, self.workspace_id, team_id, self.viewer)
             row.deleted_at = datetime.now(UTC)
             session.flush()
             events.record(session, str(self.workspace_id), None, "team", row.id, "deleted")
@@ -225,7 +247,7 @@ class TeamService:
     def set_members(self, team_id, member_ids):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
-            team = _team(session, self.workspace_id, team_id)
+            team = _team(session, self.workspace_id, team_id, self.viewer)
             ids = {uuid.UUID(str(member_id)) for member_id in member_ids}
             active = set(
                 session.scalars(

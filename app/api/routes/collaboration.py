@@ -3,11 +3,11 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
-from app.api.auth import WorkspaceId, allow
+from app.api.auth import WorkspaceId, allow, author, viewer
 from app.api.collab_schemas import (
     BlockCreate,
     BlockOut,
@@ -34,6 +34,7 @@ from app.api.collab_schemas import (
 from app.collaboration.service import (
     ChannelService,
     CollaborationConflict,
+    CollaborationForbidden,
     CollaborationNotFound,
     CommentService,
     DocService,
@@ -53,6 +54,8 @@ def _call(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except CollaborationNotFound as exc:
         raise HTTPException(404, str(exc)) from None
+    except CollaborationForbidden as exc:
+        raise HTTPException(403, str(exc)) from None
     except CollaborationConflict as exc:
         raise HTTPException(409, str(exc)) from None
     except IntegrityError:
@@ -62,8 +65,9 @@ def _call(fn, *args, **kwargs):
 
 
 @router.post("/comments", status_code=201, response_model=CommentOut)
-def create_comment(workspace_id: WorkspaceId, body: CommentCreate):
-    return _call(CommentService(str(workspace_id)).create, **body.model_dump())
+def create_comment(request: Request, workspace_id: WorkspaceId, body: CommentCreate):
+    fields = body.model_dump() | {"author_id": author(request, body.author_id)}
+    return _call(CommentService(str(workspace_id)).create, **fields)
 
 
 @router.get("/comments", response_model=CommentPage)
@@ -180,10 +184,10 @@ def delete_doc_block(workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
 
 
 @router.post("/channels", status_code=201, response_model=ChannelOut)
-def create_channel(workspace_id: WorkspaceId, body: ChannelCreate):
+def create_channel(request: Request, workspace_id: WorkspaceId, body: ChannelCreate):
     data = body.model_dump(exclude={"member_ids"})
     return _call(
-        ChannelService(str(workspace_id)).create,
+        ChannelService(str(workspace_id), viewer(request)).create,
         member_ids=body.member_ids,
         **data,
     )
@@ -191,23 +195,26 @@ def create_channel(workspace_id: WorkspaceId, body: ChannelCreate):
 
 @router.get("/channels", response_model=ChannelPage)
 def list_channels(
+    request: Request,
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(ChannelService(str(workspace_id)).list, limit, offset)
+    items = _call(ChannelService(str(workspace_id), viewer(request)).list, limit, offset)
     return ChannelPage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/channels/{channel_id}", response_model=ChannelOut)
-def get_channel(workspace_id: WorkspaceId, channel_id: UUID):
-    return _call(ChannelService(str(workspace_id)).get, str(channel_id))
+def get_channel(request: Request, workspace_id: WorkspaceId, channel_id: UUID):
+    return _call(ChannelService(str(workspace_id), viewer(request)).get, str(channel_id))
 
 
 @router.patch("/channels/{channel_id}", response_model=ChannelOut)
-def update_channel(workspace_id: WorkspaceId, channel_id: UUID, body: ChannelUpdate):
+def update_channel(
+    request: Request, workspace_id: WorkspaceId, channel_id: UUID, body: ChannelUpdate
+):
     return _call(
-        ChannelService(str(workspace_id)).update,
+        ChannelService(str(workspace_id), viewer(request)).update,
         str(channel_id),
         **body.model_dump(exclude_unset=True),
     )
@@ -215,48 +222,62 @@ def update_channel(workspace_id: WorkspaceId, channel_id: UUID, body: ChannelUpd
 
 @router.put("/channels/{channel_id}/members", response_model=ChannelOut)
 def replace_channel_members(
-    workspace_id: WorkspaceId, channel_id: UUID, body: ChannelMembersUpdate
+    request: Request, workspace_id: WorkspaceId, channel_id: UUID, body: ChannelMembersUpdate
 ):
     return _call(
-        ChannelService(str(workspace_id)).replace_members,
+        ChannelService(str(workspace_id), viewer(request)).replace_members,
         str(channel_id),
         body.member_ids,
     )
 
 
 @router.delete("/channels/{channel_id}", status_code=204)
-def archive_channel(workspace_id: WorkspaceId, channel_id: UUID):
-    _call(ChannelService(str(workspace_id)).archive, str(channel_id))
+def archive_channel(request: Request, workspace_id: WorkspaceId, channel_id: UUID):
+    _call(ChannelService(str(workspace_id), viewer(request)).archive, str(channel_id))
     return Response(status_code=204)
 
 
 @router.post("/channels/{channel_id}/messages", status_code=201, response_model=MessageOut)
-def create_message(workspace_id: WorkspaceId, channel_id: UUID, body: MessageCreate):
-    return _call(MessageService(str(workspace_id)).create, str(channel_id), **body.model_dump())
+def create_message(
+    request: Request, workspace_id: WorkspaceId, channel_id: UUID, body: MessageCreate
+):
+    fields = body.model_dump() | {"author_id": author(request, body.author_id)}
+    return _call(
+        MessageService(str(workspace_id), viewer(request)).create, str(channel_id), **fields
+    )
 
 
 @router.get("/channels/{channel_id}/messages", response_model=MessagePage)
 def list_messages(
+    request: Request,
     workspace_id: WorkspaceId,
     channel_id: UUID,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(MessageService(str(workspace_id)).list, str(channel_id), limit, offset)
+    items = _call(
+        MessageService(str(workspace_id), viewer(request)).list, str(channel_id), limit, offset
+    )
     return MessagePage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/channels/{channel_id}/messages/{message_id}", response_model=MessageOut)
-def get_message(workspace_id: WorkspaceId, channel_id: UUID, message_id: UUID):
-    return _call(MessageService(str(workspace_id)).get, str(channel_id), str(message_id))
+def get_message(request: Request, workspace_id: WorkspaceId, channel_id: UUID, message_id: UUID):
+    return _call(
+        MessageService(str(workspace_id), viewer(request)).get, str(channel_id), str(message_id)
+    )
 
 
 @router.patch("/channels/{channel_id}/messages/{message_id}", response_model=MessageOut)
 def update_message(
-    workspace_id: WorkspaceId, channel_id: UUID, message_id: UUID, body: MessageUpdate
+    request: Request,
+    workspace_id: WorkspaceId,
+    channel_id: UUID,
+    message_id: UUID,
+    body: MessageUpdate,
 ):
     return _call(
-        MessageService(str(workspace_id)).update,
+        MessageService(str(workspace_id), viewer(request)).update,
         str(channel_id),
         str(message_id),
         **body.model_dump(exclude_unset=True),
@@ -264,6 +285,8 @@ def update_message(
 
 
 @router.delete("/channels/{channel_id}/messages/{message_id}", status_code=204)
-def delete_message(workspace_id: WorkspaceId, channel_id: UUID, message_id: UUID):
-    _call(MessageService(str(workspace_id)).delete, str(channel_id), str(message_id))
+def delete_message(request: Request, workspace_id: WorkspaceId, channel_id: UUID, message_id: UUID):
+    _call(
+        MessageService(str(workspace_id), viewer(request)).delete, str(channel_id), str(message_id)
+    )
     return Response(status_code=204)
