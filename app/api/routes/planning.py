@@ -3,11 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
-from app.api.auth import WorkspaceId, allow
+from app.api.auth import WorkspaceId, actor, allow
 from app.api.planning_schemas import (
     ProjectCreate,
     ProjectOut,
@@ -57,67 +57,87 @@ def _call(fn, *args, **kwargs):
 
 
 @router.post("/projects", status_code=201, response_model=ProjectOut)
-def create_project(workspace_id: WorkspaceId, body: ProjectCreate):
-    return _call(ProjectService(str(workspace_id)).create, **body.model_dump())
+def create_project(request: Request, workspace_id: WorkspaceId, body: ProjectCreate):
+    return _call(ProjectService(str(workspace_id), actor(request)).create, **body.model_dump())
 
 
 @router.get("/projects", response_model=ProjectPage)
 def list_projects(
+    request: Request,
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(ProjectService(str(workspace_id)).list, limit, offset)
+    items = _call(ProjectService(str(workspace_id), actor(request)).list, limit, offset)
     return ProjectPage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectOut)
-def get_project(workspace_id: WorkspaceId, project_id: UUID):
-    return _call(ProjectService(str(workspace_id)).get, str(project_id))
+def get_project(request: Request, workspace_id: WorkspaceId, project_id: UUID):
+    return _call(ProjectService(str(workspace_id), actor(request)).get, str(project_id))
 
 
 @router.patch("/projects/{project_id}", response_model=ProjectOut)
-def update_project(workspace_id: WorkspaceId, project_id: UUID, body: ProjectUpdate):
+def update_project(
+    request: Request, workspace_id: WorkspaceId, project_id: UUID, body: ProjectUpdate
+):
     return _call(
-        ProjectService(str(workspace_id)).update,
+        ProjectService(str(workspace_id), actor(request)).update,
         str(project_id),
         **body.model_dump(exclude_unset=True),
     )
 
 
 @router.delete("/projects/{project_id}", status_code=204)
-def delete_project(workspace_id: WorkspaceId, project_id: UUID):
-    _call(ProjectService(str(workspace_id)).delete, str(project_id))
+def delete_project(request: Request, workspace_id: WorkspaceId, project_id: UUID):
+    _call(ProjectService(str(workspace_id), actor(request)).delete, str(project_id))
     return Response(status_code=204)
 
 
 @router.post("/projects/{project_id}/work-items", status_code=201, response_model=WorkItemOut)
-def create_work_item(workspace_id: WorkspaceId, project_id: UUID, body: WorkItemCreate):
-    return _call(WorkItemService(str(workspace_id)).create, str(project_id), **body.model_dump())
+def create_work_item(
+    request: Request, workspace_id: WorkspaceId, project_id: UUID, body: WorkItemCreate
+):
+    return _call(
+        WorkItemService(str(workspace_id), actor(request)).create,
+        str(project_id),
+        **body.model_dump(),
+    )
 
 
 @router.get("/projects/{project_id}/work-items", response_model=WorkItemPage)
 def list_work_items(
+    request: Request,
     workspace_id: WorkspaceId,
     project_id: UUID,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(WorkItemService(str(workspace_id)).list, str(project_id), limit, offset)
+    items = _call(
+        WorkItemService(str(workspace_id), actor(request)).list, str(project_id), limit, offset
+    )
     return WorkItemPage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/projects/{project_id}/work-items/{work_item_id}", response_model=WorkItemOut)
-def get_work_item(workspace_id: WorkspaceId, project_id: UUID, work_item_id: UUID):
-    return _call(WorkItemService(str(workspace_id)).get, str(project_id), str(work_item_id))
+def get_work_item(
+    request: Request, workspace_id: WorkspaceId, project_id: UUID, work_item_id: UUID
+):
+    return _call(
+        WorkItemService(str(workspace_id), actor(request)).get, str(project_id), str(work_item_id)
+    )
 
 
 @router.patch("/projects/{project_id}/work-items/{work_item_id}", response_model=WorkItemOut)
 def update_work_item(
-    workspace_id: WorkspaceId, project_id: UUID, work_item_id: UUID, body: WorkItemUpdate
+    request: Request,
+    workspace_id: WorkspaceId,
+    project_id: UUID,
+    work_item_id: UUID,
+    body: WorkItemUpdate,
 ):
     return _call(
-        WorkItemService(str(workspace_id)).update,
+        WorkItemService(str(workspace_id), actor(request)).update,
         str(project_id),
         str(work_item_id),
         **body.model_dump(exclude_unset=True),
@@ -125,36 +145,49 @@ def update_work_item(
 
 
 @router.delete("/projects/{project_id}/work-items/{work_item_id}", status_code=204)
-def delete_work_item(workspace_id: WorkspaceId, project_id: UUID, work_item_id: UUID):
-    _call(WorkItemService(str(workspace_id)).delete, str(project_id), str(work_item_id))
+def delete_work_item(
+    request: Request, workspace_id: WorkspaceId, project_id: UUID, work_item_id: UUID
+):
+    _call(
+        WorkItemService(str(workspace_id), actor(request)).delete,
+        str(project_id),
+        str(work_item_id),
+    )
     return Response(status_code=204)
 
 
 @router.post("/projects/{project_id}/tasks", status_code=201, response_model=TaskOut)
-def create_task(workspace_id: WorkspaceId, project_id: UUID, body: TaskCreate):
-    return _call(TaskService(str(workspace_id)).create, str(project_id), **body.model_dump())
+def create_task(request: Request, workspace_id: WorkspaceId, project_id: UUID, body: TaskCreate):
+    return _call(
+        TaskService(str(workspace_id), actor(request)).create, str(project_id), **body.model_dump()
+    )
 
 
 @router.get("/projects/{project_id}/tasks", response_model=TaskPage)
 def list_tasks(
+    request: Request,
     workspace_id: WorkspaceId,
     project_id: UUID,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(TaskService(str(workspace_id)).list, str(project_id), limit, offset)
+    items = _call(
+        TaskService(str(workspace_id), actor(request)).list, str(project_id), limit, offset
+    )
     return TaskPage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}", response_model=TaskOut)
-def get_task(workspace_id: WorkspaceId, project_id: UUID, task_id: UUID):
-    return _call(TaskService(str(workspace_id)).get, str(project_id), str(task_id))
+def get_task(request: Request, workspace_id: WorkspaceId, project_id: UUID, task_id: UUID):
+    return _call(TaskService(str(workspace_id), actor(request)).get, str(project_id), str(task_id))
 
 
 @router.patch("/projects/{project_id}/tasks/{task_id}", response_model=TaskOut)
-def update_task(workspace_id: WorkspaceId, project_id: UUID, task_id: UUID, body: TaskUpdate):
+def update_task(
+    request: Request, workspace_id: WorkspaceId, project_id: UUID, task_id: UUID, body: TaskUpdate
+):
     return _call(
-        TaskService(str(workspace_id)).update,
+        TaskService(str(workspace_id), actor(request)).update,
         str(project_id),
         str(task_id),
         **body.model_dump(exclude_unset=True),
@@ -162,37 +195,58 @@ def update_task(workspace_id: WorkspaceId, project_id: UUID, task_id: UUID, body
 
 
 @router.delete("/projects/{project_id}/tasks/{task_id}", status_code=204)
-def delete_task(workspace_id: WorkspaceId, project_id: UUID, task_id: UUID):
-    _call(TaskService(str(workspace_id)).delete, str(project_id), str(task_id))
+def delete_task(request: Request, workspace_id: WorkspaceId, project_id: UUID, task_id: UUID):
+    _call(TaskService(str(workspace_id), actor(request)).delete, str(project_id), str(task_id))
     return Response(status_code=204)
 
 
 @router.post("/projects/{project_id}/sprints", status_code=201, response_model=SprintOut)
-def create_sprint(workspace_id: WorkspaceId, project_id: UUID, body: SprintCreate):
-    return _call(SprintService(str(workspace_id)).create, str(project_id), **body.model_dump())
+def create_sprint(
+    request: Request, workspace_id: WorkspaceId, project_id: UUID, body: SprintCreate
+):
+    return _call(
+        SprintService(str(workspace_id), actor(request)).create,
+        str(project_id),
+        **body.model_dump(),
+    )
 
 
 @router.get("/projects/{project_id}/sprints", response_model=SprintPage)
 def list_sprints(
+    request: Request,
     workspace_id: WorkspaceId,
     project_id: UUID,
     status: str | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(SprintService(str(workspace_id)).list, str(project_id), status, limit, offset)
+    items = _call(
+        SprintService(str(workspace_id), actor(request)).list,
+        str(project_id),
+        status,
+        limit,
+        offset,
+    )
     return SprintPage(items=items, limit=limit, offset=offset)
 
 
 @router.get("/projects/{project_id}/sprints/{sprint_id}", response_model=SprintOut)
-def get_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
-    return _call(SprintService(str(workspace_id)).get, str(project_id), str(sprint_id))
+def get_sprint(request: Request, workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
+    return _call(
+        SprintService(str(workspace_id), actor(request)).get, str(project_id), str(sprint_id)
+    )
 
 
 @router.patch("/projects/{project_id}/sprints/{sprint_id}", response_model=SprintOut)
-def update_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID, body: SprintUpdate):
+def update_sprint(
+    request: Request,
+    workspace_id: WorkspaceId,
+    project_id: UUID,
+    sprint_id: UUID,
+    body: SprintUpdate,
+):
     return _call(
-        SprintService(str(workspace_id)).update,
+        SprintService(str(workspace_id), actor(request)).update,
         str(project_id),
         str(sprint_id),
         **body.model_dump(exclude_unset=True),
@@ -200,6 +254,6 @@ def update_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID, 
 
 
 @router.delete("/projects/{project_id}/sprints/{sprint_id}", status_code=204)
-def delete_sprint(workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
-    _call(SprintService(str(workspace_id)).delete, str(project_id), str(sprint_id))
+def delete_sprint(request: Request, workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
+    _call(SprintService(str(workspace_id), actor(request)).delete, str(project_id), str(sprint_id))
     return Response(status_code=204)

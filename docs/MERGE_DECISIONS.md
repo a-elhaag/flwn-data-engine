@@ -269,8 +269,6 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Why it is better:** a stolen or misused token is limited to one workspace and the scopes it was minted with. Removing a member, or setting them to `suspended`, stops their token on the next request (tested). The permissions live in the engine, not in each caller.
 - **Tests:** `tests/test_crud_auth.py` (8 tests): key refused, workspace lock, read cannot write, scopes do not cross areas, admin-only routes, suspended member, admin never on agent tokens, workspace create stays backend-only. Existing CRUD tests now call through a test client that mints an admin token for the workspace in the URL. The full suite passes: 363 tests, 1 skipped.
 - **Not done yet (follow-ups):**
-  - `sub` in a human's token is still a free-text label. D3 wants it to be the user id, checked at minting against the member's user.
-  - Planning and identity writes still record no author (`created_by` and the audit log's actor are empty). Messages, comments and channels now do (see D31).
   - Atoms, approvals, skills, memory, files, meetings and conflicts routes still accept the service key as well as tokens.
 - **Revisit if:** a trusted internal service must call CRUD routes without a user. Give it its own token type instead of re-allowing the key.
 
@@ -304,6 +302,20 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
   - Pinning a message counts as editing it, so only the author or an administrator can pin.
   - Comments are not hidden by the visibility of what they are attached to.
 - **Revisit if:** docs or projects need to be private. That needs a visibility column on them first.
+
+### D32. A human's token subject is their user id, and changes record who made them
+
+- **Change:** (1) When a token is minted for a human member, its subject is that member's user id. If the request names no subject, the id is filled in; if it names a different one, minting fails with 422. AI members keep a free subject. (2) Workspace, member, team, project, work item, task, sprint, comment, doc, channel and message writes now record the token's member in the audit log, and creating a project, work item, task or doc sets its `created_by`.
+- **Old design:** `sub` was a free-text label (default `"agent"`), and these writes recorded no author (`created_by` and the audit actor were empty).
+- **Why it did not work:** D3 requires the token to say who the person is. With a free label, two tokens for the same person could carry different identities, and nothing tied a token's subject to a real account. With no author recorded, there was no answer to "who changed this".
+- **New design:** the person's identity is fixed when the token is made, by the one component allowed to make tokens, and every service receives the acting member from the verified token, not from the request.
+- **Why it is better:** the user id in `sub` can be trusted by anything that reads the token, and the audit log can be searched by person.
+- **Tests:** three more tests (default and mismatched subject, free subject for AI members, attribution across projects, work items, tasks and the workspace). The full suite passes: 377 tests, 1 skipped.
+- **Known limits:**
+  - Planning and collaboration responses do not show `created_by` for projects and work items (tasks do). The value is stored and can be added to the responses later.
+  - Existing tokens and any rows written before this change have no author.
+  - Comment and doc updates and deletes are attributed in the audit log, but there is still no "only the author can edit a comment" rule.
+- **Revisit if:** the backend needs to mint a token for a person who has no member in the workspace yet. Today such a token has no member to bind and cannot write.
 
 ## 3. Merge order
 

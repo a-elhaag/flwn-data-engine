@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
-from app.api.auth import WorkspaceId, allow, author, viewer
+from app.api.auth import WorkspaceId, actor, allow, author, viewer
 from app.api.collab_schemas import (
     BlockCreate,
     BlockOut,
@@ -67,11 +67,12 @@ def _call(fn, *args, **kwargs):
 @router.post("/comments", status_code=201, response_model=CommentOut)
 def create_comment(request: Request, workspace_id: WorkspaceId, body: CommentCreate):
     fields = body.model_dump() | {"author_id": author(request, body.author_id)}
-    return _call(CommentService(str(workspace_id)).create, **fields)
+    return _call(CommentService(str(workspace_id), actor(request)).create, **fields)
 
 
 @router.get("/comments", response_model=CommentPage)
 def list_comments(
+    request: Request,
     workspace_id: WorkspaceId,
     target_type: Literal["task", "work_item", "project", "project_update", "sprint", "doc"],
     target_id: UUID,
@@ -79,7 +80,7 @@ def list_comments(
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     items = _call(
-        CommentService(str(workspace_id)).list,
+        CommentService(str(workspace_id), actor(request)).list,
         target_type,
         str(target_id),
         limit,
@@ -89,32 +90,35 @@ def list_comments(
 
 
 @router.get("/comments/{comment_id}", response_model=CommentOut)
-def get_comment(workspace_id: WorkspaceId, comment_id: UUID):
-    return _call(CommentService(str(workspace_id)).get, str(comment_id))
+def get_comment(request: Request, workspace_id: WorkspaceId, comment_id: UUID):
+    return _call(CommentService(str(workspace_id), actor(request)).get, str(comment_id))
 
 
 @router.patch("/comments/{comment_id}", response_model=CommentOut)
-def update_comment(workspace_id: WorkspaceId, comment_id: UUID, body: CommentUpdate):
+def update_comment(
+    request: Request, workspace_id: WorkspaceId, comment_id: UUID, body: CommentUpdate
+):
     return _call(
-        CommentService(str(workspace_id)).update,
+        CommentService(str(workspace_id), actor(request)).update,
         str(comment_id),
         **body.model_dump(exclude_unset=True),
     )
 
 
 @router.delete("/comments/{comment_id}", status_code=204)
-def delete_comment(workspace_id: WorkspaceId, comment_id: UUID):
-    _call(CommentService(str(workspace_id)).delete, str(comment_id))
+def delete_comment(request: Request, workspace_id: WorkspaceId, comment_id: UUID):
+    _call(CommentService(str(workspace_id), actor(request)).delete, str(comment_id))
     return Response(status_code=204)
 
 
 @router.post("/docs", status_code=201, response_model=DocOut)
-def create_doc(workspace_id: WorkspaceId, body: DocCreate):
-    return _call(DocService(str(workspace_id)).create, **body.model_dump())
+def create_doc(request: Request, workspace_id: WorkspaceId, body: DocCreate):
+    return _call(DocService(str(workspace_id), actor(request)).create, **body.model_dump())
 
 
 @router.get("/docs", response_model=DocPage)
 def list_docs(
+    request: Request,
     workspace_id: WorkspaceId,
     project_id: UUID | None = None,
     parent_doc_id: UUID | None = None,
@@ -122,7 +126,7 @@ def list_docs(
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     items = _call(
-        DocService(str(workspace_id)).list,
+        DocService(str(workspace_id), actor(request)).list,
         str(project_id) if project_id else None,
         str(parent_doc_id) if parent_doc_id else None,
         limit,
@@ -132,45 +136,50 @@ def list_docs(
 
 
 @router.get("/docs/{doc_id}", response_model=DocOut)
-def get_doc(workspace_id: WorkspaceId, doc_id: UUID):
-    return _call(DocService(str(workspace_id)).get, str(doc_id))
+def get_doc(request: Request, workspace_id: WorkspaceId, doc_id: UUID):
+    return _call(DocService(str(workspace_id), actor(request)).get, str(doc_id))
 
 
 @router.patch("/docs/{doc_id}", response_model=DocOut)
-def update_doc(workspace_id: WorkspaceId, doc_id: UUID, body: DocUpdate):
+def update_doc(request: Request, workspace_id: WorkspaceId, doc_id: UUID, body: DocUpdate):
     return _call(
-        DocService(str(workspace_id)).update,
+        DocService(str(workspace_id), actor(request)).update,
         str(doc_id),
         **body.model_dump(exclude_unset=True),
     )
 
 
 @router.delete("/docs/{doc_id}", status_code=204)
-def delete_doc(workspace_id: WorkspaceId, doc_id: UUID):
-    _call(DocService(str(workspace_id)).delete, str(doc_id))
+def delete_doc(request: Request, workspace_id: WorkspaceId, doc_id: UUID):
+    _call(DocService(str(workspace_id), actor(request)).delete, str(doc_id))
     return Response(status_code=204)
 
 
 @router.get("/docs/{doc_id}/blocks", response_model=BlockPage)
 def list_doc_blocks(
+    request: Request,
     workspace_id: WorkspaceId,
     doc_id: UUID,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
-    items = _call(DocService(str(workspace_id)).blocks, str(doc_id), limit, offset)
+    items = _call(DocService(str(workspace_id), actor(request)).blocks, str(doc_id), limit, offset)
     return BlockPage(items=items, limit=limit, offset=offset)
 
 
 @router.post("/docs/{doc_id}/blocks", status_code=201, response_model=BlockOut)
-def create_doc_block(workspace_id: WorkspaceId, doc_id: UUID, body: BlockCreate):
-    return _call(DocService(str(workspace_id)).create_block, str(doc_id), **body.model_dump())
+def create_doc_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, body: BlockCreate):
+    return _call(
+        DocService(str(workspace_id), actor(request)).create_block, str(doc_id), **body.model_dump()
+    )
 
 
 @router.patch("/docs/{doc_id}/blocks/{block_id}", response_model=BlockOut)
-def update_doc_block(workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID, body: BlockUpdate):
+def update_doc_block(
+    request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID, body: BlockUpdate
+):
     return _call(
-        DocService(str(workspace_id)).update_block,
+        DocService(str(workspace_id), actor(request)).update_block,
         str(doc_id),
         str(block_id),
         **body.model_dump(exclude_unset=True),
@@ -178,8 +187,8 @@ def update_doc_block(workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID, bo
 
 
 @router.delete("/docs/{doc_id}/blocks/{block_id}", status_code=204)
-def delete_doc_block(workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
-    _call(DocService(str(workspace_id)).delete_block, str(doc_id), str(block_id))
+def delete_doc_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
+    _call(DocService(str(workspace_id), actor(request)).delete_block, str(doc_id), str(block_id))
     return Response(status_code=204)
 
 

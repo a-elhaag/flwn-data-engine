@@ -91,8 +91,9 @@ def _member_view(session, row):
 
 
 class MemberService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -147,7 +148,7 @@ class MemberService:
             )
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "member", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "member", row.id, "created")
             return _member_view(session, row)
 
     def update(self, member_id, **fields):
@@ -178,7 +179,7 @@ class MemberService:
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "member", row.id, "updated")
+            events.record(session, str(self.workspace_id), self.actor, "member", row.id, "updated")
             return _member_view(session, row)
 
     def delete(self, member_id):
@@ -187,13 +188,14 @@ class MemberService:
             row = _member(session, self.workspace_id, member_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "member", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "member", row.id, "deleted")
 
 
 class TeamService:
     def __init__(self, workspace_id, viewer: Viewer):
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.viewer = viewer
+        self.actor = str(viewer.member_id) if viewer.member_id else None
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -223,7 +225,7 @@ class TeamService:
             row = Team(workspace_id=self.workspace_id, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "team", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "team", row.id, "created")
             return row
 
     def update(self, team_id, **fields):
@@ -233,7 +235,9 @@ class TeamService:
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "team", row.id, "updated", fields)
+            events.record(
+                session, str(self.workspace_id), self.actor, "team", row.id, "updated", fields
+            )
             return row
 
     def delete(self, team_id):
@@ -242,7 +246,7 @@ class TeamService:
             row = _team(session, self.workspace_id, team_id, self.viewer)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "team", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "team", row.id, "deleted")
 
     def set_members(self, team_id, member_ids):
         with session_for(str(self.workspace_id)) as session:
@@ -274,7 +278,7 @@ class TeamService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "team",
                 team.id,
                 "members_replaced",

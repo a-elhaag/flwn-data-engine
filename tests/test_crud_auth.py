@@ -89,3 +89,53 @@ class CrudAuthTests(CrudHarness):
                 300,
                 "workspace",
             )
+
+    def user_of(self, member):
+        return str(self.sql("select user_id from members where id = :i", i=member)[0]["user_id"])
+
+    def mint(self, member, **extra):
+        body = {"workspace_id": self.team_a, "member_id": member, "scopes": ["admin"], **extra}
+        return self.client.post("/auth/tokens", json=body)
+
+    def test_human_token_subject_is_the_users_id(self):
+        human = self.member(self.team_a)
+        default = self.mint(human)
+        self.assertEqual(default.status_code, 200, default.text)
+        claims = t.verify(default.json()["token"])
+        self.assertEqual(claims.subject, self.user_of(human))
+        self.assertEqual(self.mint(human, subject=self.user_of(human)).status_code, 200)
+        self.assertEqual(self.mint(human, subject="someone-else").status_code, 422)
+
+    def test_agent_members_keep_a_free_subject(self):
+        agent = self.member(self.team_a, "AI")
+        ok = self.mint(agent, subject="planner")
+        self.assertEqual(ok.status_code, 200, ok.text)
+        self.assertEqual(t.verify(ok.json()["token"]).subject, "planner")
+
+    def test_changes_are_attributed_to_the_token_member(self):
+        who = self.member(self.team_a)
+        headers = self.token_headers(self.team_a, t.SCOPE_ADMIN, member=who)
+        base = f"/workspaces/{self.team_a}"
+        project = self.client.post(
+            f"{base}/projects", json={"key": "ATT", "name": "A"}, headers=headers
+        ).json()
+        item = self.client.post(
+            f"{base}/projects/{project['id']}/work-items",
+            json={"title": "w", "type": "FEATURE"},
+            headers=headers,
+        ).json()
+        task = self.client.post(
+            f"{base}/projects/{project['id']}/tasks",
+            json={"work_item_id": item["id"], "title": "t"},
+            headers=headers,
+        ).json()
+        self.assertEqual(task["created_by"], who)
+        for table, row in (("projects", project), ("work_items", item)):
+            (found,) = self.sql(f"select created_by from {table} where id = :i", i=row["id"])
+            self.assertEqual(str(found["created_by"]), who, table)
+        self.client.patch(f"{base}/projects/{project['id']}", json={"name": "B"}, headers=headers)
+        self.client.patch(base, json={"description": "d"}, headers=headers)
+        actors = {str(e["actor_id"]) for e in self.events(self.team_a) if e["actor_id"]}
+        self.assertEqual(actors, {who})
+        kinds = {e["entity_type"] for e in self.events(self.team_a) if e["actor_id"]}
+        self.assertTrue({"project", "work_item", "task", "workspace"} <= kinds)

@@ -199,8 +199,9 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
 
 
 class CommentService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, target_type, target_id, limit=50, offset=0):
         model = COMMENT_TARGETS[target_type]
@@ -281,7 +282,7 @@ class CommentService:
             row = Comment(workspace_id=self.workspace_id, **values)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "comment", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "comment", row.id, "created")
             return row
 
     def update(self, comment_id, **fields):
@@ -300,7 +301,7 @@ class CommentService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "comment",
                 row.id,
                 "updated",
@@ -314,7 +315,7 @@ class CommentService:
             row = self._get_comment(session, comment_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "comment", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "comment", row.id, "deleted")
 
     def _get_comment(self, session, comment_id):
         row = session.scalar(
@@ -330,8 +331,9 @@ class CommentService:
 
 
 class DocService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, project_id=None, parent_doc_id=None, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -362,10 +364,10 @@ class DocService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             _check_doc_refs(session, self.workspace_id, fields)
-            row = Doc(workspace_id=self.workspace_id, **fields)
+            row = Doc(workspace_id=self.workspace_id, created_by=self.actor, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "doc", row.id, "created")
             return row
 
     def update(self, doc_id, **fields):
@@ -379,7 +381,7 @@ class DocService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "doc",
                 row.id,
                 "updated",
@@ -411,11 +413,11 @@ class DocService:
                         child.deleted_at = now
                         frontier.append(child.id)
                         events.record(
-                            session, str(self.workspace_id), None, "doc", child.id, "deleted"
+                            session, str(self.workspace_id), self.actor, "doc", child.id, "deleted"
                         )
             row.deleted_at = now
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "doc", row.id, "deleted")
 
     def blocks(self, doc_id, limit=100, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -451,7 +453,9 @@ class DocService:
             row = DocBlock(workspace_id=self.workspace_id, doc_id=doc.id, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc_block", row.id, "created")
+            events.record(
+                session, str(self.workspace_id), self.actor, "doc_block", row.id, "created"
+            )
             return row
 
     def update_block(self, doc_id, block_id, **fields):
@@ -491,7 +495,7 @@ class DocService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "doc_block",
                 row.id,
                 "updated",
@@ -505,7 +509,9 @@ class DocService:
             row = self._block(session, doc.id, block_id)
             session.delete(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "doc_block", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "doc_block", row.id, "deleted"
+            )
 
     def _block(self, session, doc_id, block_id):
         row = session.scalar(
@@ -524,6 +530,7 @@ class ChannelService:
     def __init__(self, workspace_id, viewer: Viewer):
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.viewer = viewer
+        self.actor = str(viewer.member_id) if viewer.member_id else None
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -596,7 +603,7 @@ class ChannelService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "channel",
                 row.id,
                 "updated",
@@ -610,7 +617,9 @@ class ChannelService:
             _require_channel_owner(session, row, self.viewer)
             row.archived_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "channel", row.id, "archived")
+            events.record(
+                session, str(self.workspace_id), self.actor, "channel", row.id, "archived"
+            )
 
     def replace_members(self, channel_id, member_ids):
         with session_for(str(self.workspace_id)) as session:
@@ -633,7 +642,7 @@ class ChannelService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "channel",
                 channel.id,
                 "members_replaced",
@@ -664,6 +673,7 @@ class MessageService:
     def __init__(self, workspace_id, viewer: Viewer):
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.viewer = viewer
+        self.actor = str(viewer.member_id) if viewer.member_id else None
 
     def list(self, channel_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -700,7 +710,7 @@ class MessageService:
             row = Message(workspace_id=self.workspace_id, channel_id=channel.id, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "message", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "message", row.id, "created")
             return row
 
     def update(self, channel_id, message_id, **fields):
@@ -719,7 +729,7 @@ class MessageService:
             events.record(
                 session,
                 str(self.workspace_id),
-                None,
+                self.actor,
                 "message",
                 row.id,
                 "updated",
@@ -734,7 +744,7 @@ class MessageService:
             self._require_author(row)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "message", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "message", row.id, "deleted")
 
     def _get(self, session, channel_id, message_id):
         return _message(session, self.workspace_id, channel_id, message_id)

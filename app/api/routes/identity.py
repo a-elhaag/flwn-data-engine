@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
-from app.api.auth import WorkspaceId, allow, viewer
+from app.api.auth import WorkspaceId, actor, allow, viewer
 from app.api.identity_schemas import (
     MemberCreate,
     MemberOut,
@@ -50,8 +50,8 @@ def _call(fn, *args, **kwargs):
 
 
 @router.post("/members", status_code=201, response_model=MemberOut, dependencies=[ADMIN])
-def create_member(workspace_id: WorkspaceId, body: MemberCreate):
-    return _call(MemberService(str(workspace_id)).create, **body.model_dump())
+def create_member(request: Request, workspace_id: WorkspaceId, body: MemberCreate):
+    return _call(MemberService(str(workspace_id), actor(request)).create, **body.model_dump())
 
 
 @router.get("/members", response_model=MemberPage)
@@ -70,17 +70,17 @@ def get_member(workspace_id: WorkspaceId, member_id: UUID):
 
 
 @router.patch("/members/{member_id}", response_model=MemberOut, dependencies=[ADMIN])
-def update_member(workspace_id: WorkspaceId, member_id: UUID, body: MemberUpdate):
+def update_member(request: Request, workspace_id: WorkspaceId, member_id: UUID, body: MemberUpdate):
     return _call(
-        MemberService(str(workspace_id)).update,
+        MemberService(str(workspace_id), actor(request)).update,
         str(member_id),
         **body.model_dump(exclude_unset=True),
     )
 
 
 @router.delete("/members/{member_id}", status_code=204, dependencies=[ADMIN])
-def delete_member(workspace_id: WorkspaceId, member_id: UUID):
-    _call(MemberService(str(workspace_id)).delete, str(member_id))
+def delete_member(request: Request, workspace_id: WorkspaceId, member_id: UUID):
+    _call(MemberService(str(workspace_id), actor(request)).delete, str(member_id))
     return Response(status_code=204)
 
 

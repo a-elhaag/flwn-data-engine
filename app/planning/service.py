@@ -133,8 +133,9 @@ def _task_view(session, row):
 
 
 class ProjectService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -161,13 +162,13 @@ class ProjectService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             _check_project_refs(session, self.workspace_id, fields)
-            row = Project(workspace_id=self.workspace_id, **fields)
+            row = Project(workspace_id=self.workspace_id, created_by=self.actor, **fields)
             session.add(row)
             session.flush()
             backlog = Backlog(workspace_id=self.workspace_id, project_id=row.id, name="Backlog")
             session.add(backlog)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "project", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "project", row.id, "created")
             return row
 
     def update(self, project_id, **fields):
@@ -179,7 +180,7 @@ class ProjectService:
                 setattr(row, key, value)
             session.flush()
             events.record(
-                session, str(self.workspace_id), None, "project", row.id, "updated", fields
+                session, str(self.workspace_id), self.actor, "project", row.id, "updated", fields
             )
             return row
 
@@ -209,18 +210,21 @@ class ProjectService:
                 )
                 for task in tasks:
                     task.deleted_at = now
-                    events.record(session, str(self.workspace_id), None, "task", task.id, "deleted")
+                    events.record(
+                        session, str(self.workspace_id), self.actor, "task", task.id, "deleted"
+                    )
                 events.record(
-                    session, str(self.workspace_id), None, "work_item", item.id, "deleted"
+                    session, str(self.workspace_id), self.actor, "work_item", item.id, "deleted"
                 )
             row.deleted_at = now
             session.flush()
-            events.record(session, str(self.workspace_id), None, "project", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "project", row.id, "deleted")
 
 
 class WorkItemService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, project_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -261,13 +265,16 @@ class WorkItemService:
                 session.flush()
             row = WorkItem(
                 workspace_id=self.workspace_id,
+                created_by=self.actor,
                 project_id=project.id,
                 backlog_id=backlog.id,
                 **fields,
             )
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "work_item", row.id, "created")
+            events.record(
+                session, str(self.workspace_id), self.actor, "work_item", row.id, "created"
+            )
             return row
 
     def update(self, project_id, work_item_id, **fields):
@@ -278,7 +285,7 @@ class WorkItemService:
                 setattr(row, key, value)
             session.flush()
             events.record(
-                session, str(self.workspace_id), None, "work_item", row.id, "updated", fields
+                session, str(self.workspace_id), self.actor, "work_item", row.id, "updated", fields
             )
             return row
 
@@ -297,15 +304,20 @@ class WorkItemService:
             )
             for task in tasks:
                 task.deleted_at = now
-                events.record(session, str(self.workspace_id), None, "task", task.id, "deleted")
+                events.record(
+                    session, str(self.workspace_id), self.actor, "task", task.id, "deleted"
+                )
             row.deleted_at = now
             session.flush()
-            events.record(session, str(self.workspace_id), None, "work_item", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "work_item", row.id, "deleted"
+            )
 
 
 class TaskService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, project_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -337,6 +349,7 @@ class TaskService:
             self._validate_task_refs(session, project, fields)
             row = Task(
                 workspace_id=self.workspace_id,
+                created_by=self.actor,
                 project_id=project.id,
                 work_item_id=work_item.id,
                 **fields,
@@ -344,7 +357,7 @@ class TaskService:
             session.add(row)
             session.flush()
             session.refresh(row)  # `number` is assigned by a database trigger
-            events.record(session, str(self.workspace_id), None, "task", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "task", row.id, "created")
             return _task_view(session, row)
 
     def update(self, project_id, task_id, **fields):
@@ -360,7 +373,9 @@ class TaskService:
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "task", row.id, "updated", fields)
+            events.record(
+                session, str(self.workspace_id), self.actor, "task", row.id, "updated", fields
+            )
             return _task_view(session, row)
 
     def delete(self, project_id, task_id):
@@ -369,7 +384,7 @@ class TaskService:
             row = _task(session, self.workspace_id, project.id, task_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "task", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "task", row.id, "deleted")
 
     def _validate_task_refs(self, session, project, fields, task_id=None):
         for key, model in (("sprint_id", Sprint), ("milestone_id", Milestone)):
@@ -434,8 +449,9 @@ def _sprint(session, workspace_id, project_id, sprint_id):
 
 
 class SprintService:
-    def __init__(self, workspace_id):
+    def __init__(self, workspace_id, actor=None):
         self.workspace_id = uuid.UUID(str(workspace_id))
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
     def list(self, project_id, status=None, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -462,7 +478,7 @@ class SprintService:
             row = Sprint(workspace_id=self.workspace_id, project_id=project.id, **fields)
             session.add(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "sprint", row.id, "created")
+            events.record(session, str(self.workspace_id), self.actor, "sprint", row.id, "created")
             return row
 
     def update(self, project_id, sprint_id, **fields):
@@ -473,7 +489,7 @@ class SprintService:
                 setattr(row, key, value)
             session.flush()
             events.record(
-                session, str(self.workspace_id), None, "sprint", row.id, "updated", fields
+                session, str(self.workspace_id), self.actor, "sprint", row.id, "updated", fields
             )
             return row
 
@@ -484,4 +500,4 @@ class SprintService:
             row = _sprint(session, self.workspace_id, project.id, sprint_id)
             session.delete(row)
             session.flush()
-            events.record(session, str(self.workspace_id), None, "sprint", row.id, "deleted")
+            events.record(session, str(self.workspace_id), self.actor, "sprint", row.id, "deleted")

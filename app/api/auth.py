@@ -177,3 +177,9 @@ def author(request: Request, requested: UUID | None) -> UUID:
     if requested is not None and requested != mine:
         raise HTTPException(status_code=403, detail="author_id must be the token's own member")
     return mine
+
+
+def actor(request: Request) -> str | None:
+    """The member id to record as the author of a change."""
+    mine = viewer(request).member_id
+    return str(mine) if mine else None

@@ -40,6 +40,9 @@ def _slug_available(session, slug, *, exclude_id=None):
 
 
 class WorkspaceService:
+    def __init__(self, actor=None):
+        self.actor = str(actor) if actor else None  # who is acting, for the audit log
+
     def list(self, limit=50, offset=0):
         with service_session() as session:
             rows = session.scalars(
@@ -79,7 +82,7 @@ class WorkspaceService:
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
-            events.record(session, str(row.id), None, "workspace", row.id, "updated", fields)
+            events.record(session, str(row.id), self.actor, "workspace", row.id, "updated", fields)
             return row
 
     def delete(self, workspace_id):
@@ -87,4 +90,4 @@ class WorkspaceService:
             row = _workspace(session, workspace_id)
             row.deleted_at = datetime.now(UTC)
             session.flush()
-            events.record(session, str(row.id), None, "workspace", row.id, "deleted")
+            events.record(session, str(row.id), self.actor, "workspace", row.id, "deleted")

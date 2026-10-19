@@ -3,11 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
-from app.api.auth import allow, service_only
+from app.api.auth import actor, allow, service_only
 from app.api.identity_schemas import WorkspaceCreate, WorkspaceOut, WorkspacePage, WorkspaceUpdate
 from app.identity.workspaces import WorkspaceConflict, WorkspaceNotFound, WorkspaceService
 
@@ -55,9 +55,9 @@ def get_workspace(workspace_id: UUID):
     response_model=WorkspaceOut,
     dependencies=[allow(tokens.SCOPE_ADMIN, service=False)],
 )
-def update_workspace(workspace_id: UUID, body: WorkspaceUpdate):
+def update_workspace(request: Request, workspace_id: UUID, body: WorkspaceUpdate):
     return _call(
-        WorkspaceService().update,
+        WorkspaceService(actor(request)).update,
         str(workspace_id),
         **body.model_dump(exclude_unset=True),
     )
@@ -66,6 +66,6 @@ def update_workspace(workspace_id: UUID, body: WorkspaceUpdate):
 @router.delete(
     "/{workspace_id}", status_code=204, dependencies=[allow(tokens.SCOPE_ADMIN, service=False)]
 )
-def delete_workspace(workspace_id: UUID):
-    _call(WorkspaceService().delete, str(workspace_id))
+def delete_workspace(request: Request, workspace_id: UUID):
+    _call(WorkspaceService(actor(request)).delete, str(workspace_id))
     return Response(status_code=204)
