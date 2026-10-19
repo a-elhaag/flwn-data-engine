@@ -125,7 +125,7 @@ def replace_team_members(
     )
 
 
-@router.delete("/teams/{team_id}", status_code=204)
+@router.delete("/teams/{team_id}", status_code=204, dependencies=[ADMIN])
 def delete_team(request: Request, workspace_id: WorkspaceId, team_id: UUID):
     _call(TeamService(str(workspace_id), viewer(request)).delete, str(team_id))
     return Response(status_code=204)

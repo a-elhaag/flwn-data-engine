@@ -159,3 +159,12 @@ class VisibilityTests(CrudHarness):
             ).status_code,
             200,
         )
+
+    def test_deleting_a_team_needs_admin(self):
+        writer = self.as_(self.eve, *IDENTITY)
+        team = self.client.post(
+            f"{self.root}/teams", json={"key": "TMP", "name": "Temp"}, headers=writer
+        ).json()["id"]
+        one = f"{self.root}/teams/{team}"
+        self.assertEqual(self.client.delete(one, headers=writer).status_code, 403)
+        self.assertEqual(self.client.delete(one, headers=self.admin()).status_code, 204)
