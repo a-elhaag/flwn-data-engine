@@ -260,6 +260,20 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Kept for now:** `app/db/install.py` still exists, and the tests build their database with it. When the team trusts migrations in production, switch the tests to `alembic upgrade head` and retire the install script. Until then the new test fails if the two ever differ.
 - **Revisit if:** the production Postgres is a different major version than the one that made the dump (16.2). Re-run the migration test against it.
 
+### D29. The CRUD routes accept tokens only; the service key is for the backend
+
+- **Change:** the workspace, member, team, project, work item, task, sprint, comment, doc and channel routes now require a Bearer token. The service key is refused on them with 401. The service key still creates and lists workspaces (`POST /workspaces`, `GET /workspaces`), mints tokens (`POST /auth/tokens`) and runs the existing admin routes.
+- **Old design:** these routes (about 80) accepted only the service key, with the workspace taken from the URL. Any caller holding the key could act in any workspace as no one in particular.
+- **Why it did not work:** the key carries no identity, no workspace limit and no permissions, so the engine itself could not enforce who may do what. Every rule had to be enforced by whatever called it.
+- **New design:** each route checks the token's workspace against the URL (403 on a mismatch), then its scope, then that the member is still active. New scopes: `identity:read/write`, `planning:read/write`, `collab:read/write`, and `admin`. Reads need the read scope; every other method needs the write scope. Members (create, update, delete) and workspace update and delete need `admin`. A token with `admin` passes every scope check except the backend-only routes; atom tokens can never carry it.
+- **Why it is better:** a stolen or misused token is limited to one workspace and the scopes it was minted with. Removing a member, or setting them to `suspended`, stops their token on the next request (tested). The permissions live in the engine, not in each caller.
+- **Tests:** `tests/test_crud_auth.py` (8 tests): key refused, workspace lock, read cannot write, scopes do not cross areas, admin-only routes, suspended member, admin never on agent tokens, workspace create stays backend-only. Existing CRUD tests now call through a test client that mints an admin token for the workspace in the URL. The full suite passes: 363 tests, 1 skipped.
+- **Not done yet (follow-ups):**
+  - `sub` in a human's token is still a free-text label. D3 wants it to be the user id, checked at minting against the member's user.
+  - CRUD writes still record no author (`created_by` and the audit log's actor are empty). The token's member id is available to fill them.
+  - Atoms, approvals, skills, memory, files, meetings and conflicts routes still accept the service key as well as tokens.
+- **Revisit if:** a trusted internal service must call CRUD routes without a user. Give it its own token type instead of re-allowing the key.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.

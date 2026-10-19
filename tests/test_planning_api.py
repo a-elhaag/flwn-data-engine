@@ -1,7 +1,7 @@
-from harness import MemoryHarness
+from harness import CrudHarness
 
 
-class PlanningApiTests(MemoryHarness):
+class PlanningApiTests(CrudHarness):
     def project(self, workspace, key="ENG"):
         response = self.client.post(
             f"/workspaces/{workspace}/projects", json={"key": key, "name": "Engineering"}
@@ -72,9 +72,7 @@ class PlanningApiTests(MemoryHarness):
         self.assertEqual(response.status_code, 404, response.text)
 
     def test_project_and_task_routes_require_service_credentials(self):
-        response = self.client.get(
-            f"/workspaces/{self.team_a}/projects", headers={"X-Data-API-Key": ""}
-        )
+        response = self.client.get(f"/workspaces/{self.team_a}/projects", headers=self.NO_TOKEN)
         self.assertEqual(response.status_code, 401)
 
     def sprint(self, workspace, project_id, **body):
@@ -142,6 +140,6 @@ class PlanningApiTests(MemoryHarness):
         project = self.project(self.team_a)
         response = self.client.get(
             f"/workspaces/{self.team_a}/projects/{project['id']}/sprints",
-            headers={"X-Data-API-Key": ""},
+            headers=self.NO_TOKEN,
         )
         self.assertEqual(response.status_code, 401)

@@ -3,10 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
-from app.api.auth import WorkspaceId, service_only
+from app.api import tokens
+from app.api.auth import WorkspaceId, allow
 from app.api.planning_schemas import (
     ProjectCreate,
     ProjectOut,
@@ -34,7 +35,12 @@ from app.planning.service import (
     WorkItemService,
 )
 
-router = APIRouter(prefix="/workspaces/{workspace_id}", dependencies=[Depends(service_only)])
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}",
+    dependencies=[
+        allow(tokens.SCOPE_PLANNING_READ, write_scope=tokens.SCOPE_PLANNING_WRITE, service=False)
+    ],
+)
 
 
 def _call(fn, *args, **kwargs):

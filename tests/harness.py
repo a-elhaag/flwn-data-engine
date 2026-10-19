@@ -1,3 +1,4 @@
+import re
 import unittest
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ import env  # noqa: F401  (sets the environment the app needs to import)
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.api import tokens
 from app.config import settings
 from app.db.session import workspace_session
 from app.main import create_app
@@ -46,8 +48,30 @@ class ChatStub:
         return reply(prompt) if callable(reply) else reply
 
 
+CRUD_WORKSPACE_PATH = re.compile(r"^/workspaces/([0-9a-f-]{36})(/|$)")
+
+
+class WorkspaceTokenClient(TestClient):
+    """Calls a workspace's CRUD routes as that workspace's administrator, with a real token.
+
+    A request that sets its own Authorization header (even an empty one) is sent as it is.
+    The service key is blanked on these requests: CRUD routes refuse it.
+    """
+
+    def request(self, method, url, *, headers=None, **kwargs):
+        headers = dict(headers or {})
+        found = CRUD_WORKSPACE_PATH.match(str(url))
+        if found and "Authorization" not in headers:
+            token, _ = tokens.mint(found.group(1), tokens.AGENT_SCOPES, "test-admin", 300)
+            headers["Authorization"] = f"Bearer {token}"
+            headers["X-Data-API-Key"] = ""
+        return super().request(method, url, headers=headers, **kwargs)
+
+
 class MemoryHarness(unittest.TestCase):
     """Real Postgres, mocked inference. Every test gets two fresh workspaces."""
+
+    client_class = TestClient
 
     def setUp(self):
         self.engine = db_support.engine()
@@ -68,7 +92,7 @@ class MemoryHarness(unittest.TestCase):
             self.addCleanup(mock_patch.stop)
         self.team_a = self.workspace("team-a")
         self.team_b = self.workspace("team-b")
-        self.client = TestClient(create_app(), headers={"X-Data-API-Key": "test-data-key"})
+        self.client = self.client_class(create_app(), headers={"X-Data-API-Key": "test-data-key"})
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
 
@@ -146,3 +170,16 @@ class MemoryHarness(unittest.TestCase):
             f"/workspaces/{workspace}/memories/recall",
             json={"query": "fact", "agent": "reviewer", "limit": 5},
         )
+
+
+class CrudHarness(MemoryHarness):
+    """For the token-only CRUD areas: workspaces, identity, planning, collaboration."""
+
+    client_class = WorkspaceTokenClient
+
+    def token_headers(self, workspace: str, *scopes: str, member: str | None = None) -> dict:
+        """Authorization headers for a token with exactly these scopes."""
+        token, _ = tokens.mint(workspace, set(scopes), "test-user", 300, member)
+        return {"Authorization": f"Bearer {token}", "X-Data-API-Key": ""}
+
+    NO_TOKEN = {"Authorization": "", "X-Data-API-Key": ""}

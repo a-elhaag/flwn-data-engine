@@ -1,7 +1,7 @@
-from harness import MemoryHarness
+from harness import CrudHarness
 
 
-class CollaborationApiTests(MemoryHarness):
+class CollaborationApiTests(CrudHarness):
     def project(self, key):
         response = self.client.post(
             f"/workspaces/{self.team_a}/projects", json={"key": key, "name": key}
@@ -119,7 +119,5 @@ class CollaborationApiTests(MemoryHarness):
         self.assertEqual(self.client.get(f"{channels}/{channel['id']}").status_code, 404)
 
     def test_collaboration_routes_require_service_credentials(self):
-        response = self.client.get(
-            f"/workspaces/{self.team_a}/docs", headers={"X-Data-API-Key": ""}
-        )
+        response = self.client.get(f"/workspaces/{self.team_a}/docs", headers=self.NO_TOKEN)
         self.assertEqual(response.status_code, 401)

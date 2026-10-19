@@ -3,10 +3,11 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
-from app.api.auth import WorkspaceId, service_only
+from app.api import tokens
+from app.api.auth import WorkspaceId, allow
 from app.api.collab_schemas import (
     BlockCreate,
     BlockOut,
@@ -39,7 +40,12 @@ from app.collaboration.service import (
     MessageService,
 )
 
-router = APIRouter(prefix="/workspaces/{workspace_id}", dependencies=[Depends(service_only)])
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}",
+    dependencies=[
+        allow(tokens.SCOPE_COLLAB_READ, write_scope=tokens.SCOPE_COLLAB_WRITE, service=False)
+    ],
+)
 
 
 def _call(fn, *args, **kwargs):

@@ -3,10 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
-from app.api.auth import WorkspaceId, service_only
+from app.api import tokens
+from app.api.auth import WorkspaceId, allow
 from app.api.identity_schemas import (
     MemberCreate,
     MemberOut,
@@ -25,7 +26,14 @@ from app.identity.members_teams import (
     TeamService,
 )
 
-router = APIRouter(prefix="/workspaces/{workspace_id}", dependencies=[Depends(service_only)])
+router = APIRouter(
+    prefix="/workspaces/{workspace_id}",
+    dependencies=[
+        allow(tokens.SCOPE_IDENTITY_READ, write_scope=tokens.SCOPE_IDENTITY_WRITE, service=False)
+    ],
+)
+# Changing who belongs to the workspace is for administrators.
+ADMIN = allow(tokens.SCOPE_ADMIN, service=False)
 
 
 def _call(fn, *args, **kwargs):
@@ -41,7 +49,7 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(422, str(exc)) from None
 
 
-@router.post("/members", status_code=201, response_model=MemberOut)
+@router.post("/members", status_code=201, response_model=MemberOut, dependencies=[ADMIN])
 def create_member(workspace_id: WorkspaceId, body: MemberCreate):
     return _call(MemberService(str(workspace_id)).create, **body.model_dump())
 
@@ -61,7 +69,7 @@ def get_member(workspace_id: WorkspaceId, member_id: UUID):
     return _call(MemberService(str(workspace_id)).get, str(member_id))
 
 
-@router.patch("/members/{member_id}", response_model=MemberOut)
+@router.patch("/members/{member_id}", response_model=MemberOut, dependencies=[ADMIN])
 def update_member(workspace_id: WorkspaceId, member_id: UUID, body: MemberUpdate):
     return _call(
         MemberService(str(workspace_id)).update,
@@ -70,7 +78,7 @@ def update_member(workspace_id: WorkspaceId, member_id: UUID, body: MemberUpdate
     )
 
 
-@router.delete("/members/{member_id}", status_code=204)
+@router.delete("/members/{member_id}", status_code=204, dependencies=[ADMIN])
 def delete_member(workspace_id: WorkspaceId, member_id: UUID):
     _call(MemberService(str(workspace_id)).delete, str(member_id))
     return Response(status_code=204)
