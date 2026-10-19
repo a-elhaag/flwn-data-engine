@@ -339,6 +339,17 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Known limits:** `has_more` is not on the memory, files, meetings, atoms and conflicts lists, which have their own paging. "My projects" ignores private-team visibility for projects, because projects have no private flag (D31).
 - **Revisit if:** projects need archiving, or a board needs sorting and free-text search.
 
+### D35. A development sign-in that skips auth, only while the database is local
+
+- **Change:** `POST /dev/session {"email", "name"}` (hidden from the API docs). With no key and no token it finds or creates the user, gives them a personal workspace (they own it) and a place in one shared `dev-shared` workspace (they administer it), and returns an admin-scope token for each. Calling again with the same email returns the same workspaces and members.
+- **Old design:** every call needed a token, and a token needed the service key and an existing workspace and member. A developer had to create all of that by hand before the first request.
+- **Why it did not work:** it made local work and demos slow, and the Postman import needed three setup calls first.
+- **New design:** one call returns everything. It answers 404 and creates nothing unless the database host is localhost, 127.0.0.1, ::1 or a local socket. There is no flag to turn it on elsewhere.
+- **Why this and not "always on":** it was asked to be always on. An always-on route that gives admin tokens to anyone would let any caller on the network read and change every workspace's data once the engine is deployed, which undoes D29 to D32. Tying it to the database host gives the same "no setup, always on" in development, and switches itself off against a managed database. If you want it on a remote dev server, use a service-key-protected version instead.
+- **Tests:** six tests in `tests/test_dev_session.py` (tokens work and stay in their workspace, repeat sign-in, shared versus personal, the host check including `localhost.evil.example.com`, 404 with nothing created on a remote database, hidden from the docs). The full suite passes: 391 tests, 1 skipped.
+- **Known limit:** the check trusts `DATABASE_URL`. A production server set up with a database on the same machine as the API would have the route on. Do not run a production database on the API host.
+- **Revisit if:** a shared remote dev environment is needed. Then require the service key on this route.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.
