@@ -339,6 +339,17 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Known limits:** `has_more` is not on the memory, files, meetings, atoms and conflicts lists, which have their own paging. "My projects" ignores private-team visibility for projects, because projects have no private flag (D31).
 - **Revisit if:** projects need archiving, or a board needs sorting and free-text search.
 
+### D36. Tokens are switched off: the service key is the only credential for now
+
+- **Change:** `AGENT_TOKENS_ENABLED` (default `false`) gates all token use. While it is off, `POST /auth/tokens` is refused, a Bearer token is refused with 401, and the MCP server refuses agents. The service key passes every route, including the routes that were token-only under D29 (workspaces, members, teams, projects, work items, tasks, sprints, docs, channels). Authors come from `X-Acting-Member-Id` when the backend sends it, and are otherwise unrecorded.
+- **Old design:** D29 to D32 made CRUD routes token-only, with scopes, a member check and the author taken from the token.
+- **Why it was changed:** a decision to remove tokens for now, so that the backend and the AI engine can keep working with the key they already use. Redeploying the token-only CRUD would have broken them.
+- **Why a switch and not deletion:** the MCP server and the atom runs depend on tokens and their scope rules. Deleting them would also delete the tests that prove those rules. A switch keeps the code, tests it, and lets it come back with one setting.
+- **What is lost while it is off:** per-workspace scopes, the member check on each request (a suspended member is not stopped by the key), author attribution from a token, and the atom run limits. The service key can act in any workspace.
+- **Tests:** `tests/test_service_key_only.py` covers the key working on CRUD and memory routes, Bearer tokens refused, and minting refused. The rest of the suite runs with tokens switched on (`tests/harness.py`), so the token rules are still tested. The full suite passes: 388 tests, 1 skipped.
+- **Revisit if:** tokens are needed again. Set `AGENT_TOKENS_ENABLED=true` and `MEMORY_TOKEN_SECRET`, then the CRUD routes' scopes and member checks apply again.
+- **Dev sign-in (PR #6):** when it merges it must not mint tokens while the switch is off. It returns the ids, and the caller uses the key with `X-Acting-Member-Id`.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.
