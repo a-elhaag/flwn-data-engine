@@ -1,0 +1,314 @@
+how <title>Flwn Schema Graph</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one working surface. Graph canvas on the left, table detail on the right; they stack on phones.
+   Color encodes domain only; edges stay neutral until a table is selected. */
+:root {
+  --bg: #f5f6f8; --surface: #ffffff; --ink: #1b2230; --muted: #5b6678; --line: #dde1e8;
+  --edge: #b5bcc9; --edge-hot: #1b2230; --focus: #2457d6; --chip-off: #eceff3;
+  --d-identity: #3563c9; --d-planning: #218a5b; --d-collab: #7d4fc0; --d-files: #a86a0f;
+  --d-meetings: #c43f6b; --d-memory: #0b8794; --d-agents: #cc5a1f;
+  --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1219; --surface: #161b25; --ink: #e5e8ee; --muted: #98a2b4; --line: #272e3b;
+    --edge: #3b4455; --edge-hot: #e5e8ee; --focus: #6f94ff; --chip-off: #1d2330;
+    --d-identity: #7aa0ff; --d-planning: #4cc58d; --d-collab: #b393f0; --d-files: #e0a24a;
+    --d-meetings: #f07aa3; --d-memory: #4fd0dd; --d-agents: #ff9358;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1219; --surface: #161b25; --ink: #e5e8ee; --muted: #98a2b4; --line: #272e3b;
+  --edge: #3b4455; --edge-hot: #e5e8ee; --focus: #6f94ff; --chip-off: #1d2330;
+  --d-identity: #7aa0ff; --d-planning: #4cc58d; --d-collab: #b393f0; --d-files: #e0a24a;
+  --d-meetings: #f07aa3; --d-memory: #4fd0dd; --d-agents: #ff9358;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+.app { height: 100%; display: flex; flex-direction: column; gap: 12px; padding: 16px; min-width: 0; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.stats { margin: 0; min-width: 0; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+#q { flex: 1 1 200px; min-width: 0; max-width: 320px; padding: 7px 10px; font: inherit; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+#chips { display: flex; flex: 1 1 360px; flex-wrap: wrap; min-width: 0; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font: inherit; font-size: 13px;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+.chip[aria-pressed="false"] { color: var(--muted); background: var(--chip-off); }
+.chip[aria-pressed="false"] .dot { opacity: 0.35; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+.chip .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.opt { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; }
+button.plain { font: inherit; padding: 5px 10px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+:is(.chip, button.plain, #q, .opt input):focus-visible, .link:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; }
+.stage { position: relative; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+svg { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+svg:active { cursor: grabbing; }
+.hint { position: absolute; left: 12px; bottom: 10px; color: var(--muted); font-size: 12px; pointer-events: none; }
+.edge { stroke: var(--edge); stroke-width: 1; fill: none; opacity: 0.7; }
+.edge.hot { stroke: var(--edge-hot); stroke-width: 1.6; opacity: 1; }
+.edge.dim { opacity: 0.12; }
+.node { cursor: pointer; }
+.node circle { stroke: var(--surface); stroke-width: 2; }
+.node.selected circle { stroke: var(--ink); stroke-width: 2.5; }
+.node text { font-family: var(--font-mono); font-size: 10px; fill: var(--ink); text-anchor: middle; paint-order: stroke;
+  stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.node.dim { opacity: 0.14; }
+.dom-identity { fill: var(--d-identity); } .dom-planning { fill: var(--d-planning); } .dom-collab { fill: var(--d-collab); }
+.dom-files { fill: var(--d-files); } .dom-meetings { fill: var(--d-meetings); } .dom-memory { fill: var(--d-memory); }
+.dom-agents { fill: var(--d-agents); }
+.c-identity { color: var(--d-identity); } .c-planning { color: var(--d-planning); } .c-collab { color: var(--d-collab); }
+.c-files { color: var(--d-files); } .c-meetings { color: var(--d-meetings); } .c-memory { color: var(--d-memory); }
+.c-agents { color: var(--d-agents); }
+.panel { min-height: 0; min-width: 0; overflow: auto; padding: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.panel h2 { margin: 0; font-family: var(--font-mono); font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+.panel .dom { display: inline-flex; align-items: center; gap: 6px; margin: 6px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.panel p { margin: 0 0 12px; color: var(--muted); }
+.panel h3 { margin: 16px 0 6px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+ul.cols, ul.rel { list-style: none; margin: 0; padding: 0; }
+ul.cols li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 4px 0; border-top: 1px solid var(--line); }
+ul.cols .name { font-family: var(--font-mono); font-size: 12.5px; overflow-wrap: anywhere; }
+ul.cols .type { margin-left: auto; font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.tag { padding: 0 5px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; }
+ul.rel li { padding: 3px 0; }
+.link { font: inherit; font-family: var(--font-mono); font-size: 12.5px; padding: 0; color: var(--focus); background: none; border: 0; cursor: pointer; text-align: left; }
+.link:hover { text-decoration: underline; }
+.via { color: var(--muted); font-size: 12px; }
+@media (max-width: 760px) {
+  .app { height: auto; min-height: 100%; }
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 60vh; min-height: 360px; }
+  #q { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header>
+    <h1>Flwn data model</h1>
+    <p class="stats" id="stats"></p>
+  </header>
+  <div class="bar">
+    <input id="q" type="search" placeholder="Find a table or column" aria-label="Find a table or column" autocomplete="off">
+    <div id="chips" role="group" aria-label="Domains"></div>
+    <label class="opt"><input type="checkbox" id="optWs"> Workspace links</label>
+    <label class="opt"><input type="checkbox" id="optMem"> Member links</label>
+    <button class="plain" id="fit" type="button">Fit view</button>
+  </div>
+  <div class="main">
+    <div class="stage" id="stage">
+      <svg id="svg" role="img" aria-label="Graph of database tables and their relationships"></svg>
+      <div class="hint">Drag to move. Scroll to zoom. Click a table for its columns.</div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js" integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i" crossorigin="anonymous"></script>
+<script>
+const DATA = __DATA__;
+
+const byName = new Map(DATA.tables.map(t => [t.name, t]));
+const label = new Map(DATA.domains.map(d => [d.id, d.label]));
+const enabled = new Set(DATA.domains.map(d => d.id));
+const state = { selected: null, query: "", workspace: false, members: false };
+
+// An edge to workspaces or members is on every table; only show it when it is the table's sole
+// parent (so root tables stay connected) or when the toggle asks for it.
+const hasOwnParent = new Set(DATA.edges.filter(e => e.target !== "workspaces" && e.target !== "members").map(e => e.source));
+function edgeVisible(e) {
+  if (!enabled.has(byName.get(e.source).domain) || !enabled.has(byName.get(e.target).domain)) return false;
+  if (e.target === "workspaces") return state.workspace || !hasOwnParent.has(e.source);
+  if (e.target === "members") return state.members;
+  return true;
+}
+const nodes = DATA.tables.map(t => ({ name: t.name, domain: t.domain, r: 5 + Math.sqrt(t.columns.length) * 1.7 }));
+const nodeByName = new Map(nodes.map(n => [n.name, n]));
+
+const svg = d3.select("#svg");
+const root = svg.append("g");
+const edgeLayer = root.append("g");
+const nodeLayer = root.append("g");
+let width = 800, height = 600;
+const zoom = d3.zoom().scaleExtent([0.25, 4]).on("zoom", ev => root.attr("transform", ev.transform));
+svg.call(zoom);
+
+function clusterCenters() {
+  // An ellipse, so wide screens use their width instead of a small central ring.
+  const rx = width * 0.34, ry = height * 0.3;
+  const out = new Map();
+  DATA.domains.forEach((d, i) => {
+    const angle = (i / DATA.domains.length) * Math.PI * 2 - Math.PI / 2;
+    out.set(d.id, { x: Math.cos(angle) * rx, y: Math.sin(angle) * ry });
+  });
+  return out;
+}
+let centers = clusterCenters();
+const sim = d3.forceSimulation()
+  .force("link", d3.forceLink().id(d => d.name).distance(64).strength(0.35))
+  .force("charge", d3.forceManyBody().strength(-330))
+  .force("collide", d3.forceCollide().radius(d => d.r + 12))
+  .force("cluster", alpha => {
+    for (const n of sim.nodes()) {
+      const c = centers.get(n.domain);
+      n.vx += (c.x - n.x) * 0.07 * alpha;
+      n.vy += (c.y - n.y) * 0.07 * alpha;
+    }
+  })
+  .stop();
+
+function neighbors(name) {
+  const set = new Set([name]);
+  for (const e of DATA.edges) {
+    if (!edgeVisible(e)) continue;
+    if (e.source === name) set.add(e.target);
+    if (e.target === name) set.add(e.source);
+  }
+  return set;
+}
+function matches(t) {
+  const q = state.query;
+  return !q || t.name.includes(q) || t.columns.some(c => c.name.includes(q));
+}
+
+let edgeSel, nodeSel, visibleNodes = [], visibleEdges = [];
+function render() {
+  visibleNodes = nodes.filter(n => enabled.has(n.domain));
+  visibleEdges = DATA.edges.filter(edgeVisible).map(e => ({ ...e }));
+  edgeSel = edgeLayer.selectAll("path").data(visibleEdges, e => e.source + ">" + e.target)
+    .join("path").attr("class", "edge");
+  nodeSel = nodeLayer.selectAll("g.node").data(visibleNodes, n => n.name).join(enter => {
+    const g = enter.append("g").attr("class", "node");
+    g.append("circle");
+    g.append("text").attr("dy", n => -(n.r + 4));
+    g.on("click", (ev, n) => { ev.stopPropagation(); select(n.name); });
+    g.call(d3.drag()
+      .on("start", (ev, n) => { if (!ev.active) sim.alphaTarget(0.2).restart(); n.fx = n.x; n.fy = n.y; })
+      .on("drag", (ev, n) => { n.fx = ev.x; n.fy = ev.y; })
+      .on("end", (ev, n) => { if (!ev.active) sim.alphaTarget(0); n.fx = null; n.fy = null; }));
+    return g;
+  });
+  nodeSel.select("circle").attr("r", n => n.r).attr("class", n => "dom-" + n.domain);
+  nodeSel.select("text").text(n => n.name);
+  sim.nodes(visibleNodes);
+  sim.force("link").links(visibleEdges.map(e => ({ source: e.source, target: e.target })));
+  highlight();
+}
+function ticked() {
+  edgeSel.attr("d", e => {
+    const s = nodeByName.get(e.source), t = nodeByName.get(e.target);
+    return `M${s.x},${s.y}L${t.x},${t.y}`;
+  });
+  nodeSel.attr("transform", n => `translate(${n.x},${n.y})`);
+}
+sim.on("tick", ticked);
+
+function settle() {
+  // Lay the graph out before showing it, so the first frame is the finished picture.
+  sim.alpha(1);
+  for (let i = 0; i < 260; i++) sim.tick();
+  ticked();
+}
+function fit() {
+  if (!visibleNodes.length) return;
+  const xs = visibleNodes.map(n => n.x), ys = visibleNodes.map(n => n.y);
+  const x0 = Math.min(...xs) - 40, x1 = Math.max(...xs) + 40, y0 = Math.min(...ys) - 40, y1 = Math.max(...ys) + 40;
+  const k = Math.min(width / (x1 - x0), height / (y1 - y0), 1.6);
+  svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2 - k * (x0 + x1) / 2, height / 2 - k * (y0 + y1) / 2).scale(k));
+}
+
+function highlight() {
+  const sel = state.selected;
+  const near = sel ? neighbors(sel) : null;
+  nodeSel.classed("selected", n => n.name === sel)
+    .classed("dim", n => (near && !near.has(n.name)) || !matches(byName.get(n.name)));
+  edgeSel.classed("hot", e => sel && (e.source === sel || e.target === sel))
+    .classed("dim", e => sel && e.source !== sel && e.target !== sel);
+}
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function tableLink(name) { return `<button class="link" data-table="${esc(name)}" type="button">${esc(name)}</button>`; }
+
+function renderPanel() {
+  const panel = document.getElementById("panel");
+  const t = state.selected && byName.get(state.selected);
+  if (!t) {
+    panel.innerHTML = `<h2>Overview</h2><p>${DATA.tables.length} tables in ${DATA.domains.length} domains. Click a table to see its columns and what it connects to.</p>`;
+    return;
+  }
+  const out = DATA.edges.filter(e => e.source === t.name), inc = DATA.edges.filter(e => e.target === t.name);
+  const cols = t.columns.map(c => `<li><span class="name">${esc(c.name)}</span>${c.pk ? '<span class="tag">PK</span>' : ""}${c.fk ? '<span class="tag">FK</span>' : ""}<span class="type">${esc(c.type)}${c.null ? "?" : ""}</span></li>`).join("");
+  const rel = (list, side) => list.length
+    ? `<ul class="rel">${list.map(e => `<li>${tableLink(e[side])} <span class="via">${side === "target" ? "via " : "uses "}${esc(e.via.join(", "))}</span></li>`).join("")}</ul>`
+    : `<p>None.</p>`;
+  panel.innerHTML = `<h2>${esc(t.name)}</h2>
+    <div class="dom c-${t.domain}"><span class="dot"></span>${esc(label.get(t.domain))}</div>
+    ${t.doc ? `<p>${esc(t.doc)}</p>` : ""}
+    <h3>Points to (${out.length})</h3>${rel(out, "target")}
+    <h3>Referenced by (${inc.length})</h3>${rel(inc, "source")}
+    <h3>Columns (${t.columns.length})</h3><ul class="cols">${cols}</ul>`;
+}
+document.getElementById("panel").addEventListener("click", ev => {
+  const b = ev.target.closest("[data-table]");
+  if (b) select(b.dataset.table, true);
+});
+
+function select(name, reveal) {
+  state.selected = state.selected === name && !reveal ? null : name;
+  if (state.selected && !enabled.has(byName.get(name).domain)) { enabled.add(byName.get(name).domain); buildChips(); relayout(); }
+  renderPanel();
+  highlight();
+}
+svg.on("click", () => { state.selected = null; renderPanel(); highlight(); });
+
+function buildChips() {
+  const counts = d3.rollup(DATA.tables, v => v.length, t => t.domain);
+  document.getElementById("chips").innerHTML = DATA.domains.map(d =>
+    `<button class="chip c-${d.id}" type="button" data-domain="${d.id}" aria-pressed="${enabled.has(d.id)}"><span class="dot"></span><span style="color:var(--ink)">${esc(d.label)}</span> <span class="n">${counts.get(d.id) || 0}</span></button>`).join("");
+}
+document.getElementById("chips").addEventListener("click", ev => {
+  const b = ev.target.closest("[data-domain]");
+  if (!b) return;
+  enabled.has(b.dataset.domain) ? enabled.delete(b.dataset.domain) : enabled.add(b.dataset.domain);
+  if (state.selected && !enabled.has(byName.get(state.selected).domain)) state.selected = null;
+  buildChips(); relayout(); renderPanel();
+});
+function relayout() { render(); settle(); fit(); }
+
+document.getElementById("q").addEventListener("input", ev => { state.query = ev.target.value.trim().toLowerCase(); highlight(); });
+document.getElementById("q").addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  const hit = visibleNodes.find(n => matches(byName.get(n.name)));
+  if (hit && state.query) select(hit.name, true);
+});
+document.getElementById("optWs").addEventListener("change", ev => { state.workspace = ev.target.checked; relayout(); });
+document.getElementById("optMem").addEventListener("change", ev => { state.members = ev.target.checked; relayout(); });
+document.getElementById("fit").addEventListener("click", fit);
+
+function measure() {
+  const box = document.getElementById("stage").getBoundingClientRect();
+  width = Math.max(box.width, 300); height = Math.max(box.height, 300);
+  centers = clusterCenters();
+}
+let resizeTimer;
+new ResizeObserver(() => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { measure(); fit(); }, 120); })
+  .observe(document.getElementById("stage"));
+
+document.getElementById("stats").textContent =
+  `${DATA.tables.length} tables, ${DATA.edges.length} relationships, generated from the SQLAlchemy models`;
+measure();
+buildChips();
+state.selected = "tasks";
+render();
+settle();
+fit();
+renderPanel();
+</script>

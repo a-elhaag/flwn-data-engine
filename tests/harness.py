@@ -1,20 +1,28 @@
-import os
-import time
+import re
 import unittest
+import uuid
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
-os.environ.setdefault("DATA_API_KEY", "test-data-key")
-os.environ.setdefault("AZURE_FOUNDRY_ENDPOINT", "https://example.invalid")
-os.environ.setdefault("AZURE_FOUNDRY_KEY", "test-foundry-key")
-
+import db_support
+import env  # noqa: F401  (sets the environment the app needs to import)
 from fastapi.testclient import TestClient
-from qdrant_client import QdrantClient
+from sqlalchemy import text
 
-from clients import vector_store
-from config import settings
-from main import create_app
+from app.api import tokens
+from app.config import settings
+from app.db.session import workspace_session
+from app.main import create_app
 
 TOKEN_SECRET = "t" * 40
+DIM = 1536
+
+
+def unit(index: int = 0) -> list[float]:
+    """A unit vector. Identical vectors have similarity 1.0, different axes 0.0."""
+    vector = [0.0] * DIM
+    vector[index] = 1.0
+    return vector
 
 
 class ChatStub:
@@ -40,47 +48,153 @@ class ChatStub:
         return reply(prompt) if callable(reply) else reply
 
 
+CRUD_WORKSPACE_PATH = re.compile(r"^/workspaces/([0-9a-f-]{36})(/|$)")
+
+
+class WorkspaceTokenClient(TestClient):
+    """Calls a workspace's CRUD routes as that workspace's administrator, with a real token.
+
+    A request that sets its own Authorization header (even an empty one) is sent as it is.
+    The service key is blanked on these requests: CRUD routes refuse it.
+    """
+
+    member_for = None  # set by CrudHarness: the administrator member the token acts as
+
+    def request(self, method, url, *, headers=None, **kwargs):
+        headers = dict(headers or {})
+        found = CRUD_WORKSPACE_PATH.match(str(url))
+        if found and "Authorization" not in headers:
+            workspace = found.group(1)
+            member = self.member_for(workspace) if self.member_for else None
+            token, _ = tokens.mint(workspace, tokens.AGENT_SCOPES, "test-admin", 300, member)
+            headers["Authorization"] = f"Bearer {token}"
+            headers["X-Data-API-Key"] = ""
+        return super().request(method, url, headers=headers, **kwargs)
+
+
 class MemoryHarness(unittest.TestCase):
+    """Real Postgres, mocked inference. Every test gets two fresh workspaces."""
+
+    client_class = TestClient
+
     def setUp(self):
+        self.engine = db_support.engine()
         self.chat = ChatStub()
-        self.qdrant = QdrantClient(":memory:")
-        self.addCleanup(self.qdrant.close)
         for mock_patch in (
-            patch("clients.vector_store._client", return_value=self.qdrant),
-            patch("clients.vector_store.EMBEDDING_SIZE", 3),
-            patch("clients.inference.embed", return_value=[1.0, 0.0, 0.0]),
+            patch("app.db.session.engine", return_value=self.engine),
+            patch("app.clients.inference.embed", return_value=unit(0)),
             patch(
-                "clients.inference.embed_many",
-                side_effect=lambda texts: [[1.0, 0.0, 0.0] for _ in texts],
+                "app.clients.inference.embed_many",
+                side_effect=lambda texts: [unit(0) for _ in texts],
             ),
-            patch("clients.inference.chat", side_effect=self.chat),
+            patch("app.clients.inference.chat", side_effect=self.chat),
             patch.object(settings, "MEMORY_DEDUP_THRESHOLD", 1.1),
+            patch.object(settings, "MEMORY_RERANK", False),  # tests that want it turn it on
             patch.object(settings, "MEMORY_TOKEN_SECRET", TOKEN_SECRET),
         ):
             mock_patch.start()
             self.addCleanup(mock_patch.stop)
-        self.client = TestClient(create_app(), headers={"X-Data-API-Key": "test-data-key"})
+        self.team_a = self.workspace("team-a")
+        self.team_b = self.workspace("team-b")
+        self.client = self.client_class(create_app(), headers={"X-Data-API-Key": "test-data-key"})
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
 
-    def remember(self, workspace):
+    # -- database helpers (service session: they bypass the workspace restriction) ----
+
+    def sql(self, statement: str, **params):
+        with workspace_session(self.engine, "", service=True) as session:
+            result = session.execute(text(statement), params)
+            return result.mappings().all() if result.returns_rows else None
+
+    def workspace(self, name: str) -> str:
+        slug = f"{name}-{uuid.uuid4().hex[:8]}"
+        (row,) = self.sql(
+            "insert into workspaces (name, slug) values (:n, :s) returning id", n=name, s=slug
+        )
+        workspace_id = str(row["id"])
+        self.addCleanup(self.sql, "delete from workspaces where id = :i", i=workspace_id)
+        return workspace_id
+
+    def member(self, workspace: str, kind: str = "HUMAN", status: str = "active") -> str:
+        """A member of the workspace: a human (with a user account) or an AI agent."""
+        if kind == "AI":
+            sql = (
+                "insert into members (workspace_id, type, name, agent_kind, status)"
+                " values (:w, 'AI', 'Ghost', 'ghost_engineer', :s) returning id"
+            )
+            (row,) = self.sql(sql, w=workspace, s=status)
+        else:
+            email = f"{uuid.uuid4().hex[:10]}@example.com"
+            (user,) = self.sql(
+                "insert into users (email, name) values (:e, 'Test User') returning id", e=email
+            )
+            # members reference the user, so they go first (cleanups run last-in, first-out)
+            self.addCleanup(self.sql, "delete from users where id = :i", i=user["id"])
+            self.addCleanup(self.sql, "delete from members where user_id = :i", i=user["id"])
+            sql = (
+                "insert into members (workspace_id, user_id, type, status)"
+                " values (:w, :u, 'HUMAN', :s) returning id"
+            )
+            (row,) = self.sql(sql, w=workspace, u=user["id"], s=status)
+        return str(row["id"])
+
+    def events(self, workspace: str, entity_type: str | None = None) -> list[dict]:
+        rows = self.sql("select * from events where workspace_id = :w order by id", w=workspace)
+        return [dict(r) for r in rows if entity_type in (None, r["entity_type"])]
+
+    def row(self, memory_id: str) -> dict | None:
+        rows = self.sql("select * from memories where id = :i", i=memory_id)
+        return dict(rows[0]) if rows else None
+
+    def set_memory(self, memory_id: str, **columns) -> None:
+        assignments = ", ".join(f"{name} = :{name}" for name in columns)
+        self.sql(f"update memories set {assignments} where id = :id", id=memory_id, **columns)
+
+    def age(self, memory_id: str, days: float) -> None:
+        self.set_memory(memory_id, created_at=datetime.now(UTC) - timedelta(days=days))
+
+    def count(self, workspace_id: str) -> int:
+        return self.sql(
+            "select count(*) as n from memories where workspace_id = :w", w=workspace_id
+        )[0]["n"]
+
+    # -- API helpers --------------------------------------------------------------
+
+    def remember(self, workspace: str) -> str:
         response = self.client.post(
             f"/workspaces/{workspace}/memories",
-            json={
-                "text": "raw text",
-                "source": "chat",
-                "agent": "planner",
-            },
+            json={"text": "raw text", "source": "chat", "agent": "planner"},
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["point_id"]
 
-    def recall(self, workspace):
+    def recall(self, workspace: str):
         return self.client.post(
             f"/workspaces/{workspace}/memories/recall",
-            json={
-                "query": "fact",
-                "agent": "reviewer",
-                "limit": 5,
-            },
+            json={"query": "fact", "agent": "reviewer", "limit": 5},
         )
+
+
+class CrudHarness(MemoryHarness):
+    """For the token-only CRUD areas: workspaces, identity, planning, collaboration."""
+
+    client_class = WorkspaceTokenClient
+
+    def setUp(self):
+        super().setUp()
+        self.admins = {}
+        self.client.member_for = self.admin_member
+
+    def admin_member(self, workspace: str) -> str:
+        """The member the default test token acts as, one per workspace."""
+        if workspace not in self.admins:
+            self.admins[workspace] = self.member(workspace)
+        return self.admins[workspace]
+
+    def token_headers(self, workspace: str, *scopes: str, member: str | None = None) -> dict:
+        """Authorization headers for a token with exactly these scopes."""
+        token, _ = tokens.mint(workspace, set(scopes), "test-user", 300, member)
+        return {"Authorization": f"Bearer {token}", "X-Data-API-Key": ""}
+
+    NO_TOKEN = {"Authorization": "", "X-Data-API-Key": ""}

@@ -1,12 +1,16 @@
-# Light local Qdrant for dev/tests only. Cloud runs its own managed Qdrant.
+# Local dev database: Postgres with pgvector. Tests can use it too (TEST_DATABASE_URL).
 services:
-  qdrant:
-    image: qdrant/qdrant:latest
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: flwn
+      POSTGRES_PASSWORD: flwn
+      POSTGRES_DB: flwn
     ports:
-      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  qdrant_data:
+  postgres_data:
