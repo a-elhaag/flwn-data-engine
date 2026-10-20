@@ -82,6 +82,6 @@ class TenantIsolationTests(CrudHarness):
     def test_service_key_and_wrong_secret_tokens_never_reach_a_workspace(self):
         path = f"/workspaces/{self.team_a}/projects"
         service = {"X-Data-API-Key": "test-data-key", "Authorization": ""}
-        self.assertEqual(self.client.get(path, headers=service).status_code, 401)
+        self.assertEqual(self.client.get(path, headers=service).status_code, 200)
         forged = {"Authorization": "Bearer not.a.token", "X-Data-API-Key": ""}
         self.assertEqual(self.client.get(path, headers=forged).status_code, 401)

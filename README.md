@@ -81,15 +81,12 @@ check), `bash run.sh erd` (rebuild `docs/schema-graph.html`), `bash run.sh opena
 
 ### Who can call what
 
-- **Backend (service key, `X-Data-API-Key`):** create and list workspaces, manage `/users`, and mint
-  tokens at `POST /auth/tokens`.
-- **Everyone else (Bearer token):** a token names a workspace, a member and scopes
-  (`planning:read/write`, `identity:read/write`, `collab:read/write`, `admin`, plus the memory,
-  files, meetings and atoms scopes). The workspace, projects, tasks, members, teams, docs and chat
-  routes refuse the service key. A human's token subject is their user id. Every change is
-  recorded against the token's member.
-- Private channels, direct messages and private teams are visible only to their members
-  (an admin sees private channels and teams, but never direct or agent channels).
+- **Service key (`X-Data-API-Key`):** the only credential for now. Send `X-Acting-Member-Id` to
+  record changes against a member. Tokens are switched off (`AGENT_TOKENS_ENABLED=false`); see D36.
+- With the key, private channels and private teams are visible to an admin, but direct and agent
+  channels are visible only to their members. Without a member id, changes are not attributed.
+- Setting `AGENT_TOKENS_ENABLED=true` with `MEMORY_TOKEN_SECRET` turns the token rules back on
+  (D29 to D32).
 
 Decisions and reasons: [`docs/MERGE_DECISIONS.md`](docs/MERGE_DECISIONS.md).
 

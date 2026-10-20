@@ -16,6 +16,8 @@ class Settings(BaseSettings):
 
     # Workspace-scoped agent tokens (REST bearer + MCP). Blank disables them.
     MEMORY_TOKEN_SECRET: str = ""
+    # Off for now: the service key is the only credential (D36). Set true to turn tokens back on.
+    AGENT_TOKENS_ENABLED: bool = False
     MEMORY_TOKEN_ISSUER: str = "flwn-data-engine"
     MEMORY_TOKEN_MAX_TTL_SECONDS: int = 24 * 60 * 60
     # Comma-separated Host headers allowed on /mcp. Blank disables the check.

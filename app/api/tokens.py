@@ -115,7 +115,7 @@ def _member(value) -> str | None:
 
 
 def enabled() -> bool:
-    return bool(settings.MEMORY_TOKEN_SECRET)
+    return settings.AGENT_TOKENS_ENABLED and bool(settings.MEMORY_TOKEN_SECRET)
 
 
 def mint(
