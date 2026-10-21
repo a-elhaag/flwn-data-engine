@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flwn data engine: explorer</title>
+<style>
+:root { --paper: #fdfcf8; --ink: #1e1e1e; --muted: #6b6b6b; --line: #8a8a8a; --accent: #5b4bdb; --box: #ffffff; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; }
+header { position: sticky; top: 0; z-index: 2; background: var(--paper); border-bottom: 1px solid #e3e1d9; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+header h1 { font-size: 20px; margin: 0 8px 0 0; }
+header input { font: inherit; padding: 5px 10px; border: 1px solid #bbb; border-radius: 6px; min-width: 240px; }
+header .stat { color: var(--muted); }
+header a { color: var(--accent); }
+main { padding: 8px 16px 40px; overflow: auto; }
+svg { display: block; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.footer { margin-top: 24px; }
+details { border: 1px solid #e3e1d9; border-radius: 8px; background: #fff; padding: 8px 12px; max-width: 980px; }
+details summary { cursor: pointer; font-weight: 600; }
+table.ops { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 8px; }
+table.ops td { border-top: 1px solid #eee; padding: 4px 6px; vertical-align: top; }
+.pill { display: inline-block; min-width: 56px; text-align: center; font-size: 11px; font-weight: 700; color: #fff; border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Flwn data engine</h1>
+  <input id="q" type="search" placeholder="Find a table, column or endpoint" aria-label="Find a table, column or endpoint">
+  <span class="stat" id="stat"></span>
+  <span><a href="/docs">Swagger reference</a></span>
+</header>
+<main>
+  <svg id="diagram" role="img" aria-label="Schema diagram with endpoints"></svg>
+  <div class="footer">
+    <details id="others">
+      <summary>Endpoints not tied to one table</summary>
+      <div id="others-body"></div>
+    </details>
+  </div>
+</main>
+
+<script>
+const DATA = __DATA__;
+
+const PALETTE = ["#a5d8ff", "#b2f2bb", "#ffec99", "#ffc9c9", "#d0bfff", "#c3fae8", "#ffd8a8"];
+const METHOD = {
+  GET: { label: "Read", color: "#1971c2" },
+  POST: { label: "Create", color: "#2f9e44" },
+  PATCH: { label: "Update", color: "#e8590c" },
+  PUT: { label: "Replace", color: "#e8590c" },
+  DELETE: { label: "Delete", color: "#c92a2a" },
+};
+const domainColor = Object.fromEntries(DATA.domains.map((d, i) => [d.id, PALETTE[i % PALETTE.length]]));
+const opsByTable = {};
+for (const op of DATA.operations) if (op.table) (opsByTable[op.table] ||= []).push(op);
+const byName = Object.fromEntries(DATA.tables.map((t) => [t.name, t]));
+
+const W = 330, HEAD = 36, ROW = 21, PAD = 10, OPROW = 42, GAPX = 80, GAPY = 26, M = 60, TOP = 110;
+const expanded = new Set();
+let selected = null;
+let query = "";
+const svg = document.getElementById("diagram");
+const NS = "http://www.w3.org/2000/svg";
+
+function el(tag, attrs = {}, text) {
+  const node = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function clip(s, text, max) { return text.length > max ? text.slice(0, max - 1) + "…" : text; }
+
+function opsOf(name) { return opsByTable[name] || []; }
+function bodyHeight(t) { return HEAD + PAD + t.columns.length * ROW + PAD; }
+function heightOf(t) {
+  if (!expanded.has(t.name)) return bodyHeight(t);
+  return bodyHeight(t) + 28 + Math.max(1, opsOf(t.name).length) * OPROW + PAD;
+}
+function matches(t) {
+  if (!query) return true;
+  if (t.name.includes(query)) return true;
+  if (t.columns.some((c) => c.name.includes(query))) return true;
+  return opsOf(t.name).some((o) => o.path.toLowerCase().includes(query) || o.summary.toLowerCase().includes(query));
+}
+function neighbours(name) {
+  const set = new Set([name]);
+  for (const e of DATA.edges) {
+    if (e.source === name) set.add(e.target);
+    if (e.target === name) set.add(e.source);
+  }
+  return set;
+}
+
+function layout() {
+  const pos = {};
+  let x = M, bottom = TOP;
+  for (const d of DATA.domains) {
+    let y = TOP;
+    for (const t of DATA.tables.filter((t) => t.domain === d.id)) {
+      const h = heightOf(t);
+      pos[t.name] = { x, y, w: W, h, t };
+      y += h + GAPY;
+    }
+    bottom = Math.max(bottom, y);
+    x += W + GAPX;
+  }
+  return { pos, width: x - GAPX + M, height: bottom + M };
+}
+function edgePoint(b, tx, ty) {
+  // where the line from the box centre toward (tx, ty) leaves the box
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2, dx = tx - cx, dy = ty - cy;
+  const s = Math.min(dx ? b.w / 2 / Math.abs(dx) : Infinity, dy ? b.h / 2 / Math.abs(dy) : Infinity);
+  return [cx + dx * s, cy + dy * s];
+}
+
+function draw() {
+  const { pos, width, height } = layout();
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", width);
+  svg.setAttribute("height", height);
+  svg.replaceChildren();
+  svg.append(el("rect", { width, height, fill: "transparent" }));
+  svg.addEventListener("click", () => { selected = null; draw(); }, { once: true });
+
+  const keep = selected ? neighbours(selected) : null;
+  for (const d of DATA.domains) {
+    const first = DATA.tables.find((t) => t.domain === d.id);
+    if (first) svg.append(el("text", { x: pos[first.name].x, y: TOP - 30, "font-size": 20, "font-weight": 700 }, d.label));
+  }
+
+  // relationships first, so the boxes sit on top
+  for (const e of DATA.edges) {
+    const s = pos[e.source], t = pos[e.target];
+    if (!s || !t) continue;
+    const [sx, sy] = edgePoint(s, t.x + t.w / 2, t.y + t.h / 2);
+    const [tx, ty] = edgePoint(t, s.x + s.w / 2, s.y + s.h / 2);
+    const active = !selected || e.source === selected || e.target === selected;
+    svg.append(el("line", { x1: sx, y1: sy, x2: tx, y2: ty, stroke: "var(--line)", "stroke-width": active && selected ? 2 : 1, opacity: active ? 0.9 : 0.12 }));
+  }
+
+  for (const t of DATA.tables) {
+    const b = pos[t.name];
+    const dimmed = (keep && !keep.has(t.name)) || (query && !matches(t));
+    const g = el("g", { class: "table", "data-name": t.name, style: "cursor:pointer", opacity: dimmed ? 0.16 : 1 });
+    g.append(el("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: 8, fill: "var(--box)", stroke: selected === t.name ? "var(--accent)" : "#333", "stroke-width": selected === t.name ? 2.5 : 1.2 }));
+    g.append(el("rect", { x: b.x, y: b.y, width: b.w, height: HEAD, rx: 8, fill: domainColor[t.domain] || "#eee" }));
+    g.append(el("text", { x: b.x + 12, y: b.y + 24, "font-size": 14, "font-weight": 700, "font-family": "ui-monospace, Menlo, monospace" }, t.name));
+    t.columns.forEach((c, i) => {
+      const cy = b.y + HEAD + PAD + i * ROW + 15;
+      g.append(el("text", { x: b.x + 12, y: cy, "font-size": 14 }, clip(c.name, c.name, 24)));
+      g.append(el("text", { x: b.x + b.w - 12, y: cy, "font-size": 11, fill: "var(--muted)", "text-anchor": "end" }, c.type));
+      if (c.pk || c.fk) g.append(el("text", { x: b.x + b.w - 12 - c.type.length * 6.4 - 26, y: cy, "font-size": 11, "font-weight": 700, fill: c.pk ? "#c92a2a" : "var(--accent)" }, c.pk ? "PK" : "FK"));
+    });
+    if (expanded.has(t.name)) {
+      const top = b.y + bodyHeight(t);
+      g.append(el("line", { x1: b.x, y1: top, x2: b.x + b.w, y2: top, stroke: "#bbb" }));
+      g.append(el("text", { x: b.x + 12, y: top + 18, "font-size": 11, "font-weight": 700, fill: "var(--muted)" }, "ENDPOINTS"));
+      const ops = opsOf(t.name);
+      if (!ops.length) g.append(el("text", { x: b.x + 12, y: top + 46, "font-size": 14, fill: "var(--muted)" }, "No REST endpoint for this table yet."));
+      ops.forEach((op, i) => {
+        const y = top + 28 + i * OPROW;
+        const m = METHOD[op.method] || { label: op.method, color: "#555" };
+        g.append(el("text", { x: b.x + 12, y: y + 13, "font-size": 11, "font-weight": 700, fill: m.color }, `${m.label.toUpperCase()}  ${op.method}`));
+        g.append(el("text", { x: b.x + 12, y: y + 31, "font-size": 14, "font-family": "ui-monospace, Menlo, monospace" }, clip(op.path, op.path, 30)));
+      });
+    }
+    const title = el("title", {}, `${t.name}: ${t.columns.length} columns`);
+    g.append(title);
+    g.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (expanded.has(t.name) && selected === t.name) expanded.delete(t.name);
+      else expanded.add(t.name);
+      selected = t.name;
+      draw();
+    });
+    svg.append(g);
+  }
+}
+
+function renderOthers() {
+  const rows = DATA.operations.filter((o) => !o.table);
+  const body = document.getElementById("others-body");
+  if (!rows.length) { body.textContent = "None."; return; }
+  const table = document.createElement("table");
+  table.className = "ops";
+  for (const o of rows) {
+    const tr = document.createElement("tr");
+    const m = METHOD[o.method] || { color: "#555" };
+    tr.innerHTML = `<td><span class="pill" style="background:${m.color}">${o.method}</span></td><td class="mono"></td><td></td>`;
+    tr.children[1].textContent = o.path;
+    tr.children[2].textContent = o.summary;
+    table.append(tr);
+  }
+  body.replaceChildren(table);
+}
+
+function stats() {
+  const tables = DATA.tables.length;
+  const withOps = DATA.tables.filter((t) => opsOf(t.name).length).length;
+  const ops = DATA.operations.filter((o) => o.table).length;
+  document.getElementById("stat").textContent =
+    `${tables} tables · ${DATA.edges.length} relationships · ${ops} endpoints on tables · ${tables - withOps} tables with no endpoint`;
+}
+
+document.getElementById("q").addEventListener("input", (e) => {
+  query = e.target.value.trim().toLowerCase();
+  if (query) {
+    for (const t of DATA.tables) if (matches(t) && opsOf(t.name).length) expanded.add(t.name);
+  }
+  draw();
+});
+
+stats();
+renderOthers();
+draw();
+</script>
+</body>
+</html>

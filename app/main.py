@@ -5,8 +5,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import HTMLResponse
 
 from app.api import errors
+from app.api import explorer as explorer_page
 from app.api.examples import EXAMPLES
 from app.api.operations import OPERATIONS
 from app.api.routes import router
@@ -116,6 +118,10 @@ def create_app() -> FastAPI:
     )
     app.openapi = lambda: _openapi(app)
     errors.register(app)
+
+    @app.get("/explorer", include_in_schema=False, response_class=HTMLResponse)
+    def explorer():
+        return explorer_page.render(app.openapi())
 
     @app.get("/swagger", include_in_schema=False)
     def swagger_alias():
