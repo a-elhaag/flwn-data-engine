@@ -130,15 +130,14 @@ def _member(workspace_id: str, email: str, name: str, role: str) -> tuple[str, s
 
 
 def _entry(workspace_id: str, member_id: str, user_id: str) -> dict:
-    token, expires_at = tokens.mint(
-        workspace_id, set(tokens.AGENT_SCOPES), user_id, TTL_SECONDS, member_id
-    )
-    return {
-        "workspace_id": workspace_id,
-        "member_id": member_id,
-        "token": token,
-        "expires_at": expires_at,
-    }
+    entry = {"workspace_id": workspace_id, "member_id": member_id}
+    if (
+        tokens.enabled()
+    ):  # off by default (D36): then the service key plus member id is the credential
+        entry["token"], entry["expires_at"] = tokens.mint(
+            workspace_id, set(tokens.AGENT_SCOPES), user_id, TTL_SECONDS, member_id
+        )
+    return entry
 
 
 def sign_in(email: str, name: str) -> dict:

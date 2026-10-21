@@ -24,15 +24,7 @@ def dev_sign_in(request: Request, body: DevSession):
         and dev_session.direct(request.headers)
     ):
         raise HTTPException(status_code=404, detail="Not Found")
-    if not tokens_enabled():
-        raise HTTPException(status_code=503, detail="Set MEMORY_TOKEN_SECRET to issue tokens")
     try:
         return dev_session.sign_in(body.email, body.name)
     except dev_session.RealUser as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
-
-
-def tokens_enabled() -> bool:
-    from app.api import tokens
-
-    return tokens.enabled()
