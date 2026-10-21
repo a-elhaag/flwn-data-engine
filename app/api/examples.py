@@ -475,6 +475,27 @@ def _page(item):
 
 EXAMPLES.update(
     {
+        "IngestRequest": {"items": [EXAMPLES["RememberRequest"]]},
+        "SprintCreate": {
+            "name": "Sprint 14",
+            "goal": "Ship the export feature",
+            "status": "planned",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+        },
+        "SprintUpdate": {"status": "active", "goal": "Ship export and the new report"},
+        "UserCreate": {
+            "email": "ada@example.com",
+            "name": "Ada Lovelace",
+            "avatar_url": None,
+            "settings": {"theme": "dark"},
+        },
+        "UserUpdate": {"name": "Ada Byron", "settings": {"theme": "light"}},
+    }
+)
+
+EXAMPLES.update(
+    {
         "IngestResponse": {"results": [EXAMPLES["RememberResponse"]]},
         "MemoryRecord": _MEMORY,
         "BrowsePage": {"items": [_MEMORY], "next_cursor": None},

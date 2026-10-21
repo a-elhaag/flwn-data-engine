@@ -8,6 +8,7 @@ from fastapi.openapi.utils import get_openapi
 
 from app.api import errors
 from app.api.examples import EXAMPLES
+from app.api.field_docs import COMMON, FIELD_DOCS
 from app.api.operations import OPERATIONS
 from app.api.routes import router
 from app.config import settings
@@ -81,6 +82,10 @@ def _openapi(app: FastAPI) -> dict:
         for name, example in EXAMPLES.items():
             if name in schema.get("components", {}).get("schemas", {}):
                 schema["components"]["schemas"][name]["examples"] = [example]
+        for name, model in schema.get("components", {}).get("schemas", {}).items():
+            for field, prop in model.get("properties", {}).items():
+                if text := FIELD_DOCS.get(name, {}).get(field) or COMMON.get(field):
+                    prop.setdefault("description", text)
         for path, methods in schema["paths"].items():
             for method, operation in methods.items():
                 if text := OPERATIONS.get(f"{method.upper()} {path}"):

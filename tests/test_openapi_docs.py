@@ -52,6 +52,25 @@ class OpenApiDocsTests(unittest.TestCase):
                 with self.subTest(path=path, method=method):
                     self.assertTrue(operation.get("tags"))
 
+    def test_every_field_and_request_body_is_documented(self):
+        spec = app.openapi()
+        schemas = spec["components"]["schemas"]
+        undocumented = [
+            f"{name}.{field}"
+            for name, model in schemas.items()
+            for field, prop in model.get("properties", {}).items()
+            if "description" not in prop
+        ]
+        self.assertEqual(undocumented, [], "add these to app/api/field_docs.py")
+        bodies = {
+            op["requestBody"]["content"]["application/json"]["schema"]["$ref"].split("/")[-1]
+            for ops in spec["paths"].values()
+            for op in ops.values()
+            if "requestBody" in op
+        }
+        without_example = sorted(b for b in bodies if "examples" not in schemas[b])
+        self.assertEqual(without_example, [], "add these to app/api/examples.py")
+
     def test_every_endpoint_has_a_hand_written_summary(self):
         routes = {f"{m.upper()} {p}" for p, ops in app.openapi()["paths"].items() for m in ops}
         self.assertEqual(routes - OPERATIONS.keys(), set())

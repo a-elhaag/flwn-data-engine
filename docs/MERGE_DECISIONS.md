@@ -350,6 +350,15 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Revisit if:** tokens are needed again. Set `AGENT_TOKENS_ENABLED=true` and `MEMORY_TOKEN_SECRET`, then the CRUD routes' scopes and member checks apply again.
 - **Dev sign-in (PR #6):** when it merges it must not mint tokens while the switch is off. It returns the ids, and the caller uses the key with `X-Acting-Member-Id`.
 
+### D37. The Swagger reference documents every field and request body
+
+- **Change:** `app/api/field_docs.py` gives each of the 640 fields across the 113 models a description, and `app/api/examples.py` gives every request body an example (5 were missing). The descriptions are applied to the OpenAPI document in `app/main.py`, the same way summaries and examples already are, so the models stay free of docs text. Descriptions list the allowed values where the database enforces them.
+- **Old design:** every operation had a summary and a description, but no field had a description and five request bodies had no example.
+- **Why:** the reference is the first thing the Go backend and the AI engine developers read, and a field with no description leaves them to guess its meaning or units.
+- **Tests:** `tests/test_openapi_docs.py` fails if any field lacks a description or any request body lacks an example, so the gap cannot reappear silently.
+- **Corrections made while writing:** descriptions that could not be confirmed from the code were removed rather than guessed (for example, the exact range of memory importance and what cleanup keeps).
+- **Revisit if:** a model is added without a description; the test will say which field to add.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.
