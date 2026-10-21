@@ -6,6 +6,7 @@ from app.api.routes import (
     atoms,
     collaboration,
     conflicts,
+    dev,
     files,
     identity,
     meetings,
@@ -29,6 +30,7 @@ router.include_router(skills.router, tags=["Skills"])
 router.include_router(users.router, tags=["Users"])
 router.include_router(workspaces.router, tags=["Workspaces"])
 router.include_router(identity.router, tags=["Identity"])
+router.include_router(dev.router)
 router.include_router(planning.router, tags=["Planning"])
 router.include_router(collaboration.router, tags=["Collaboration"])
 router.include_router(generic_crud.router, tags=["Tables"])
