@@ -39,9 +39,7 @@ from app.planning.service import (
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}",
-    dependencies=[
-        allow(tokens.SCOPE_PLANNING_READ, write_scope=tokens.SCOPE_PLANNING_WRITE, service=False)
-    ],
+    dependencies=[allow(tokens.SCOPE_PLANNING_READ, write_scope=tokens.SCOPE_PLANNING_WRITE)],
 )
 
 

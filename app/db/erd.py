@@ -39,6 +39,7 @@ BY_MODULE = {
     "files": "files",
     "meetings": "meetings",
     "memory": "memory",
+    "atoms": "agents",
 }
 
 
@@ -63,7 +64,7 @@ def build() -> dict:
         tables.append(
             {
                 "name": table.name,
-                "domain": OVERRIDES.get(table.name, BY_MODULE[modules[table.name]]),
+                "domain": OVERRIDES.get(table.name, BY_MODULE.get(modules[table.name], "agents")),
                 "doc": docs.get(table.name, ""),
                 "columns": [
                     {

@@ -44,9 +44,7 @@ from app.collaboration.service import (
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}",
-    dependencies=[
-        allow(tokens.SCOPE_COLLAB_READ, write_scope=tokens.SCOPE_COLLAB_WRITE, service=False)
-    ],
+    dependencies=[allow(tokens.SCOPE_COLLAB_READ, write_scope=tokens.SCOPE_COLLAB_WRITE)],
 )
 
 

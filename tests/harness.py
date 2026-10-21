@@ -91,6 +91,7 @@ class MemoryHarness(unittest.TestCase):
             patch.object(settings, "MEMORY_DEDUP_THRESHOLD", 1.1),
             patch.object(settings, "MEMORY_RERANK", False),  # tests that want it turn it on
             patch.object(settings, "MEMORY_TOKEN_SECRET", TOKEN_SECRET),
+            patch.object(settings, "AGENT_TOKENS_ENABLED", True),  # token tests; off in production
         ):
             mock_patch.start()
             self.addCleanup(mock_patch.stop)

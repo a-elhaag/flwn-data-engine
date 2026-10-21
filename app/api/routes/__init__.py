@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api import generic_crud
 from app.api.routes import (
     approvals,
     atoms,
@@ -32,3 +33,4 @@ router.include_router(identity.router, tags=["Identity"])
 router.include_router(dev.router)
 router.include_router(planning.router, tags=["Planning"])
 router.include_router(collaboration.router, tags=["Collaboration"])
+router.include_router(generic_crud.router, tags=["Tables"])

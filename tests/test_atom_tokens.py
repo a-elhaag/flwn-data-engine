@@ -20,6 +20,9 @@ class AtomTokenTests(unittest.TestCase):
         self.secret = patch.object(settings, "MEMORY_TOKEN_SECRET", TOKEN_SECRET)
         self.secret.start()
         self.addCleanup(self.secret.stop)
+        switch = patch.object(settings, "AGENT_TOKENS_ENABLED", True)
+        switch.start()
+        self.addCleanup(switch.stop)
 
     def mint(self, **overrides):
         values = dict(

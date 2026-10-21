@@ -29,12 +29,10 @@ from app.identity.members_teams import (
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}",
-    dependencies=[
-        allow(tokens.SCOPE_IDENTITY_READ, write_scope=tokens.SCOPE_IDENTITY_WRITE, service=False)
-    ],
+    dependencies=[allow(tokens.SCOPE_IDENTITY_READ, write_scope=tokens.SCOPE_IDENTITY_WRITE)],
 )
 # Changing who belongs to the workspace or to a team is for administrators.
-ADMIN = allow(tokens.SCOPE_ADMIN, service=False)
+ADMIN = allow(tokens.SCOPE_ADMIN)
 
 
 def _call(fn, *args, **kwargs):
