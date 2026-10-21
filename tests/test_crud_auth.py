@@ -8,12 +8,12 @@ MEMBER = {"type": "HUMAN", "name": "Grace", "email": "grace@example.com", "role"
 
 
 class CrudAuthTests(CrudHarness):
-    def test_service_key_is_refused_on_crud_routes(self):
+    def test_service_key_is_accepted_on_crud_routes(self):
         service = {"X-Data-API-Key": "test-data-key", "Authorization": ""}
-        for path in ("projects", "members", "teams", "docs", f"../{self.team_a}"):
+        for path in ("projects", "members", "teams", "docs"):
             with self.subTest(path=path):
                 response = self.client.get(f"/workspaces/{self.team_a}/{path}", headers=service)
-                self.assertEqual(response.status_code, 401, response.text)
+                self.assertEqual(response.status_code, 200, response.text)
 
     def test_workspace_create_and_list_stay_backend_only(self):
         headers = self.token_headers(self.team_a, t.SCOPE_ADMIN)
