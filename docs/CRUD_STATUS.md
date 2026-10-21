@@ -62,3 +62,14 @@ Highest value for a ticketing product: sprints, milestones, labels and invitatio
 MCP tools (`workspace_list`, `workspace_get`, `workspace_search`) and the Atomizer support
 (grantable-resource catalog, dry-run, one-shot build). None of those tools exist in
 `app/mcp_tools/server.py` yet.
+
+## Generated routes (Phase 1, D38)
+
+Full CRUD (service key only): links, favorites, labels, notifications, subscriptions, team members,
+backlogs, collections, folders, milestones, project updates, saved views, channel members, memory
+links, doc blocks, doc versions, meeting participants, transcripts, work item labels, task labels,
+task relations, reactions.
+
+Read-only (list and get): events, LLM usage, agent runs, agent reports, chunks, file derivatives,
+transcript segments, attachments, atom grants, atom versions, atom schedules, atom connections,
+atom skills, invitations, decisions, catalog skills.
