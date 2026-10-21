@@ -74,6 +74,8 @@ READ_TABLES = {
 # Never sent by clients or returned in full: the database or search machinery owns them.
 HIDDEN = {"tsv", "embedding"}
 SERVER_SET = {"id", "workspace_id", "created_at", "updated_at", "deleted_at"}
+# Set from the caller's token, never from the body: a client cannot claim to be someone else.
+AUTHOR = {"created_by", "last_edited_by"}
 
 router = APIRouter(prefix="/workspaces/{workspace_id}")
 PAGE_LIMIT = Query(ge=1, le=200)
@@ -144,7 +146,8 @@ def _models(table) -> dict:
     """Pydantic models for one table, built from its columns."""
     name = _camel(table.name)
     visible = [c for c in table.columns if c.name not in HIDDEN]
-    creatable = [c for c in visible if c.name not in SERVER_SET]
+    creatable = [c for c in visible if c.name not in SERVER_SET | AUTHOR]
+    updatable = [c for c in creatable if not c.primary_key]  # a row keeps its key
     out_model = create_model(
         f"{name}Row",
         __config__=ConfigDict(from_attributes=True),
@@ -160,7 +163,7 @@ def _models(table) -> dict:
     models = {"out": out_model, "page": page}
     if table.name in CRUD_TABLES:
         models["create"] = create_model(f"{name}RowCreate", **_fields(creatable, required=True))
-        models["update"] = create_model(f"{name}RowUpdate", **_fields(creatable, required=False))
+        models["update"] = create_model(f"{name}RowUpdate", **_fields(updatable, required=False))
         EXAMPLES[f"{name}RowCreate"] = _example(creatable)
         EXAMPLES[f"{name}RowUpdate"] = {}
     return models
@@ -299,7 +302,7 @@ def _register(table, models: dict) -> dict:
     # ---- create ----------------------------------------------------------------------------
     def create_row(workspace_id, request, body):
         data = body.model_dump(exclude_unset=True)
-        if has_actor and not data.get("created_by"):
+        if has_actor:
             data["created_by"] = auth.actor(request)
         with session_for(str(workspace_id)) as session:
             try:

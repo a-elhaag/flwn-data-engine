@@ -81,3 +81,17 @@ class GenericCrudTests(MemoryHarness):
             headers={"Authorization": "Bearer x.y.z", "X-Data-API-Key": ""},
         )
         self.assertEqual(response.status_code, 401)
+
+    def test_author_comes_from_the_acting_member_not_the_body(self):
+        me = self.member(self.team_a)
+        someone_else = self.member(self.team_a)
+        headers = {**self.service, "X-Acting-Member-Id": me}
+        created = self.client.post(
+            self.base("folders"),
+            json={"name": "mine", "created_by": someone_else},
+            headers=headers,
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["created_by"], me)
+        self.assertNotIn("created_by", generic_crud.FoldersRowCreate.model_fields)
+        self.assertNotIn("id", generic_crud.FoldersRowUpdate.model_fields)
