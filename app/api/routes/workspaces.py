@@ -46,7 +46,7 @@ def list_workspaces(
 @router.get(
     "/{workspace_id}",
     response_model=WorkspaceOut,
-    dependencies=[allow(tokens.SCOPE_IDENTITY_READ, service=False)],
+    dependencies=[allow(tokens.SCOPE_IDENTITY_READ)],
 )
 def get_workspace(workspace_id: UUID):
     return _call(WorkspaceService().get, str(workspace_id))
@@ -55,7 +55,7 @@ def get_workspace(workspace_id: UUID):
 @router.patch(
     "/{workspace_id}",
     response_model=WorkspaceOut,
-    dependencies=[allow(tokens.SCOPE_ADMIN, service=False)],
+    dependencies=[allow(tokens.SCOPE_ADMIN)],
 )
 def update_workspace(request: Request, workspace_id: UUID, body: WorkspaceUpdate):
     return _call(
@@ -65,9 +65,7 @@ def update_workspace(request: Request, workspace_id: UUID, body: WorkspaceUpdate
     )
 
 
-@router.delete(
-    "/{workspace_id}", status_code=204, dependencies=[allow(tokens.SCOPE_ADMIN, service=False)]
-)
+@router.delete("/{workspace_id}", status_code=204, dependencies=[allow(tokens.SCOPE_ADMIN)])
 def delete_workspace(request: Request, workspace_id: UUID):
     _call(WorkspaceService(actor(request)).delete, str(workspace_id))
     return Response(status_code=204)

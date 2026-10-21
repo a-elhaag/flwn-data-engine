@@ -91,12 +91,11 @@ def allow(
     *,
     allow_finished: bool = False,
     write_scope: str | None = None,
-    service: bool = True,
 ):
     """Dependency factory. scope=None means service callers only.
 
     write_scope: the scope for requests that change data (any method but GET and HEAD); scope
-    then covers reads only. service=False makes the route token-only: the service key is refused.
+    then covers reads only. The service key passes every scope check (D36).
     A token holding the `admin` scope passes every scope check except scope=None.
     """
 
@@ -109,8 +108,6 @@ def allow(
     ) -> Principal:
         needed = write_scope if write_scope and request.method not in ("GET", "HEAD") else scope
         principal = _principal(x_data_api_key, authorization)
-        if principal.service and not service:
-            raise HTTPException(status_code=401, detail="Bearer token required")
         if principal.service:
             principal = _acting_for(principal, workspace_id, x_acting_member_id)
         else:
@@ -165,17 +162,23 @@ def viewer(request: Request) -> members.Viewer:
     principal = request.state.principal
     return members.Viewer(
         UUID(principal.member_id) if principal.member_id else None,
-        tokens.SCOPE_ADMIN in principal.scopes,
+        principal.service or tokens.SCOPE_ADMIN in principal.scopes,  # the backend is trusted
     )
 
 
-def author(request: Request, requested: UUID | None) -> UUID:
-    """The member a write is attributed to: always the token's own, never one the body names."""
+def author(request: Request, requested: UUID | None) -> UUID | None:
+    """The member a write is attributed to: the caller's own, never one the body names.
+
+    A token must be bound to a member. The service key may act for a member through
+    X-Acting-Member-Id; without it the write has no author.
+    """
     mine = viewer(request).member_id
-    if mine is None:
+    if mine is None and not request.state.principal.service:
         raise HTTPException(status_code=403, detail="A member-bound token is required to write")
     if requested is not None and requested != mine:
-        raise HTTPException(status_code=403, detail="author_id must be the token's own member")
+        raise HTTPException(
+            status_code=403, detail="author_id must be the acting member (X-Acting-Member-Id)"
+        )
     return mine
 
 
