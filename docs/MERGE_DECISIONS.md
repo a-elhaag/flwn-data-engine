@@ -339,6 +339,19 @@ Each entry uses the same fields: **Change**, **Old design**, **Why it did not wo
 - **Known limits:** `has_more` is not on the memory, files, meetings, atoms and conflicts lists, which have their own paging. "My projects" ignores private-team visibility for projects, because projects have no private flag (D31).
 - **Revisit if:** projects need archiving, or a board needs sorting and free-text search.
 
+### D38. Every table has routes: full CRUD for 22 child tables, read-only for 16
+
+- **Change:** `app/api/generic_crud.py` adds routes for the 38 tables that had none. Full CRUD (list, get, create, update, delete) for 22 child tables: `links`, `favorites`, `labels`, `notifications`, `subscriptions`, `team_members`, `backlogs`, `collections`, `folders`, `milestones`, `project_updates`, `saved_views`, `channel_members`, `memory_links`, `doc_blocks`, `doc_versions`, `meeting_participants`, `transcripts`, `work_item_labels`, `task_labels`, `task_relations`, `reactions`. Read-only (list and get) for 16: the engine-written tables (`events`, `llm_usage`, `agent_runs`, `agent_reports`, `chunks`, `file_derivatives`, `transcript_segments`, `attachments`) and the security-sensitive ones (`atom_grants`, `atom_versions`, `atom_schedules`, `atom_connections`, `atom_skills`, `invitations`, `decisions`, `catalog_skills`).
+- **How:** request and response models are built from each table's columns, so they match the database. Field descriptions are generated from the schema: the column name, the table it links to, and whether it is required. They do not list allowed values. Composite keys are addressed by their parts, for example `DELETE /workspaces/{ws}/team-members/{team_id}/{member_id}`. Deletes are soft where the table has `deleted_at`, and hard otherwise.
+- **Access:** the service key only, the same as the other trusted routes.
+- **Why read-only for the 16:** `events` and `llm_usage` are the audit and cost record, and `atom_grants`, `invitations` and `decisions` have rules that a generic write would bypass.
+- **Known limits:**
+  - Generic writes enforce only what the database enforces (keys, foreign keys, check constraints, workspace scope). Rules that live in the services, such as channel owners and task numbering, do not apply to these generic routes. Those child tables should move to hand-written routes when they gain rules.
+  - `catalog_skills` is shared, so it has no workspace filter.
+  - Vector and full-text columns (`embedding`, `tsv`) are never returned or accepted.
+- **Tests:** `tests/test_generic_crud.py` (6 tests): every table lists, read-only tables have no write route, a round trip with workspace isolation, required-field validation, a composite-key round trip, and bearer tokens refused. The full suite passes: 395 tests, 1 skipped.
+- **Revisit if:** any of the 22 gains a business rule, or a read-only table needs a write path through its own flow.
+
 ## 3. Merge order
 
 1. Create `merge/feature-into-dev` from `dev`.
