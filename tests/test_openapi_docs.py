@@ -21,6 +21,7 @@ SCHEMA_MODULES = (
     "app.storage.search",
     "app.storage.files",
     "app.meetings.service",
+    "app.api.generic_crud",
 )
 
 

@@ -489,3 +489,8 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Soft delete. Returns 204.",
     ),
 }
+
+
+from app.api.generic_crud import SUMMARIES as _GENERIC  # noqa: E402  (one entry per generated route)
+
+OPERATIONS.update(_GENERIC)
