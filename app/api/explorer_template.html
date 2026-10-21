@@ -8,7 +8,7 @@
 :root { --paper: #fdfcf8; --ink: #1e1e1e; --muted: #6b6b6b; --line: #8a8a8a; --accent: #5b4bdb; --box: #ffffff; }
 html, body { margin: 0; background: var(--paper); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 14px; }
 header { position: sticky; top: 0; z-index: 2; background: var(--paper); border-bottom: 1px solid #e3e1d9; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
-header h1 { font-size: 18px; margin: 0 8px 0 0; }
+header h1 { font-size: 20px; margin: 0 8px 0 0; }
 header input { font: inherit; padding: 5px 10px; border: 1px solid #bbb; border-radius: 6px; min-width: 240px; }
 header .stat { color: var(--muted); }
 header a { color: var(--accent); }
@@ -56,7 +56,7 @@ const opsByTable = {};
 for (const op of DATA.operations) if (op.table) (opsByTable[op.table] ||= []).push(op);
 const byName = Object.fromEntries(DATA.tables.map((t) => [t.name, t]));
 
-const W = 330, HEAD = 36, ROW = 21, PAD = 10, OPROW = 36, GAPX = 80, GAPY = 26, M = 60, TOP = 110;
+const W = 330, HEAD = 36, ROW = 21, PAD = 10, OPROW = 42, GAPX = 80, GAPY = 26, M = 60, TOP = 110;
 const expanded = new Set();
 let selected = null;
 let query = "";
@@ -126,7 +126,7 @@ function draw() {
   const keep = selected ? neighbours(selected) : null;
   for (const d of DATA.domains) {
     const first = DATA.tables.find((t) => t.domain === d.id);
-    if (first) svg.append(el("text", { x: pos[first.name].x, y: TOP - 30, "font-size": 18, "font-weight": 700 }, d.label));
+    if (first) svg.append(el("text", { x: pos[first.name].x, y: TOP - 30, "font-size": 20, "font-weight": 700 }, d.label));
   }
 
   // relationships first, so the boxes sit on top
@@ -145,12 +145,12 @@ function draw() {
     const g = el("g", { class: "table", "data-name": t.name, style: "cursor:pointer", opacity: dimmed ? 0.16 : 1 });
     g.append(el("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: 8, fill: "var(--box)", stroke: selected === t.name ? "var(--accent)" : "#333", "stroke-width": selected === t.name ? 2.5 : 1.2 }));
     g.append(el("rect", { x: b.x, y: b.y, width: b.w, height: HEAD, rx: 8, fill: domainColor[t.domain] || "#eee" }));
-    g.append(el("text", { x: b.x + 12, y: b.y + 24, "font-size": 15, "font-weight": 700, "font-family": "ui-monospace, Menlo, monospace" }, t.name));
+    g.append(el("text", { x: b.x + 12, y: b.y + 24, "font-size": 14, "font-weight": 700, "font-family": "ui-monospace, Menlo, monospace" }, t.name));
     t.columns.forEach((c, i) => {
       const cy = b.y + HEAD + PAD + i * ROW + 15;
-      g.append(el("text", { x: b.x + 12, y: cy, "font-size": 12.5 }, clip(c.name, c.name, 30)));
+      g.append(el("text", { x: b.x + 12, y: cy, "font-size": 14 }, clip(c.name, c.name, 24)));
       g.append(el("text", { x: b.x + b.w - 12, y: cy, "font-size": 11, fill: "var(--muted)", "text-anchor": "end" }, c.type));
-      if (c.pk || c.fk) g.append(el("text", { x: b.x + b.w - 12 - c.type.length * 6.4 - 26, y: cy, "font-size": 10.5, "font-weight": 700, fill: c.pk ? "#c92a2a" : "var(--accent)" }, c.pk ? "PK" : "FK"));
+      if (c.pk || c.fk) g.append(el("text", { x: b.x + b.w - 12 - c.type.length * 6.4 - 26, y: cy, "font-size": 11, "font-weight": 700, fill: c.pk ? "#c92a2a" : "var(--accent)" }, c.pk ? "PK" : "FK"));
     });
     if (expanded.has(t.name)) {
       const top = b.y + bodyHeight(t);
@@ -162,7 +162,7 @@ function draw() {
         const y = top + 28 + i * OPROW;
         const m = METHOD[op.method] || { label: op.method, color: "#555" };
         g.append(el("text", { x: b.x + 12, y: y + 13, "font-size": 11, "font-weight": 700, fill: m.color }, `${m.label.toUpperCase()}  ${op.method}`));
-        g.append(el("text", { x: b.x + 12, y: y + 27, "font-size": 11.5, "font-family": "ui-monospace, Menlo, monospace" }, clip(op.path, op.path, 46)));
+        g.append(el("text", { x: b.x + 12, y: y + 31, "font-size": 14, "font-family": "ui-monospace, Menlo, monospace" }, clip(op.path, op.path, 30)));
       });
     }
     const title = el("title", {}, `${t.name}: ${t.columns.length} columns`);
