@@ -1,11 +1,11 @@
 ---
 name: flwn-design
-description: Applies the Flwn visual identity (cream dotted canvas, five pastel accents, navy logo, bold plain headlines, f-in-circle logo with lavender or navy icon tile, hand-drawn architecture diagrams) to all three Flwn surfaces - frontend (React UI, components, Tailwind, CSS tokens), docs (README, specs, proposals, architecture pages) and presentations (decks, pitch and graduation slides). Use when building, restyling or reviewing anything Flwn-branded so it matches the Flwn workspace.
+description: Applies the Flwn visual identity (cream dotted canvas, five pastel accents, navy logo, bold plain headlines, flwn wordmark logo with gold favicon, hand-drawn architecture diagrams) to all three Flwn surfaces - frontend (React UI, components, Tailwind, CSS tokens), docs (README, specs, proposals, architecture pages) and presentations (decks, pitch and graduation slides). Use when building, restyling or reviewing anything Flwn-branded so it matches the Flwn workspace.
 ---
 
 # Flwn Design
 
-Every Flwn surface must look like it came from the same board. Palette reference: `flwn-palette/flwn-palette-v2.png`. Logo reference: `logo/` (section 6c). Note: `mockup/` predates palette v2. Use the tokens in this file, not the mockup's colors.
+Every Flwn surface must look like it came from the same board. Palette reference: `palette-final.png`. Logo reference: `logo/` (section 6c). Note: `mockup/` predates palette v2. Use the tokens in this file, not the mockup's colors.
 
 ## 0. Surfaces
 
@@ -30,6 +30,26 @@ Diagrams (6a) and the logo (6c) appear on all three.
 
 Palette v2 is owner-approved. Do not add, shift or "improve" colors. Changes go through the owner.
 
+### Palette (colors)
+
+![Flwn palette](palette/palette.png)
+
+| Group | Name | Hex | Role |
+|---|---|---|---|
+| Base | Cream | `#F7F3EA` | page background |
+| Base | White | `#FFFFFF` | surfaces, tables |
+| Base | Navy | `#001F55` | wordmark, dark anchor |
+| Base | Ink | `#14131A` | text |
+| Base | Ink soft | `#6B6875` | secondary text |
+| Base | Border | `#E0DDD5` | lines, frames |
+| Pastel | Green | `#B3E3C4` | tip |
+| Pastel | Lavender | `#E3D3FA` | decision |
+| Pastel | Gold | `#F8DB99` | note, favicon |
+| Pastel | Salmon | `#F5B3AC` | warning |
+| Pastel | Blue | `#ABE1EA` | info |
+
+Also in `palette/palette.svg` and `palette/tokens.css`.
+
 ```css
 :root {
   /* base */
@@ -42,7 +62,7 @@ Palette v2 is owner-approved. Do not add, shift or "improve" colors. Changes go 
   /* pastel accents */
   --pastel-green: #B3E3C4;
   --pastel-lavender: #E3D3FA;
-  --pastel-gold: #F8DB99;
+  --pastel-gold: #F8DB99;    /* UI accent, favicon circle */
   --pastel-salmon: #F5B3AC;
   --pastel-blue: #ABE1EA;
 
@@ -187,7 +207,7 @@ Any diagram with more than one arrow type starts with a top-left legend: solid s
 - Exactly one dark anchor per slide: a navy or ink pill or button-style element with cream text (key takeaway or next step).
 - Type: title 44-56pt, card title 24-28pt, body 18-20pt minimum, meta 14pt. Nothing smaller.
 - Max about 25 words per card. Fragments, no paragraphs.
-- Title slide: eyebrow, huge headline, avatar stack of presenters, small meta, primary lockup.
+- Title slide: eyebrow, huge headline, avatar stack of presenters, small meta, wordmark.
 - Section dividers: full pastel background, headline only.
 - Architecture slides: one diagram per slide in 6a style, full width, legend visible. Split big diagrams by zone.
 - Roadmap / status slides: reuse the kanban look.
@@ -197,72 +217,61 @@ Any diagram with more than one arrow type starts with a top-left legend: solid s
 
 ## 6c. Logo
 
-Files live in `flwn-design/logo/`. Use them as delivered. Never redraw, retype, recolor, rebuild or re-space. This logo replaces the earlier Blocks logo.
+Files live in `flwn-design/logo/`. Use them as delivered. Never redraw, retype, recolor or rebuild.
 
-### Anatomy
+### The logo
 
-- Mark: gold circle `--pastel-gold` (`#F8DB99`), navy `f` (two round-capped strokes, stroke 9 units on a 100 unit box), navy dot lower right of the `f`.
-- Wordmark: lowercase `flwn`, navy `--navy`, outlined to paths. Cream or white wordmark on dark only.
-- Icon: the mark on a rounded tile, radius 26% of tile width. The tile is one of two colors: lavender `#E3D3FA` or navy `#001F55`.
-
-### Icon: lavender tile or navy tile
-
-The icon is designed one of two ways. Same mark inside both. Only the tile changes.
-
-| | Lavender tile | Navy tile |
-|---|---|---|
-| Tile | `#E3D3FA` | `#001F55` |
-| Mark | gold circle, navy `f`, navy dot | gold circle, navy `f`, navy dot |
-| Use on | cream, white, light OS home screens, light avatars | dark UI, ink or navy surfaces, anchor spots, where the icon must stand out on cream |
-| Contrast tile vs cream | 1.27:1 (faint, shape carries it) | 14.3:1 |
-
-Rules:
-- Pick one tile per product and use it everywhere for that product: favicon, app icon, avatars, store listing.
-- Never mix both tiles on one surface.
-- Never place a lavender tile on lavender or gold, or a navy tile on navy.
-- Never add a third tile color or a stroke to the tile.
-
-### Lockups
-
-- Primary lockup: mark + navy wordmark, no tile. Use on cream, white, lavender, green, blue, salmon.
-- Dark lockup: mark + white wordmark. Use on navy or ink only.
-- Gold circle is low contrast on light grounds by design: 1.22:1 on cream, 1.35:1 on white. Navy `f` and dot carry the shape. Never darken the gold or outline it.
-- Gold circle is never placed on gold. Navy `f` on gold is 11.7:1.
-- Lockup proportions come from the file. Do not rebuild the spacing.
-
-### Files
+- The logo is the `flwn` wordmark only. No symbol, no tile, no lockup.
+- Two versions: navy `#001F55` on light grounds, white `#FFFFFF` on navy.
+- Outlined to paths, cropped tight. Never set it as live text.
 
 | File | Use |
 |---|---|
-| `logo/flwn-logo-primary.svg` | Primary lockup |
-| `logo/flwn-logo-on-dark.svg` | Dark lockup, white wordmark |
-| `logo/flwn-mark.svg` | Gold circle mark, no tile (app shell, slide corner) |
-| `logo/flwn-wordmark-navy.svg` | Wordmark only, navy |
-| `logo/flwn-icon-lavender.svg` | Icon, lavender tile |
-| `logo/flwn-icon-navy.svg` | Icon, navy tile |
-| `logo/flwn-icon-lavender-1024.png`, `-180.png`, `-32.png` | Raster exports of lavender icon |
-| `logo/flwn-icon-navy-1024.png`, `-180.png`, `-32.png` | Raster exports of navy icon |
+| `logo/flwn-wordmark-navy.svg` (+ `-1600.png`) | Cream, white, lavender, gold, green, salmon, blue |
+| `logo/flwn-wordmark-white.svg` (+ `-1600.png`) | Navy only |
 
-`logo/retired-blocks/` holds the earlier Blocks logo. Do not use it.
+### Favicon
+
+- The favicon is the gold circle mark: `#F8DB99` circle, navy `f`, navy dot lower right.
+- Favicon, app icon and browser tab only. Never in a header, cover, slide or doc body.
+- One drawing, shipped at the sizes each place needs. Each context renders at a different pixel size, so one raster would blur somewhere.
+
+| File | Where |
+|---|---|
+| `logo/flwn-favicon-gold.svg` | Modern browser tabs, scales to any size |
+| `logo/favicon.ico` (16, 32, 48 inside) | Legacy browsers, bookmarks, Windows |
+| `logo/apple-touch-icon-180.png` | iOS home screen |
+| `logo/pwa-192.png`, `logo/pwa-512.png` | Only if the app is a PWA (manifest) |
+
+- Without a PWA, ship the first three only.
+- Gold circle is faint on light tab backgrounds: 1.22:1 on cream, 1.35:1 on white. Navy `f` carries the shape. Never darken or outline the circle.
+- The dot is about 1px at 16px and may blur.
+
+### Contrast (computed)
+
+- Navy wordmark: cream 14.3:1, white 15.8:1, lavender 11.3:1, gold 11.7:1, green 11.1:1, salmon 9.0:1, blue 11.1:1.
+- White wordmark on navy 15.8:1. On any light ground 1.0 to 1.8:1, so never.
+- Navy `f` on the gold circle 11.7:1.
 
 ### Placement
 
-- Frontend: primary lockup in the sidebar header and login screen. Mark (32px) top-left of the app shell. Icon tile as favicon and app icon.
-- Docs: primary lockup top-left of cover and README header (40-48px tall). Icon tile as favicon.
-- Presentations: primary lockup on the title slide. Mark bottom-left at 32px on other slides.
+- Frontend: wordmark top-left of the app shell, sidebar header and login screen. Favicon in the browser tab.
+- Docs: wordmark top-left of cover and README header (24-32px tall). Favicon for the docs site.
+- Presentations: wordmark on the title slide and bottom-left of other slides.
 
 ### Size and space
 
-- Min sizes: lockup 96px wide, mark 32px, icon 32px. The dot is about 1px at 16px, so 16px is not allowed.
-- Clear space: at least the width of the `f` stem on all sides.
+- Min size: wordmark 64px wide.
+- Clear space: at least the `l` stroke width on all sides.
 
 ### Don't
 
-- Stretch, rotate, shadow, outline or add a stroke to any part.
-- Recolor the circle, the `f`, the dot or the wordmark.
-- Move the dot.
-- Use the Blocks mark, pastel tiles other than lavender and navy, or an ink tile.
-- Put the primary lockup on gold, or the icon on a matching tile color.
+- Stretch, rotate, shadow, outline or add a stroke.
+- Recolor the wordmark, or the favicon's circle, `f` or dot.
+- Put the navy wordmark on navy or the white wordmark on a light ground.
+- Add the circle mark, a tile, or a symbol next to the wordmark.
+- Use the favicon as the main logo.
+- Use the Blocks mark or any earlier logo.
 - Put on busy photos, or in gradients.
 
 ## 7. Copy tone
@@ -280,7 +289,7 @@ Do:
 - Ink on pastel only. Navy on pastel is also allowed. Secondary text on pastel is `--ink-72`.
 
 Don't:
-- No colors outside section 2 (diagrams excepted, and the logo uses only the tokens listed in 6c).
+- No colors outside section 2 (diagrams excepted, and the logo uses only the colors listed in 6c).
 - No red, orange or green status colors. Status = pastel squares, "Today" = white pill.
 - No gradients, neon, pure black `#000`, or grey backgrounds.
 - No heavy borders on cards. Color is the container.
@@ -296,9 +305,9 @@ Don't:
 4. Cards: pastel fill, radius 10, `--shadow`, no border.
 5. Dark elements limited to the Meet-style button and AI avatar.
 6. Dotted cream canvas visible behind content.
-7. Logo from `logo/`, unmodified. Icon uses one tile (lavender or navy) per product.
+7. Logo from `logo/`, unmodified. Wordmark only. Gold favicon only in the browser tab.
 8. Mobile: columns collapse to one, side tabs become a bottom bar.
-9. Compare with the palette reference `flwn-palette/flwn-palette-v2.png`.
+9. Logo circle is lavender. Icon tile is navy. Compare with the palette reference `palette-final.png`.
 
 ## 10. Tailwind starter
 
