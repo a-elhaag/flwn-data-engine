@@ -1,0 +1,38 @@
+name: sync-flwn-design
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy skill from a-elhaag/flwn-design
+        run: |
+          git clone --depth 1 https://github.com/a-elhaag/flwn-design.git /tmp/skill
+          mkdir -p .claude/skills/flwn-design
+          rsync -a --delete /tmp/skill/flwn-design/ .claude/skills/flwn-design/
+          echo "SRC=$(git -C /tmp/skill rev-parse --short HEAD)" >> "$GITHUB_ENV"
+      - name: Open or update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: chore/sync-flwn-design
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          [ -z "$(git status --porcelain .claude/skills/flwn-design)" ] && { echo "already up to date"; exit 0; }
+          git config user.name "flwn-design-sync"
+          git config user.email "noreply@github.com"
+          git checkout -B "$BRANCH"
+          git add -A .claude/skills/flwn-design
+          git commit -m "Sync flwn-design skill from a-elhaag/flwn-design@$SRC"
+          git push -f origin "$BRANCH"
+          gh pr view "$BRANCH" >/dev/null 2>&1 || gh pr create --base "$BASE" --head "$BRANCH" \
+            --title "Sync flwn-design skill" \
+            --body "Automatic copy of a-elhaag/flwn-design@$SRC. Edit the skill in that repo, not here."
