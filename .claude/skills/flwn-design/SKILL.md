@@ -143,6 +143,12 @@ Dark mode: not defined. Do not invent one unless asked.
 - Diagrams: section 6a. Slides: 6b. Logo: 6c.
 - README: no emoji. Short sentences. Same tone as UI copy.
 
+### Hard rules for docs (check before you finish)
+
+- **Logo = wordmark only.** Take it from `logo/flwn-wordmark-navy.svg`. Never reuse a logo file already in the repo (for example `docs/assets/flwn-logo-primary.svg`): it may include the gold favicon mark. The favicon never appears beside the wordmark or anywhere in a doc body.
+- **Padding on every page.** A PDF or printed doc (A4) uses `@page { size: A4; margin: 0 }` and a page block with its own cream background and padding: 16mm left and right, 14-16mm top and bottom. Never rely on the browser's default page margin: it leaves a white border around the cream. On screen, the frame keeps 56px padding (16px on mobile).
+- **Verify visually.** Render the PDF to an image, look at every page, and fix overlapping diagram labels, clipped content and wrong page counts before handing it over.
+
 ## 6a. Diagrams (hand-drawn architecture style)
 
 Every architecture, flow and data diagram in Flwn docs and slides uses this style. Reference: the Frontend / Backend (Go) / AI Engine / Data Engine system map. Diagram hues are a deliberate exception to the palette, because zones need more distinct layers than the pastels give.
