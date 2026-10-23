@@ -143,38 +143,46 @@ Dark mode: not defined. Do not invent one unless asked.
 - Diagrams: section 6a. Slides: 6b. Logo: 6c.
 - README: no emoji. Short sentences. Same tone as UI copy.
 
+### Hard rules for docs (check before you finish)
+
+- **Logo = wordmark only.** Take it from `logo/flwn-wordmark-navy.svg`. Never reuse a logo file already in the repo (for example `docs/assets/flwn-logo-primary.svg`): it may include the gold favicon mark. The favicon never appears beside the wordmark or anywhere in a doc body.
+- **Padding on every page.** A PDF or printed doc (A4) uses `@page { size: A4; margin: 0 }` and a page block with its own cream background and padding: 16mm left and right, 14-16mm top and bottom. Never rely on the browser's default page margin: it leaves a white border around the cream. On screen, the frame keeps 56px padding (16px on mobile).
+- **Verify visually.** Render the PDF to an image, look at every page, and fix overlapping diagram labels, clipped content and wrong page counts before handing it over.
+
 ## 6a. Diagrams (hand-drawn architecture style)
 
-Every architecture, flow and data diagram in Flwn docs and slides uses this style. Reference: the Frontend / Backend (Go) / AI Engine / Data Engine system map. Diagram hues are a deliberate exception to the palette, because zones need more distinct layers than the pastels give.
+Every architecture, flow and data diagram in Flwn docs and slides uses this style. Reference: the Frontend / Backend (Go) / AI Engine / Data Engine system map. **Diagrams use only the section 2 palette.** No other hex values, no extra hues. Before you finish, list every hex in the SVG and confirm each is in section 2.
 
 ### Look
 
 - Hand-drawn, Excalidraw look. Font: Excalifont (fallback Virgil, "Comic Neue"). Roughness low, stroke 2px, rounded corners.
 - Layered zones: large rounded rectangles, pale tint fill, 1px lighter border. Zone title top-left, uppercase, in the zone's dark hue, optional ownership rule after a colon (`BACKEND (Go): all connections + sockets, owns no data`).
-- Nodes: rounded rectangles, saturated-pastel fill, 2px stroke of the same hue (darker), text in that dark hue. No black text inside nodes.
+- Nodes: rounded rectangles, flat pastel fill, no outline, `--ink` text.
 - Node text = title line + 1-2 short descriptor lines, centered. Max 3 lines.
 - Stores (DBs, vector stores) = cylinders.
 - Sub-groups = dashed rounded box with small label top-left.
 - Cross-cutting rules = dashed rounded box at the bottom of the zone.
 - Canvas behind diagram: transparent or `--cream`. No dot grid inside diagrams.
 
-### Zone + node palette (by system layer)
+### Zone + node palette (section 2 colors only)
 
-| Layer | Zone fill | Zone border | Node fill | Stroke + text |
-|---|---|---|---|---|
-| Frontend | `#F3F4FF` | `#BFD4F5` | `#A5D8FF` | `#1E78D6` |
-| Backend (Go) | `#F0FBF2` | `#B7E8C3` | `#B2F2BB` | `#1B7A33` |
-| AI Engine | `#F5F0FE` | `#D9C9F5` | `#D0BFFF` | `#5B3FD0` |
-| Data Engine | `#EDFCF8` | `#B5EDE0` | `#96F2D7` | `#0C8599` |
-| Agents / Ghost Engineer | `#FBF3E3` | `#F3D9A6` | `#FFD8A8` / `#FFF3BF` | `#C2680A` |
-| Decision / risk (Ledger) | none | none | `#FFC9C9` | `#C92A2A` |
-| Behavioral / analysis | none | none | `#F3A8F0` | `#C2255C` |
+- Zones: `--white` fill, no outline, zone title in `--ink-soft`. Nested sub-zones may use `--cream`.
+- Nodes: flat pastel fill, no outline or stroke on nodes or zones, `--ink` title, `--ink-72` descriptor lines. No other text colors. Only arrows are stroked.
+- Layers are told apart by pastel, not by new hues:
+
+| Layer | Node fill |
+|---|---|
+| Frontend / UI | Blue `#ABE1EA` |
+| Backend / core services (the system the doc is about) | Green `#B3E3C4` |
+| Data engine / stores | Lavender `#E3D3FA` |
+| External services, agents | Gold `#F8DB99` |
+| Decision / risk / warning | Salmon `#F5B3AC` |
 
 Rules:
-- One hue per layer. A node takes the hue of the layer that owns it, even if drawn inside another zone's bounds.
-- Agents are always orange-family wherever they appear.
-- External services keep their own tint: Azure OpenAI blue, Cohere orange, Qdrant / PostgreSQL teal cylinders.
-- New layer? Pick a hue not in the table, fill it light, stroke and text 35% darker, add it here.
+- One pastel per layer, same pastel for that layer in every diagram. A node takes the pastel of the layer that owns it.
+- Pastel on pastel is about 1.0 to 1.1 contrast, so never touch two pastel nodes: leave gaps and let white or cream show between them.
+- Need more layers than five? Split the diagram. Never add a color.
+- Allowed non-palette values: none. Retired: the old per-layer hues (`#1E78D6`, `#1B7A33`, `#5B3FD0`, `#0C8599`, `#C2680A`, `#C92A2A`, `#C2255C` and their tints).
 
 ### Arrows
 
@@ -289,7 +297,7 @@ Do:
 - Ink on pastel only. Navy on pastel is also allowed. Secondary text on pastel is `--ink-72`.
 
 Don't:
-- No colors outside section 2 (diagrams excepted, and the logo uses only the colors listed in 6c).
+- No colors outside section 2 (the logo uses only the colors listed in 6c).
 - No red, orange or green status colors. Status = pastel squares, "Today" = white pill.
 - No gradients, neon, pure black `#000`, or grey backgrounds.
 - No heavy borders on cards. Color is the container.
