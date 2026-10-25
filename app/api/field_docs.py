@@ -273,6 +273,10 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "scopes": "What the token may do, for example `memory:read` or `planning:write`.",
         "ttl_seconds": "How long the token lasts, in seconds.",
     },
+    "RevocationRequest": {
+        "jti": "The token's `jti` claim. The token stops working at once.",
+        "expires_at": "The token's own `exp`, in Unix seconds. The entry is dropped after it.",
+    },
     "TokenResponse": {
         "token": "The signed token. Send it as `Authorization: Bearer <token>`.",
         "expires_at": "When the token expires, as seconds since the Unix epoch.",

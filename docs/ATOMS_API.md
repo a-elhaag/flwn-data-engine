@@ -283,8 +283,12 @@ Content-Type: application/json
 2. Bootstrap with service-key-only `POST /workspaces/{workspace_id}/atoms/{id}/runs`:
    schedule_id, timezone-aware scheduled_for, idempotency_key, estimated_cost=0,
    estimated_actions=0. Returns a pinned run or its existing idempotent result.
-3. Via existing `POST /auth/tokens`, mint with workspace_id, the atom's member_id, atom_id,
-   run_id and the needed runtime scopes. Atom TTL defaults to and cannot exceed 900 seconds.
+3. Get a run token bound to the workspace, the atom's member, the atom and the run, with the needed
+   runtime scopes. Target design ([AUTH_DESIGN](AUTH_DESIGN.md)): the backend signs it (`typ=run`,
+   `mem` = atom member, `agent` = atom id, `run` = run id, `ctx` = the atom's kind, `aud`
+   `data-engine`, `jti`; EdDSA/ES256) and this service only verifies. Until the backend mints, the
+   legacy `POST /auth/tokens` (service key, HS256) still works. Atom TTL cannot exceed 900 seconds.
+   To stop a run token early, the backend lists its `jti` with `POST /auth/revocations`.
 4. Use that bearer token for MCP load/start/resume and existing permitted resource tools.
    Every call revalidates live membership, owner, atom/run state and grants.
 5. Finish with cumulative usage and optional cursor. Finish and approval get/claim/outcome

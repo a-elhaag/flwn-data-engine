@@ -3,9 +3,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app import members
-from app.api import tokens
+from app.api import revocation, tokens
 from app.api.auth import service_only
-from app.api.schemas import TokenRequest, TokenResponse
+from app.api.schemas import RevocationRequest, TokenRequest, TokenResponse
 from app.clients.health import health_check
 
 router = APIRouter()
@@ -76,3 +76,9 @@ def mint_token(request: TokenRequest) -> TokenResponse:
     except tokens.TokenError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return TokenResponse(token=token, expires_at=expires_at)
+
+
+@router.post("/auth/revocations", status_code=204, dependencies=[Depends(service_only)])
+def revoke_token(request: RevocationRequest) -> None:
+    """The backend lists a token's jti so it stops working now. Safe to repeat."""
+    revocation.revoke(request.jti, request.expires_at)

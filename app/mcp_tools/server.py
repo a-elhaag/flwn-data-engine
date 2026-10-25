@@ -179,8 +179,9 @@ async def _guarded(ctx: Context, scope: str, tool: str, fn: Callable[[Claims], A
                     "atom_approval_outcome",
                 ),
             )
-        if claims.member_id and not members.is_active(claims.workspace_id, claims.member_id):
-            raise PermissionError("Member is not active in this workspace")
+        for acting in (claims.member_id, claims.obo):  # an assistant and the human it acts for
+            if acting and not members.is_active(claims.workspace_id, acting):
+                raise PermissionError("Member is not active in this workspace")
         with bind_context(context):
             return fn(claims)
 

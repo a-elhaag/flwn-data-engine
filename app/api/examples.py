@@ -38,6 +38,7 @@ EXAMPLES: dict[str, dict] = {
         "ttl_seconds": 3600,
     },
     "TokenResponse": {"token": "<signed-token>", "expires_at": 1792229400},
+    "RevocationRequest": {"jti": "7c1f0c52a4f94b0e", "expires_at": 1792229400},
     # Conflicts
     "FlagConflictRequest": {
         "decision_id": "d6b3f1a8-7c42-4e95-a0b1-3f8e5c2d9a67",
