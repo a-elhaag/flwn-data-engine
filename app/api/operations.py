@@ -16,6 +16,10 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Mint a workspace token",
         "Trusted backend only. Returns a signed token locked to one workspace, limited to the requested scopes. Without `scopes` it can only read memory and files.",
     ),
+    "POST /auth/revocations": (
+        "Revoke a token",
+        "Trusted backend only. Lists a token's `jti` so it is refused from now until its own expiry. Safe to repeat.",
+    ),
     # Memory
     f"POST {W}/memories": (
         "Remember",

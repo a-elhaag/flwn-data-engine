@@ -1,6 +1,6 @@
 # Auth design: tokens across the engines
 
-Status: design, not yet built. Current code: [app/api/auth.py](../app/api/auth.py), [app/api/tokens.py](../app/api/tokens.py). Agent tokens are off (`AGENT_TOKENS_ENABLED=false`).
+Status: **verify side built in the data engine**; the backend does not mint yet. Code: [app/api/auth.py](../app/api/auth.py), [app/api/tokens.py](../app/api/tokens.py), [app/api/revocation.py](../app/api/revocation.py). Agent tokens are off by default (`AGENT_TOKENS_ENABLED=false`).
 
 Written for: engineers working on the backend, the data engine, and the AI engine.
 
@@ -48,7 +48,22 @@ Header `kid` names the signing key, so keys can rotate.
 
 Do not put email, names, or settings in the token. Services read those from the database when needed.
 
-Today's code has `iss`, `sub`, `ws`, `scope`, `iat`, `exp`, `mem`, `atom_id`, `run_id`, `ctx`. It lacks `aud`, `typ`, `obo`, `act`, `jti`, and `kid`.
+The data engine verifies every claim above. The backend's tokens are EdDSA or ES256, with `kid` in the header and `iss` equal to `TOKEN_ISSUER` (default `flwn-backend`). `aud` must contain `TOKEN_AUDIENCE` (default `data-engine`). `ctx` (`personal` or `workspace`) is required on every token. For a run token, `agent` is the atom id and `run` is the run id.
+
+What each `typ` must carry (a mismatch is a 401):
+
+| `typ` | `mem` | `obo` | `agent` / `run` |
+| --- | --- | --- | --- |
+| `human` | required | none | none |
+| `agent` | required | required | `agent` none or equal to `mem`; no `run` |
+| `run` | required | none | both required; ttl 1-900 s, never an admin scope |
+| `service` | none | none | none |
+
+Legacy HS256 tokens from `POST /auth/tokens` still verify while `TOKEN_ALLOW_LEGACY_HS256` is on (default). They carry no `aud`, `jti` or `kid`; their `typ` is derived (`run` with an atom, `agent` with a member, else `service`). Turn the flag off when the backend mints.
+
+The gate rejects a token whose `jti` is on the deny list, and fails closed if the list cannot be read. For an `agent` token both `mem` and `obo` must be active members, so suspending the human stops the assistant too. The backend lists a token with `POST /auth/revocations` (service key only, safe to repeat); entries are dropped after the token's own `exp`.
+
+Not enforced by the data engine: the `obo` human's rights intersected with the agent's scope (the backend checks it at mint), and `ctx` against a stored workspace kind (workspaces have none; atom tokens still check `ctx` against the atom's kind).
 
 ## How a service checks a token
 
@@ -98,12 +113,11 @@ Calls with no user behind them use the engine's own `service` token.
 
 ## Migration from today
 
-1. Add `aud`, `typ`, `jti`, `kid` to `tokens.mint` and `Claims`.
-2. Add `obo` and `act` (optional fields).
-3. Add the workspace check in `auth.allow` for engine calls (`token.ws == path ws`). This already exists for agent tokens; keep it.
-4. Mint only from the backend. Keep the token-mint route service-key only (verify this).
-5. Switch signing to EdDSA when a second service verifies.
-6. Turn on `AGENT_TOKENS_ENABLED` after the AI engine and the frontend use tokens.
+1. Done: `aud`, `typ`, `jti`, `kid`, `obo`, `act` and `ctx` on every token, verified in `tokens.verify`; one gate for REST and MCP.
+2. Done: workspace check in `auth.allow` (`token.ws == path ws`), and the jti deny list with `POST /auth/revocations`.
+3. Done: EdDSA/ES256 verify from `TOKEN_JWKS` or `TOKEN_JWKS_URL`. The data engine never signs a backend token.
+4. Backend: sign and mint every token with the claims above, publish `/.well-known/jwks.json`, call `POST /auth/revocations` on revoke. Then set `TOKEN_ALLOW_LEGACY_HS256=false` and remove `/auth/tokens`.
+5. Turn on `AGENT_TOKENS_ENABLED` after the AI engine and the frontend use tokens.
 
 ## Not doing (yet)
 
