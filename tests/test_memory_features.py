@@ -539,7 +539,7 @@ class McpTests(MemoryHarness):
             result["structuredContent"] = json.loads(result["content"][0]["text"])
         return result
 
-    def test_lists_all_agent_tools_and_hides_admin_ones(self):
+    def test_lists_all_agent_tools_and_hides_service_only_ones(self):
         response = self.rpc("tools/list", headers=bearer(self.team_a))
         names = {tool["name"] for tool in response.json()["result"]["tools"]}
         self.assertEqual(
@@ -572,6 +572,23 @@ class McpTests(MemoryHarness):
                 "skill_attach",
                 "atom_connection_report",
                 "aggregate_read",
+                # atom administration: needs a human token with atoms:admin, checked per call
+                "atom_create",
+                "atom_list",
+                "atom_get",
+                "atom_configure",
+                "atom_delete",
+                "atom_version_create",
+                "atom_activate",
+                "atom_rollback",
+                "atom_grant_set",
+                "atom_grant_remove",
+                "atom_schedule_set",
+                "atom_schedule_delete",
+                "atom_connection_set",
+                "atom_connection_delete",
+                "atom_skill_attach",
+                "atom_skill_enable",
             },
         )
         for tool in response.json()["result"]["tools"]:

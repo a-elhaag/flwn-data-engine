@@ -1,10 +1,12 @@
 """Liveness, readiness, and agent token minting."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
 from app import members
 from app.api import revocation, tokens
-from app.api.auth import service_only
+from app.api.auth import _principal, service_only
 from app.api.schemas import RevocationRequest, TokenRequest, TokenResponse
 from app.clients.health import health_check
 
@@ -82,3 +84,19 @@ def mint_token(request: TokenRequest) -> TokenResponse:
 def revoke_token(request: RevocationRequest) -> None:
     """The backend lists a token's jti so it stops working now. Safe to repeat."""
     revocation.revoke(request.jti, request.expires_at)
+
+
+@router.get("/auth/session")
+def token_session(authorization: Annotated[str | None, Header()] = None) -> dict:
+    """Is this bearer token still good? Signature, expiry, revocation and member status are all
+    checked. The Atomizer service asks this on chat calls it does not forward to the data engine."""
+    principal = _principal(None, authorization)  # 401 when invalid, expired or revoked
+    for acting in (principal.member_id, principal.obo):
+        if acting and not members.is_active(principal.workspace_id, acting):
+            raise HTTPException(status_code=403, detail="Member is not active in this workspace")
+    return {
+        "workspace_id": principal.workspace_id,
+        "member_id": principal.member_id,
+        "typ": principal.typ,
+        "jti": principal.jti,
+    }
