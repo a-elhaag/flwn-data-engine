@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 
 from app.api import errors
 from app.api import explorer as explorer_page
+from app.api.business_spec import business_openapi
 from app.api.examples import EXAMPLES
 from app.api.field_docs import COMMON, FIELD_DOCS
 from app.api.operations import OPERATIONS
@@ -51,6 +52,7 @@ TAGS = [
     },
     {"name": "Approvals", "description": "Human approval of atom actions, then claim and outcome."},
     {"name": "Skills", "description": "Promote and delete local skills. Trusted backend only."},
+    {"name": "Users", "description": "Global user accounts. Trusted backend only."},
     {"name": "Workspaces", "description": "Create and manage workspaces. Trusted backend only."},
     {"name": "Identity", "description": "Members and teams in a workspace. Trusted backend only."},
     {"name": "Planning", "description": "Projects, work items and tasks. Trusted backend only."},
@@ -127,6 +129,10 @@ def create_app() -> FastAPI:
     @app.get("/explorer", include_in_schema=False, response_class=HTMLResponse)
     def explorer():
         return explorer_page.render(app.openapi())
+
+    @app.get("/openapi/business.json", include_in_schema=False)
+    def business_spec():
+        return business_openapi(app.openapi())
 
     @app.get("/swagger", include_in_schema=False)
     def swagger_alias():
