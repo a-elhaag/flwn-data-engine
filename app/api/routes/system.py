@@ -91,6 +91,13 @@ def token_session(authorization: Annotated[str | None, Header()] = None) -> dict
     """Is this bearer token still good? Signature, expiry, revocation and member status are all
     checked. The Atomizer service asks this on chat calls it does not forward to the data engine."""
     principal = _principal(None, authorization)  # 401 when invalid, expired or revoked
+    from app.atoms.access import is_atom_member
+
+    # Same gate as allow(): an atom is only ever vouched for by the routes it calls, with its run checked.
+    if principal.atom_id or (
+        principal.member_id and is_atom_member(principal.workspace_id, principal.member_id)
+    ):
+        raise HTTPException(status_code=403, detail="Atom tokens are not checked here")
     for acting in (principal.member_id, principal.obo):
         if acting and not members.is_active(principal.workspace_id, acting):
             raise HTTPException(status_code=403, detail="Member is not active in this workspace")

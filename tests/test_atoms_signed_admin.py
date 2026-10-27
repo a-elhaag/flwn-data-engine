@@ -102,6 +102,22 @@ class SignedAtomAdminTests(MemoryHarness):
             self.client.get("/auth/session", headers={"X-Data-API-Key": ""}).status_code, 401
         )
 
+    def test_session_route_does_not_vouch_for_run_tokens(self):
+        from app.api import tokens
+
+        run_token, _ = tokens.mint(
+            self.team_a,
+            {"atoms:read"},
+            "atom-worker",
+            300,
+            self.owner,
+            atom_id=str(uuid.uuid4()),
+            run_id=str(uuid.uuid4()),
+            ctx="workspace",
+        )
+        headers = {"X-Data-API-Key": "", "Authorization": f"Bearer {run_token}"}
+        self.assertEqual(self.client.get("/auth/session", headers=headers).status_code, 403)
+
     def test_scheduler_workspaces_lists_only_workspaces_with_work(self):
         self.assertNotIn(
             self.team_a, self.client.get("/atoms/scheduler-workspaces").json()["workspace_ids"]
