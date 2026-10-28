@@ -183,7 +183,7 @@ class GenericTableAuthTests(CrudHarness):
 
         gone = {"channel_members", "doc_blocks", "doc_versions", "reactions", "attachments"}
         gone |= {"meeting_participants", "transcripts", "transcript_segments", "memory_links"}
-        gone |= {"chunks", "decisions", "agent_runs", "atom_connections"}
+        gone |= {"chunks", "decisions", "agent_runs", "atom_connections", "links"}
         self.assertFalse(gone & set(generic_crud.ACCESS))
         collab = self.token_headers(self.team_a, t.SCOPE_COLLAB_WRITE)
         for table in ("channel-members", "transcripts"):

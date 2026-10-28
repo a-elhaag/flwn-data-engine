@@ -81,8 +81,8 @@ AUTHOR = {"created_by", "last_edited_by"}
 # table -> (read scope, write scope). A table missing here is for the trusted backend only: they
 # hold per-member or security-sensitive rows (notifications, favorites, subscriptions, invitations,
 # events, llm_usage, agent_reports) or inherit visibility from a private parent (channel_members,
-# doc_*, reactions, attachments, meetings, memory) or leak payloads (agent_runs, atom_connections). The service key and an `admin` token pass
-# every scope check.
+# links, doc_*, reactions, attachments, meetings, memory) or leak payloads (agent_runs,
+# atom_connections). The service key and an `admin` token pass every scope check.
 PLANNING = (tokens.SCOPE_PLANNING_READ, tokens.SCOPE_PLANNING_WRITE)
 COLLAB = (tokens.SCOPE_COLLAB_READ, tokens.SCOPE_COLLAB_WRITE)
 FILES = (tokens.SCOPE_FILES_READ, tokens.SCOPE_FILES_WRITE)
@@ -93,7 +93,7 @@ ACCESS = {
         + ("task_relations", "work_item_labels"),
         PLANNING,
     ),
-    **dict.fromkeys(("collections", "links"), COLLAB),
+    "collections": COLLAB,
     **dict.fromkeys(("folders", "file_derivatives"), FILES),
     **dict.fromkeys(("atom_grants", "atom_versions", "atom_schedules", "atom_skills"), ATOMS),
     "catalog_skills": (tokens.SCOPE_SKILLS_READ, None),
