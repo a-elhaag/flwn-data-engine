@@ -18,7 +18,7 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/a-elhaag/flwn-design.git /tmp/skill
           mkdir -p .claude/skills/flwn-design
-          rsync -a --delete /tmp/skill/flwn-design/ .claude/skills/flwn-design/
+          rsync -a --no-links --delete /tmp/skill/flwn-design/ .claude/skills/flwn-design/
           echo "SRC=$(git -C /tmp/skill rev-parse --short HEAD)" >> "$GITHUB_ENV"
       - name: Open or update PR
         env:
