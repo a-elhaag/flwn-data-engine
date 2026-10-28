@@ -5,7 +5,8 @@ database. Full CRUD for the child tables in CRUD_TABLES; read-only (list and get
 written and security-sensitive tables in READ_TABLES. Composite keys are addressed by their parts,
 for example DELETE /workspaces/{ws}/team-members/{team_id}/{member_id}.
 
-Access is the trusted backend only (the service key), like the other trusted routes. Every query is
+Access follows ACCESS: a token with the table's read or write scope (the area's scopes, locked to
+its workspace), or the service key. Tables not in ACCESS are the trusted backend only. Every query is
 filtered by workspace and runs inside the workspace's row-level-security session.
 """
 
@@ -24,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
-from app.api import auth
+from app.api import auth, tokens
 from app.api.examples import EXAMPLES
 from app.db.base import Base
 from app.db.session import session_for
@@ -76,6 +77,37 @@ HIDDEN = {"tsv", "embedding"}
 SERVER_SET = {"id", "workspace_id", "created_at", "updated_at", "deleted_at"}
 # Set from the caller's token, never from the body: a client cannot claim to be someone else.
 AUTHOR = {"created_by", "last_edited_by"}
+
+# table -> (read scope, write scope). A table missing here is for the trusted backend only: they
+# hold per-member or security-sensitive rows (notifications, favorites, subscriptions, invitations,
+# events, llm_usage, agent_reports). The service key and an `admin` token pass every scope check.
+PLANNING = (tokens.SCOPE_PLANNING_READ, tokens.SCOPE_PLANNING_WRITE)
+COLLAB = (tokens.SCOPE_COLLAB_READ, tokens.SCOPE_COLLAB_WRITE)
+MEETINGS = (tokens.SCOPE_MEETINGS_READ, tokens.SCOPE_MEETINGS_WRITE)
+FILES = (tokens.SCOPE_FILES_READ, tokens.SCOPE_FILES_WRITE)
+MEMORY = (tokens.SCOPE_READ, tokens.SCOPE_WRITE)
+ATOMS = (tokens.SCOPE_ATOMS_READ, None)  # engine-written: read only
+ACCESS = {
+    **dict.fromkeys(
+        ("backlogs", "milestones", "project_updates", "labels", "saved_views", "task_labels")
+        + ("task_relations", "work_item_labels"),
+        PLANNING,
+    ),
+    **dict.fromkeys(
+        ("collections", "doc_blocks", "doc_versions", "channel_members", "reactions", "links")
+        + ("attachments",),
+        COLLAB,
+    ),
+    **dict.fromkeys(("meeting_participants", "transcripts", "transcript_segments"), MEETINGS),
+    **dict.fromkeys(("folders", "file_derivatives"), FILES),
+    **dict.fromkeys(("memory_links", "chunks", "decisions"), MEMORY),
+    **dict.fromkeys(
+        ("agent_runs", "atom_grants", "atom_versions", "atom_schedules", "atom_connections")
+        + ("atom_skills",),
+        ATOMS,
+    ),
+    "catalog_skills": (tokens.SCOPE_SKILLS_READ, None),
+}
 
 router = APIRouter(prefix="/workspaces/{workspace_id}")
 PAGE_LIMIT = Query(ge=1, le=200)
@@ -214,6 +246,9 @@ def _register(table, models: dict) -> dict:
         for name in key_names
     ]
     label = table.name.replace("_", " ")
+    read_scope, write_scope = ACCESS.get(table.name, (None, None))
+    read_guard = auth.allow(read_scope)
+    write_guard = auth.allow(write_scope)  # no write scope: the service key only, never a token
 
     def lookup(session, workspace_id, keys):
         query = select(model)
@@ -268,12 +303,12 @@ def _register(table, models: dict) -> dict:
         list_rows,
         methods=["GET"],
         response_model=models["page"],
-        dependencies=[auth.allow(None)],
+        dependencies=[read_guard],
         tags=[label],
     )
     summaries[f"GET /workspaces/{{workspace_id}}{base}"] = (
         f"List {label}",
-        "Paginated with `limit` and `offset`. Trusted backend only.",
+        "Paginated with `limit` and `offset`.",
     )
 
     # ---- get one ---------------------------------------------------------------------------
@@ -288,7 +323,7 @@ def _register(table, models: dict) -> dict:
         get_row,
         methods=["GET"],
         response_model=models["out"],
-        dependencies=[auth.allow(None)],
+        dependencies=[read_guard],
         tags=[label],
     )
     summaries[f"GET /workspaces/{{workspace_id}}{base}/{key_path}"] = (
@@ -326,12 +361,12 @@ def _register(table, models: dict) -> dict:
         methods=["POST"],
         status_code=201,
         response_model=models["out"],
-        dependencies=[auth.allow(None)],
+        dependencies=[write_guard],
         tags=[label],
     )
     summaries[f"POST /workspaces/{{workspace_id}}{base}"] = (
         f"Create {label}",
-        "Trusted backend only. Missing required fields are a 422.",
+        "Missing required fields are a 422.",
     )
 
     # ---- update ----------------------------------------------------------------------------
@@ -362,7 +397,7 @@ def _register(table, models: dict) -> dict:
         update_row,
         methods=["PATCH"],
         response_model=models["out"],
-        dependencies=[auth.allow(None)],
+        dependencies=[write_guard],
         tags=[label],
     )
     summaries[f"PATCH /workspaces/{{workspace_id}}{base}/{key_path}"] = (
@@ -387,7 +422,7 @@ def _register(table, models: dict) -> dict:
         delete_row,
         methods=["DELETE"],
         status_code=204,
-        dependencies=[auth.allow(None)],
+        dependencies=[write_guard],
         tags=[label],
     )
     summaries[f"DELETE /workspaces/{{workspace_id}}{base}/{key_path}"] = (

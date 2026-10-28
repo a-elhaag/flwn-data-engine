@@ -139,3 +139,41 @@ class CrudAuthTests(CrudHarness):
         self.assertEqual(actors, {who})
         kinds = {e["entity_type"] for e in self.events(self.team_a) if e["actor_id"]}
         self.assertTrue({"project", "work_item", "task", "workspace"} <= kinds)
+
+
+class GenericTableAuthTests(CrudHarness):
+    def test_access_map_names_real_tables(self):
+        from app.api import generic_crud
+
+        self.assertLessEqual(
+            set(generic_crud.ACCESS), generic_crud.CRUD_TABLES | generic_crud.READ_TABLES
+        )
+
+    def test_read_only_scope_tables_have_no_write_routes(self):
+        from app.api import generic_crud
+        from app.main import app
+
+        paths = app.openapi()["paths"]
+        for table, (_, write) in generic_crud.ACCESS.items():
+            if write is None:
+                path = f"/workspaces/{{workspace_id}}/{table.replace('_', '-')}"
+                with self.subTest(table=table):
+                    self.assertEqual(set(paths[path]), {"get"})
+
+    def test_generic_tables_follow_their_area_scope(self):
+        url = f"/workspaces/{self.team_a}/milestones"
+        read = self.token_headers(self.team_a, t.SCOPE_PLANNING_READ)
+        write = self.token_headers(self.team_a, t.SCOPE_PLANNING_WRITE)
+        self.assertEqual(self.client.get(url, headers=read).status_code, 200)
+        self.assertEqual(self.client.get(url, headers=write).status_code, 403)
+        denied = self.client.post(url, json={}, headers=read)
+        self.assertEqual(denied.status_code, 403, denied.text)
+        other = self.client.get(f"/workspaces/{self.team_b}/milestones", headers=read)
+        self.assertEqual(other.status_code, 403)
+
+    def test_unlisted_tables_stay_backend_only(self):
+        admin = self.token_headers(self.team_a, t.SCOPE_ADMIN)
+        for table in ("events", "invitations", "notifications"):
+            with self.subTest(table=table):
+                response = self.client.get(f"/workspaces/{self.team_a}/{table}", headers=admin)
+                self.assertEqual(response.status_code, 403, response.text)
