@@ -80,12 +80,12 @@ AUTHOR = {"created_by", "last_edited_by"}
 
 # table -> (read scope, write scope). A table missing here is for the trusted backend only: they
 # hold per-member or security-sensitive rows (notifications, favorites, subscriptions, invitations,
-# events, llm_usage, agent_reports). The service key and an `admin` token pass every scope check.
+# events, llm_usage, agent_reports) or inherit visibility from a private parent (channel_members,
+# doc_*, reactions, attachments, meetings, memory) or leak payloads (agent_runs, atom_connections). The service key and an `admin` token pass
+# every scope check.
 PLANNING = (tokens.SCOPE_PLANNING_READ, tokens.SCOPE_PLANNING_WRITE)
 COLLAB = (tokens.SCOPE_COLLAB_READ, tokens.SCOPE_COLLAB_WRITE)
-MEETINGS = (tokens.SCOPE_MEETINGS_READ, tokens.SCOPE_MEETINGS_WRITE)
 FILES = (tokens.SCOPE_FILES_READ, tokens.SCOPE_FILES_WRITE)
-MEMORY = (tokens.SCOPE_READ, tokens.SCOPE_WRITE)
 ATOMS = (tokens.SCOPE_ATOMS_READ, None)  # engine-written: read only
 ACCESS = {
     **dict.fromkeys(
@@ -93,19 +93,9 @@ ACCESS = {
         + ("task_relations", "work_item_labels"),
         PLANNING,
     ),
-    **dict.fromkeys(
-        ("collections", "doc_blocks", "doc_versions", "channel_members", "reactions", "links")
-        + ("attachments",),
-        COLLAB,
-    ),
-    **dict.fromkeys(("meeting_participants", "transcripts", "transcript_segments"), MEETINGS),
+    **dict.fromkeys(("collections", "links"), COLLAB),
     **dict.fromkeys(("folders", "file_derivatives"), FILES),
-    **dict.fromkeys(("memory_links", "chunks", "decisions"), MEMORY),
-    **dict.fromkeys(
-        ("agent_runs", "atom_grants", "atom_versions", "atom_schedules", "atom_connections")
-        + ("atom_skills",),
-        ATOMS,
-    ),
+    **dict.fromkeys(("atom_grants", "atom_versions", "atom_schedules", "atom_skills"), ATOMS),
     "catalog_skills": (tokens.SCOPE_SKILLS_READ, None),
 }
 

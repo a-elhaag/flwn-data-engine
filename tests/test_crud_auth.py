@@ -177,3 +177,16 @@ class GenericTableAuthTests(CrudHarness):
             with self.subTest(table=table):
                 response = self.client.get(f"/workspaces/{self.team_a}/{table}", headers=admin)
                 self.assertEqual(response.status_code, 403, response.text)
+
+    def test_parent_scoped_tables_stay_backend_only(self):
+        from app.api import generic_crud
+
+        gone = {"channel_members", "doc_blocks", "doc_versions", "reactions", "attachments"}
+        gone |= {"meeting_participants", "transcripts", "transcript_segments", "memory_links"}
+        gone |= {"chunks", "decisions", "agent_runs", "atom_connections"}
+        self.assertFalse(gone & set(generic_crud.ACCESS))
+        collab = self.token_headers(self.team_a, t.SCOPE_COLLAB_WRITE)
+        for table in ("channel-members", "transcripts"):
+            with self.subTest(table=table):
+                url = f"/workspaces/{self.team_a}/{table}"
+                self.assertEqual(self.client.get(url, headers=collab).status_code, 403)
