@@ -25,6 +25,7 @@ from fastapi import Depends, Header, HTTPException, Path, Request
 from app import members
 from app.api import tokens
 from app.config import settings
+from app.db.session import bind_viewer
 
 WorkspaceId = Annotated[UUID, Path()]
 
@@ -163,7 +164,14 @@ def allow(
                 )
         request.state.principal = principal
         # Async yield keeps the ContextVar in the event-loop task copied into sync endpoints.
-        with bind_context(context):
+        # Each non-admin member sees only their own private rows (db/sql/60_member_privacy.sql).
+        # The service key, an admin token and atoms (own rules above) have no per-member limit.
+        limited = not (
+            context
+            or (principal.service and not principal.member_id)
+            or tokens.SCOPE_ADMIN in principal.scopes
+        )
+        with bind_context(context), bind_viewer((principal.member_id or "") if limited else None):
             yield principal
 
     return Depends(dependency)
