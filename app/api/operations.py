@@ -16,6 +16,18 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Mint a workspace token",
         "Trusted backend only. Returns a signed token locked to one workspace, limited to the requested scopes. Without `scopes` it can only read memory and files.",
     ),
+    "POST /auth/revocations": (
+        "Revoke a token",
+        "Trusted backend only. Lists a token's `jti` so it is refused from now until its own expiry. Safe to repeat.",
+    ),
+    "GET /auth/session": (
+        "Check a token",
+        "Any bearer token. 200 when the token is valid, not expired, not revoked and its member is active; 401 or 403 otherwise. Lets a service that only relays the token refuse a revoked one.",
+    ),
+    "GET /atoms/scheduler-workspaces": (
+        "Workspaces with scheduler work",
+        "Trusted backend only. Ids of workspaces that have an active atom with an enabled schedule, or an approved approval waiting to run. The scheduler polls only these.",
+    ),
     # Memory
     f"POST {W}/memories": (
         "Remember",

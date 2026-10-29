@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, inspect, or_, select, union
 
 from app.db.models.atoms import (
     PERMISSION_CEILINGS,
@@ -22,7 +22,7 @@ from app.db.models.atoms import (
     AtomVersion,
 )
 from app.db.models.identity import Member
-from app.db.models.memory import AgentRun, LlmUsage
+from app.db.models.memory import AgentRun, Approval, LlmUsage
 
 
 class AtomError(ValueError):
@@ -332,15 +332,25 @@ class AtomService:
             fields["max_cost_per_day"] = _amount(fields["max_cost_per_day"])
 
     def configure(self, atom_id, **fields):
+        """Change name, description, tier or caps. `status` pauses or kills the atom (killing is
+        final); a draft becomes active only through activate."""
+        status = fields.pop("status", None)
+        if status not in (None, "paused", "killed"):
+            raise AtomError("draft is the starting state; activate a version instead")
         self._validate_config(fields)
-        with self._session(admin=True, own=atom_id) as session:
-            if not session.info["human_admin"] and fields.keys() & BUDGET_FIELDS:
-                raise AtomPermissionError("only an owner/admin may change daily caps")
-            atom = self._atom(session, atom_id, lock=True)
-            for key, value in fields.items():
-                setattr(atom, key, value)
-            session.flush()
-            return _view(atom)
+        result = None
+        if fields:
+            with self._session(admin=True, own=atom_id) as session:
+                if not session.info["human_admin"] and fields.keys() & BUDGET_FIELDS:
+                    raise AtomPermissionError("only an owner/admin may change daily caps")
+                atom = self._atom(session, atom_id, lock=True)
+                for key, value in fields.items():
+                    setattr(atom, key, value)
+                session.flush()
+                result = _view(atom)
+        if status:
+            return self.pause(atom_id) if status == "paused" else self.kill(atom_id)
+        return result if result is not None else self.get(atom_id)
 
     def _configuration(self, session, atom):
         version_id = atom.active_version_id
@@ -982,3 +992,31 @@ class AtomService:
         return self.report_connection(
             connection_id, status=status, status_detail=detail, run_id=run_id
         )
+
+
+def scheduler_workspaces() -> list[str]:
+    """Workspaces the scheduler has work in: an active atom with an enabled schedule, or an
+    approved approval waiting to run. The scheduler polls these instead of every workspace."""
+    from app.db.models.identity import Workspace
+    from app.db.session import service_session
+
+    scheduled = (
+        select(Atom.workspace_id)
+        .join(AtomSchedule, AtomSchedule.atom_id == Atom.id)
+        .where(Atom.status == "active", Atom.deleted_at.is_(None), AtomSchedule.enabled.is_(True))
+    )
+    approved = select(Approval.workspace_id).where(
+        Approval.atom_id.is_not(None),
+        Approval.status == "approved",
+        Approval.execution_run_id.is_(None),
+        Approval.claimed_at.is_(None),
+        Approval.executed_at.is_(None),
+        or_(Approval.expires_at.is_(None), Approval.expires_at > datetime.now(UTC)),
+    )
+    with service_session() as session:
+        rows = session.scalars(
+            select(Workspace.id)
+            .where(Workspace.deleted_at.is_(None), Workspace.id.in_(union(scheduled, approved)))
+            .order_by(Workspace.id)
+        )
+        return [str(row) for row in rows]

@@ -33,9 +33,11 @@ Keep trusted control-plane requests separate from worker requests:
 Base URL: the data engine, normally `http://localhost:8002` locally. Use HTTPS in deployment.
 REST schema is available at `/openapi.json`; interactive docs at `/docs`.
 
-Before integrating, deploy with `DATA_API_KEY` and `MEMORY_TOKEN_SECRET` configured. The AI
-engine receives only the service key in its trusted controller; the signing secret stays in the
-data engine. Follow the [installation requirements](ATOMS_API.md#installation-and-verification):
+Before integrating, deploy with `DATA_API_KEY` configured, plus `TOKEN_JWKS` or `TOKEN_JWKS_URL`
+(the backend's public keys; see [AUTH_DESIGN](AUTH_DESIGN.md)). Tokens are signed by the backend;
+the data engine only verifies and never signs a backend token. `MEMORY_TOKEN_SECRET` is needed
+only while the legacy HS256 `POST /auth/tokens` route is still in use. The AI engine receives only
+the service key in its trusted controller. Follow the [installation requirements](ATOMS_API.md#installation-and-verification):
 PostgreSQL 15+, atom SQL helpers/invariants and a nonowner, nonsuperuser, NOBYPASSRLS runtime role.
 For an existing legacy database, take a backup, then run
 `python -m app.db.upgrade_atoms --app-role flwn_app` with `DATABASE_ADMIN_URL` before app rollout.
@@ -183,6 +185,10 @@ run start, not the scheduled slot's local date. Supply realistic estimates. Esti
 checks do not interrupt external work; enforce the remaining cost/action budget in the worker too.
 
 ### C. Mint a least-privilege token
+
+Legacy route, kept until the backend mints. Target: the backend signs a `typ=run` token (claims in
+[AUTH_DESIGN](AUTH_DESIGN.md)) and the AI engine asks it instead. Either way the worker only ever
+holds the run token. Revoke one with `POST /auth/revocations` `{jti, expires_at}` (service key).
 
 ```http
 POST /auth/tokens

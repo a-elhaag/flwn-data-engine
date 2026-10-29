@@ -1,16 +1,25 @@
-"""Workspace-scoped agent tokens (HS256 JWT).
+"""Workspace-scoped tokens: verified here, signed by the backend (docs/AUTH_DESIGN.pdf).
 
-The workspace lives in the signed token, never in tool arguments, so an agent cannot
+The workspace lives in the signed token, never in tool arguments, so a caller cannot
 reach another workspace by changing a parameter. The token can also name the member it acts as
 (`mem`), which is how writes record who did them.
+
+This service only verifies. Backend tokens are EdDSA or ES256, picked by `kid` from the backend's
+public keys, and carry iss, aud, sub, ws, typ, ctx, scope, iat, exp and jti. The HS256 tokens
+from `mint` (the legacy /auth/tokens route) still verify while TOKEN_ALLOW_LEGACY_HS256 is on.
 """
 
+import json
 import time
 import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 
 import jwt
+from jwt import PyJWKClient, PyJWKSet
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.api import revocation
 from app.config import settings
 
 SCOPE_READ = "memory:read"
@@ -40,7 +49,9 @@ SCOPE_COLLAB_WRITE = "collab:write"
 SCOPE_ADMIN = "admin"  # workspace administrator: satisfies every scope check; never for atoms
 CONTEXTS = frozenset(
     {"personal", "workspace"}
-)  # an atom token's data context: the atom's kind, fixed at mint
+)  # the token's data context. For an atom token it is the atom's kind, fixed at mint
+TYPES = frozenset({"human", "agent", "run", "service"})
+SIGNED_ALGS = ("EdDSA", "ES256")
 ATOM_SCOPES = frozenset(
     {
         SCOPE_ATOMS_READ,
@@ -95,7 +106,11 @@ class Claims:
     member_id: str | None = None  # the member (human or AI agent) this token acts as
     atom_id: str | None = None
     run_id: str | None = None
-    ctx: str | None = None  # "personal" or "workspace" for atom tokens, None otherwise
+    ctx: str | None = None  # "personal" or "workspace"; legacy tokens only carry it for atoms
+    typ: str = "agent"  # human, agent, run or service
+    jti: str | None = None
+    obo: str | None = None  # the human an agent acts for (typ=agent)
+    act: str | None = None  # the service that forwarded the call
 
 
 def _workspace(value) -> str:
@@ -172,8 +187,91 @@ def _atom_claims(member_id, atom_id, run_id, scopes, ttl_seconds, ctx):
 
 
 def verify(token: str) -> Claims:
-    if not enabled():
+    if not settings.AGENT_TOKENS_ENABLED:
         raise TokenError("tokens are disabled")
+    try:
+        alg = jwt.get_unverified_header(token).get("alg")
+    except jwt.PyJWTError:
+        raise TokenError("invalid or expired token") from None
+    if alg in SIGNED_ALGS:
+        return _verify_signed(token)
+    if alg == "HS256" and settings.TOKEN_ALLOW_LEGACY_HS256 and enabled():
+        return _verify_legacy(token)
+    raise TokenError("invalid or expired token")
+
+
+@lru_cache
+def _jwks_client(url: str) -> PyJWKClient:
+    return PyJWKClient(url, cache_keys=True, lifespan=300)
+
+
+def _signing_key(token: str):
+    if settings.TOKEN_JWKS:
+        kid = jwt.get_unverified_header(token).get("kid")
+        for key in PyJWKSet.from_dict(json.loads(settings.TOKEN_JWKS)).keys:
+            if key.key_id == kid:
+                return key.key
+        raise TokenError("invalid or expired token")
+    if settings.TOKEN_JWKS_URL:
+        return _jwks_client(settings.TOKEN_JWKS_URL).get_signing_key_from_jwt(token).key
+    raise TokenError("no token signing keys configured")
+
+
+def _verify_signed(token: str) -> Claims:
+    try:
+        data = jwt.decode(
+            token,
+            _signing_key(token),
+            algorithms=list(SIGNED_ALGS),
+            issuer=settings.TOKEN_ISSUER,
+            audience=settings.TOKEN_AUDIENCE,
+            options={"require": ["exp", "iat", "iss", "aud", "sub", "ws", "typ", "ctx", "jti"]},
+        )
+    except (jwt.PyJWTError, ValueError, KeyError):
+        raise TokenError("invalid or expired token") from None
+    jti = str(data["jti"])
+    try:
+        revoked = revocation.is_revoked(jti)
+    except (SQLAlchemyError, RuntimeError):
+        raise TokenError("token status unavailable") from None  # fail closed
+    if revoked:
+        raise TokenError("token revoked")
+    typ, ctx = data["typ"], data["ctx"]
+    if typ not in TYPES or ctx not in CONTEXTS:
+        raise TokenError("typ or ctx is not valid")
+    member_id, obo = _member(data.get("mem")), _member(data.get("obo"))
+    agent, run = _member(data.get("agent")), _member(data.get("run"))
+    scopes = frozenset(str(data.get("scope", "")).split())
+    ttl_seconds = int(data["exp"]) - int(data["iat"])
+    if typ == "human":
+        ok = member_id and not (obo or agent or run)
+    elif typ == "agent":  # an assistant acting for a human: the audit trail needs both
+        ok = member_id and obo and not run and agent in (None, member_id)
+    elif typ == "run":
+        ok = member_id and agent and run and not obo
+        if ok:
+            _atom_claims(member_id, agent, run, scopes, ttl_seconds, ctx)
+    else:  # service: an engine with no user behind it
+        ok = not (member_id or obo or agent or run)
+    if not ok:
+        raise TokenError(f"claims do not fit typ {typ}")
+    return Claims(
+        workspace_id=_workspace(data["ws"]),
+        scopes=scopes,
+        subject=str(data["sub"]),
+        expires_at=int(data["exp"]),
+        member_id=member_id,
+        atom_id=agent if typ == "run" else None,
+        run_id=run,
+        ctx=ctx,
+        typ=typ,
+        jti=jti,
+        obo=obo,
+        act=str(data["act"]) if data.get("act") else None,
+    )
+
+
+def _verify_legacy(token: str) -> Claims:
     try:
         data = jwt.decode(
             token,
@@ -202,4 +300,5 @@ def verify(token: str) -> Claims:
         atom_id=atom_id,
         run_id=run_id,
         ctx=ctx,
+        typ="run" if atom_id else ("agent" if member_id else "service"),
     )

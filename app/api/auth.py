@@ -4,9 +4,12 @@ Two kinds of caller:
 - Service (X-Data-API-Key): trusted backend. May act on any workspace and run
   maintenance and admin operations. It can name the member it acts for with
   X-Acting-Member-Id (for example the human whose request it is relaying).
-- Agent (Authorization: Bearer <workspace token>): locked to the token's workspace and
-  limited to the token's scopes. Admin operations are never allowed; cleanup needs the memory:maintain scope. Its member
-  comes only from the signed token: the header is ignored, so an agent cannot act as someone else.
+- Token (Authorization: Bearer <workspace token>, signed by the backend): typ is human, agent,
+  run or service. Locked to the token's workspace and limited to the token's scopes. Service-only
+  operations are never allowed; atom administration needs a human token with atoms:admin, and
+  cleanup needs the memory:maintain scope. Its member comes only
+  from the signed token: the header is ignored, so a token cannot act as someone else. An agent
+  token also names the human it acts for (obo); both must be active.
 
 Whoever acts must be an active member of the workspace, checked on every request, so suspending
 a member stops their tokens immediately.
@@ -36,6 +39,10 @@ class Principal:
     atom_id: str | None = None
     run_id: str | None = None
     ctx: str | None = None
+    typ: str | None = None  # human, agent, run or service; None for the service key
+    jti: str | None = None
+    obo: str | None = None  # the human an agent acts for
+    act: str | None = None  # the service that forwarded the call
 
 
 def _service_key_valid(key: str | None) -> bool:
@@ -59,6 +66,10 @@ def _principal(x_data_api_key: str | None, authorization: str | None) -> Princip
             atom_id=claims.atom_id,
             run_id=claims.run_id,
             ctx=claims.ctx,
+            typ=claims.typ,
+            jti=claims.jti,
+            obo=claims.obo,
+            act=claims.act,
         )
     raise HTTPException(status_code=401, detail="Invalid data API key")
 
@@ -117,12 +128,13 @@ def allow(
                 raise HTTPException(status_code=403, detail="Token not valid for workspace")
             if needed not in principal.scopes and tokens.SCOPE_ADMIN not in principal.scopes:
                 raise HTTPException(status_code=403, detail=f"Missing scope {needed}")
-            if principal.member_id and not members.is_active(
-                str(workspace_id), principal.member_id
-            ):
-                raise HTTPException(
-                    status_code=403, detail="Member is not active in this workspace"
-                )
+            # An assistant acts for a human: both must still be active, so suspending the human
+            # stops the assistant's next request too.
+            for acting in (principal.member_id, principal.obo):
+                if acting and not members.is_active(str(workspace_id), acting):
+                    raise HTTPException(
+                        status_code=403, detail="Member is not active in this workspace"
+                    )
         from app.atoms.access import (
             AtomAccessError,
             AtomContext,

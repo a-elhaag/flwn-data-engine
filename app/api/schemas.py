@@ -82,6 +82,11 @@ class TokenResponse(BaseModel):
     expires_at: int
 
 
+class RevocationRequest(BaseModel):
+    jti: NonBlank
+    expires_at: int  # the token's own exp (unix seconds); the entry is dropped after it
+
+
 class FlagConflictRequest(BaseModel):
     decision_id: UUID  # the decision memory's id, from recall
     proposal: Annotated[str, Field(min_length=1, max_length=20000, pattern=r"\S")]

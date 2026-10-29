@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     AGENT_TOKENS_ENABLED: bool = False
     MEMORY_TOKEN_ISSUER: str = "flwn-data-engine"
     MEMORY_TOKEN_MAX_TTL_SECONDS: int = 24 * 60 * 60
+    # Backend-signed tokens (EdDSA or ES256): this service only verifies them. Give the backend's
+    # public keys as a JWKS document (TOKEN_JWKS) or a URL (TOKEN_JWKS_URL); `kid` picks the key.
+    TOKEN_ISSUER: str = "flwn-backend"
+    TOKEN_AUDIENCE: str = "data-engine"
+    TOKEN_JWKS: str = ""
+    TOKEN_JWKS_URL: str = ""
+    # Until the backend mints, the HS256 tokens from /auth/tokens still verify. Turn off to cut over.
+    TOKEN_ALLOW_LEGACY_HS256: bool = True
     # Comma-separated Host headers allowed on /mcp. Blank disables the check.
     MCP_ALLOWED_HOSTS: str = ""
 

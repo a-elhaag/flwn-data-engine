@@ -85,8 +85,10 @@ check), `bash run.sh erd` (rebuild `docs/schema-graph.html`), `bash run.sh opena
   record changes against a member. Tokens are switched off (`AGENT_TOKENS_ENABLED=false`); see D36.
 - With the key, private channels and private teams are visible to an admin, but direct and agent
   channels are visible only to their members. Without a member id, changes are not attributed.
-- Setting `AGENT_TOKENS_ENABLED=true` with `MEMORY_TOKEN_SECRET` turns the token rules back on
-  (D29 to D32).
+- Setting `AGENT_TOKENS_ENABLED=true` turns the token rules back on (D29 to D32). Tokens are
+  signed by the backend (EdDSA or ES256) and verified here with `TOKEN_JWKS` or `TOKEN_JWKS_URL`;
+  see [`docs/AUTH_DESIGN.md`](docs/AUTH_DESIGN.md). HS256 tokens from `/auth/tokens` still verify
+  while `TOKEN_ALLOW_LEGACY_HS256` is on.
 
 Decisions and reasons: [`docs/MERGE_DECISIONS.md`](docs/MERGE_DECISIONS.md).
 
@@ -117,7 +119,10 @@ See `.env.example`. The settings that matter most:
 | `DATABASE_ADMIN_URL` | Administrative schema installation/upgrade connection; required by the Atoms upgrade. Never use it for the API. |
 | `AZURE_STORAGE_ACCOUNT_URL` | Enables the file routes. Access is by Entra ID, no keys. |
 | `AZURE_FOUNDRY_*`, `EMBEDDING_DEPLOYMENT` | Chat and embedding models. |
-| `MEMORY_TOKEN_SECRET` | 32+ characters. Enables agent tokens and `/mcp`. |
+| `MEMORY_TOKEN_SECRET` | 32+ characters. Only for the legacy HS256 `/auth/tokens` route. |
+| `TOKEN_JWKS` / `TOKEN_JWKS_URL` | The backend's public keys (a JWKS document, or its URL). `kid` picks the key. |
+| `TOKEN_ISSUER`, `TOKEN_AUDIENCE` | Expected `iss` (default `flwn-backend`) and this service's name in `aud` (default `data-engine`). |
+| `TOKEN_ALLOW_LEGACY_HS256` | Default true. Turn off once the backend mints. |
 
 Create the least-privilege role with `APP_DB_PASSWORD=... python -m app.db.install --app-role flwn_app`.
 

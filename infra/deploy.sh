@@ -73,6 +73,13 @@ az containerapp env create -n "$CAE" -g "$RG" -l "$LOC" --infrastructure-subnet-
 CAE_DOMAIN=$(az containerapp env show -n "$CAE" -g "$RG" --query properties.defaultDomain -o tsv)
 FQDN="$APP.$CAE_DOMAIN"
 
+# Signed-token auth: the backend's (or dev) public keys and the on-switch. TOKEN_JWKS comes from .env;
+# without it the app stays on the service key alone.
+TOKEN_ENV=()
+if [ -n "$(env_val TOKEN_JWKS)" ]; then
+  TOKEN_ENV=("TOKEN_JWKS=$(env_val TOKEN_JWKS)" AGENT_TOKENS_ENABLED=true)
+fi
+
 APP_ARGS=(
   --image "$ACR.azurecr.io/$IMAGE" --registry-server "$ACR.azurecr.io" --registry-identity "$ID_ID"
   --user-assigned "$ID_ID" --workload-profile-name Consumption
@@ -85,10 +92,13 @@ APP_ARGS=(
              "AZURE_FOUNDRY_ENDPOINT=$(env_val AZURE_FOUNDRY_ENDPOINT)" \
              "AZURE_STORAGE_ACCOUNT_URL=https://$SA.blob.core.windows.net" \
              AZURE_CLIENT_ID="$(az identity show -n "$ID" -g "$RG" --query clientId -o tsv)" \
-             "MCP_ALLOWED_HOSTS=$FQDN"
+             "MCP_ALLOWED_HOSTS=$FQDN" ${TOKEN_ENV[@]+"${TOKEN_ENV[@]}"}
 )
 if az containerapp show -n "$APP" -g "$RG" -o none 2>/dev/null; then
   az containerapp update -n "$APP" -g "$RG" --image "$ACR.azurecr.io/$IMAGE" -o none
+  if [ ${#TOKEN_ENV[@]} -gt 0 ]; then
+    az containerapp update -n "$APP" -g "$RG" --set-env-vars "${TOKEN_ENV[@]}" -o none
+  fi
 else
   az containerapp create -n "$APP" -g "$RG" --environment "$CAE" --tags $TAGS "${APP_ARGS[@]}" -o none
 fi
