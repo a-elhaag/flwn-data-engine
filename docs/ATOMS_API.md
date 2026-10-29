@@ -103,8 +103,19 @@ exactly-once effects in external systems.
 | `skill_attach` | `skills:write` | Attach only within connection ceilings and allowed tool slugs |
 | `atom_connection_report` | `atoms:run` | Report expired/revoked/unknown connections; pause after repeated failures, never reactivate or widen access |
 | `aggregate_read` | `aggregate:read` plus live grant | Aggregate-only access without raw row fields |
+| `atom_create`, `atom_list`, `atom_get`, `atom_configure`, `atom_delete` | `atoms:admin` | Atom administration, same rules as the REST routes. `atom_configure` with `status` pauses or kills |
+| `atom_version_create`, `atom_activate`, `atom_rollback` | `atoms:admin` | Candidate versions and which one is active |
+| `atom_grant_set`, `atom_grant_remove` | `atoms:admin` | Resource grants |
+| `atom_schedule_set`, `atom_schedule_delete` | `atoms:admin` | Add a schedule, or replace one with `schedule_id` |
+| `atom_connection_set`, `atom_connection_delete` | `atoms:admin` | Composio connections, or replace one with `connection_id` |
+| `atom_skill_attach`, `atom_skill_enable` | `atoms:admin` | Attach an exact skill version to an atom, and turn an attachment on or off |
 
 Runtime atom/run identity always comes from the token, not tool arguments.
+
+The `atoms:admin` tools need a human member's token and apply the same role rules as the REST routes
+(owner or admin, or a member's own personal atom). A run token never holds `atoms:admin`, so an atom
+cannot administer itself. Atom ids, schedule ids and the like are ordinary arguments; workspace and
+member still come from the token.
 
 - `atom_load()` returns a flat atom object (no nested `atom` key), plus pinned `version`, live
   `grants`, `schedules` with cursors, `connections` with configuration/health, and enabled

@@ -5,8 +5,9 @@ Two kinds of caller:
   maintenance and admin operations. It can name the member it acts for with
   X-Acting-Member-Id (for example the human whose request it is relaying).
 - Token (Authorization: Bearer <workspace token>, signed by the backend): typ is human, agent,
-  run or service. Locked to the token's workspace and limited to the token's scopes. Admin
-  operations are never allowed; cleanup needs the memory:maintain scope. Its member comes only
+  run or service. Locked to the token's workspace and limited to the token's scopes. Service-only
+  operations are never allowed; atom administration needs a human token with atoms:admin, and
+  cleanup needs the memory:maintain scope. Its member comes only
   from the signed token: the header is ignored, so a token cannot act as someone else. An agent
   token also names the human it acts for (obo); both must be active.
 

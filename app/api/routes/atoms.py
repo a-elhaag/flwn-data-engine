@@ -18,10 +18,11 @@ from app.api.atom_schemas import (
     SkillAttachment,
     StartRun,
 )
-from app.api.auth import WorkspaceId, allow
-from app.atoms.service import AtomService
+from app.api.auth import WorkspaceId, allow, service_only
+from app.atoms.service import AtomService, scheduler_workspaces
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/atoms")
+scheduler_router = APIRouter(prefix="/atoms")
 ADMIN = allow("atoms:admin")
 
 
@@ -42,6 +43,11 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(404, f"not_found: {exc}") from None
     except ValueError as exc:
         raise HTTPException(422, f"{getattr(exc, 'code', 'invalid')}: {exc}") from None
+
+
+@scheduler_router.get("/scheduler-workspaces", dependencies=[Depends(service_only)])
+def list_scheduler_workspaces():
+    return {"workspace_ids": scheduler_workspaces()}
 
 
 @router.post("", status_code=201, dependencies=[ADMIN])
