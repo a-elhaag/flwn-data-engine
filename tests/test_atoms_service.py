@@ -10,8 +10,8 @@ import db_support
 from sqlalchemy import delete, func, select, text, update
 from test_schema import T, add, make_workspace
 
-from app.atoms.access import AtomContext, bind_context
 from app.atoms.service import AtomService
+from app.db.atom_access import AtomContext, bind_context
 from app.db.install import grant_app_role
 from app.db.models.atoms import AtomSchedule, AtomSkill, Skill
 from app.db.models.memory import AgentRun, LlmUsage

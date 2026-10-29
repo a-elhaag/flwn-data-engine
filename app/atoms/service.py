@@ -161,7 +161,7 @@ class AtomService:
         self, *, admin=False, atom_id=None, run_id=None, finishing=False, scheduler=False, own=None
     ):
         # own: an atom id (or True for list/create) a plain member may use when it is their personal atom
-        from app.atoms.access import bind_context, current_context, privileged_atom_session
+        from app.db.atom_access import bind_context, current_context, privileged_atom_session
 
         target = _uuid(atom_id) or self.atom_id
         run_target = _uuid(run_id) or self.run_id

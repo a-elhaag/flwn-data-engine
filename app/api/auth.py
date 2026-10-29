@@ -136,7 +136,7 @@ def allow(
                     raise HTTPException(
                         status_code=403, detail="Member is not active in this workspace"
                     )
-        from app.atoms.access import (
+        from app.db.atom_access import (
             AtomAccessError,
             AtomContext,
             bind_context,

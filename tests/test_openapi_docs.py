@@ -4,9 +4,9 @@ import unittest
 from fastapi.testclient import TestClient
 from pydantic import TypeAdapter
 
-from app.api import examples
-from app.api.operations import OPERATIONS
 from app.main import app
+from app.openapi import examples
+from app.openapi.operations import OPERATIONS
 
 SCHEMA_MODULES = (
     "app.api.schemas",

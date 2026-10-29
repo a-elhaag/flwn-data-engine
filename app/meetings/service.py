@@ -16,6 +16,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.db import events
+from app.db.errors import InvalidReference
 from app.db.models.identity import Member, User
 from app.db.models.meetings import (
     Meeting,
@@ -25,11 +26,10 @@ from app.db.models.meetings import (
     TranscriptSegment,
 )
 from app.db.session import session_for
-from app.meetings import transcripts
 from app.meetings.errors import ConsentMissing, MeetingForbidden, MeetingNotFound, MeetingStateError
-from app.meetings.transcripts import Segment
-from app.storage.errors import InvalidReference
+from app.storage import transcripts
 from app.storage.files import FileService, UploadTicket
+from app.storage.transcripts import Segment
 
 NEXT_STATUS = {
     "scheduled": {"live", "ended", "canceled"},

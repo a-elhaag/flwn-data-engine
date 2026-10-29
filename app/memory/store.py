@@ -13,10 +13,11 @@ from sqlalchemy import text as sql_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, undefer
 
+from app.db.atom_access import current_context, require_row_access
+from app.db.errors import InvalidReference, WorkspaceNotFound
 from app.db.models.memory import Memory
 from app.db.session import tune_vector_search
-from app.memory.errors import MemberNotFound, WorkspaceNotFound
-from app.storage.errors import InvalidReference
+from app.memory.errors import MemberNotFound
 
 
 def to_datetime(timestamp: float) -> datetime:
@@ -62,8 +63,6 @@ class MemoryStore:
         project_id: uuid.UUID | None = None,
         status: str = "active",
     ) -> Memory:
-        from app.atoms.access import current_context, require_row_access
-
         context = current_context()
         memory_id = uuid.uuid4()
         if context is not None:

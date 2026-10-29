@@ -11,7 +11,7 @@ from sqlalchemy.exc import DBAPIError
 from test_atoms_schema import make_atom, make_connection, make_skill, make_version
 from test_schema import T, add, make_workspace
 
-from app.atoms.access import (
+from app.db.atom_access import (
     AtomAccessError,
     AtomContext,
     aggregate_session,

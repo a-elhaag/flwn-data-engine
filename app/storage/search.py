@@ -12,11 +12,11 @@ from dataclasses import dataclass
 from sqlalchemy import and_, func, select
 
 from app.clients import inference
+from app.clients.ranking import fuse, relevance
 from app.config import settings
 from app.db.models.files import File
 from app.db.models.memory import Chunk
 from app.db.session import session_for, tune_vector_search
-from app.memory.recall import fuse, relevance
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,8 @@
 
 from sqlalchemy import func, select
 
-from app.atoms.access import AtomContext, aggregate_session, live_grants
 from app.atoms.skills import _uuid
+from app.db.atom_access import AtomContext, aggregate_session, live_grants
 from app.db.models.atoms import AtomConnection
 from app.db.models.collab import Doc, Message
 from app.db.models.files import File

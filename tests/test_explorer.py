@@ -2,7 +2,7 @@ import unittest
 
 from harness import MemoryHarness
 
-from app.api import explorer
+from app.openapi import explorer
 
 
 class ExplorerMappingTests(unittest.TestCase):

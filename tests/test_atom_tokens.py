@@ -240,7 +240,7 @@ class AtomRestAccessTests(MemoryHarness):
         )
 
     def test_atom_batch_and_direct_store_force_identity_without_changing_human_defaults(self):
-        from app.atoms.access import AtomAccessError, AtomContext, bind_context
+        from app.db.atom_access import AtomAccessError, AtomContext, bind_context
         from app.db.session import session_for
         from app.memory.store import MemoryStore
 
@@ -362,7 +362,7 @@ class AtomRestAccessTests(MemoryHarness):
         )
 
     def test_atom_agent_label_comes_from_the_token_and_others_must_supply_one(self):
-        from app.mcp_tools.server import _agent
+        from app.mcp_tools.memory_tools import _agent
 
         atom = tokens.Claims(
             self.team_a,

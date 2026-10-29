@@ -11,7 +11,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 
-from app.atoms.access import current_context
 from app.atoms.service import (
     AtomPermissionError,
     AtomService,
@@ -23,6 +22,7 @@ from app.atoms.service import (
     _view,
 )
 from app.db import session as db
+from app.db.atom_access import current_context
 from app.db.models.atoms import AtomConnection
 from app.db.models.collab import Notification
 from app.db.models.identity import Member

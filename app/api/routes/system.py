@@ -8,7 +8,7 @@ from app import members
 from app.api import revocation, tokens
 from app.api.auth import _principal, service_only
 from app.api.schemas import RevocationRequest, TokenRequest, TokenResponse
-from app.clients.health import health_check
+from app.health import health_check
 
 router = APIRouter()
 
@@ -41,7 +41,7 @@ def mint_token(request: TokenRequest) -> TokenResponse:
             subject = owner
         elif subject != owner:
             raise HTTPException(status_code=422, detail="subject must be the member's user id")
-    from app.atoms.access import (
+    from app.db.atom_access import (
         AtomAccessError,
         AtomContext,
         atom_kind,
@@ -91,7 +91,7 @@ def token_session(authorization: Annotated[str | None, Header()] = None) -> dict
     """Is this bearer token still good? Signature, expiry, revocation and member status are all
     checked. The Atomizer service asks this on chat calls it does not forward to the data engine."""
     principal = _principal(None, authorization)  # 401 when invalid, expired or revoked
-    from app.atoms.access import is_atom_member
+    from app.db.atom_access import is_atom_member
 
     # Same gate as allow(): an atom is only ever vouched for by the routes it calls, with its run checked.
     if principal.atom_id or (

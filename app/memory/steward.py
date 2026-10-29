@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from app.clients import inference
 from app.config import settings
 from app.db import events
+from app.db.atom_access import current_context
 from app.db.models.memory import Memory
 from app.db.session import advisory_lock, session_for
 from app.memory import prompts, vectorizer
@@ -121,8 +122,6 @@ class MemorySteward:
         self.actor = str(uuid.UUID(actor)) if actor else None
 
     def _log(self, store: MemoryStore, entity_id, action: str, **changes) -> None:
-        from app.atoms.access import current_context
-
         if current_context() is not None:
             import json
 
@@ -168,8 +167,6 @@ class MemorySteward:
         now = time.time()
         threshold = settings.MEMORY_DEDUP_THRESHOLD
         if threshold <= 1.0:
-            from app.atoms.access import current_context
-
             hits = store.search(vector, 1, writable=current_context() is not None)
             if hits and hits[0][1] >= threshold:
                 existing = hits[0][0]

@@ -11,8 +11,8 @@ from sqlalchemy import select, text, update
 from sqlalchemy.exc import IntegrityError
 from test_schema import T, make_workspace
 
-from app.atoms.access import AtomContext, bind_context
 from app.atoms.approvals import ApprovalService
+from app.db.atom_access import AtomContext, bind_context
 from app.db.models.collab import Notification
 from app.db.models.memory import AgentRun, Approval
 from app.db.session import workspace_session

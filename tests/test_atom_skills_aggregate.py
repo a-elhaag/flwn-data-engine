@@ -394,7 +394,7 @@ class SkillsAggregateTest(unittest.TestCase):
         self.chat.assert_not_called()
 
     def test_attached_non_superuser_shared_connection_validates_before_elevation(self):
-        from app.atoms.access import AtomContext, bind_context
+        from app.db.atom_access import AtomContext, bind_context
 
         skill = make_skill(self.conn, self.ws, instructions="Pinned instructions")
         self.service.attach(skill, skill_version=1, atom_id=self.atom["id"])

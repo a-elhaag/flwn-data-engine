@@ -1,12 +1,10 @@
 """Domain errors mapped to HTTP statuses by the API layer."""
 
+from app.db.errors import WorkspaceNotFound  # noqa: F401  (re-exported)
+
 
 class MemoryNotFound(Exception):
     """No memory with this id exists in the workspace."""
-
-
-class WorkspaceNotFound(Exception):
-    """The workspace does not exist, so nothing can be written to it."""
 
 
 class MemberNotFound(Exception):

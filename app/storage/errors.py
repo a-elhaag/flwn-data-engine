@@ -1,5 +1,7 @@
 """File and storage errors, mapped to HTTP statuses by app.api.errors."""
 
+from app.db.errors import InvalidReference  # noqa: F401  (re-exported)
+
 
 class FileNotFound(Exception):
     """No such file in this workspace."""
@@ -19,7 +21,3 @@ class UploadIncomplete(Exception):
 
 class Unindexable(Exception):
     """The file cannot be turned into searchable text. The message says why; it is not a failure."""
-
-
-class InvalidReference(Exception):
-    """The folder, project or team does not exist in this workspace."""

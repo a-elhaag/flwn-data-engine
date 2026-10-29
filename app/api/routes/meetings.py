@@ -16,7 +16,7 @@ from app.api.schemas import (
     UpdateMeetingRequest,
 )
 from app.meetings.service import MeetingPage, MeetingView, RecordingStart, TranscriptView
-from app.meetings.transcripts import Segment
+from app.storage.transcripts import Segment
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/meetings")
 

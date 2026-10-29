@@ -8,14 +8,14 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 
 from app.api import errors
-from app.api import explorer as explorer_page
-from app.api.business_spec import business_openapi
-from app.api.examples import EXAMPLES
-from app.api.field_docs import COMMON, FIELD_DOCS
-from app.api.operations import OPERATIONS
 from app.api.routes import router
 from app.config import settings
 from app.mcp_tools.server import build_app, create_mcp
+from app.openapi import explorer as explorer_page
+from app.openapi.business_spec import business_openapi
+from app.openapi.examples import EXAMPLES
+from app.openapi.field_docs import COMMON, FIELD_DOCS
+from app.openapi.operations import OPERATIONS
 from app.storage import indexer
 from app.storage.blobs import get_storage
 

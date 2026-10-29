@@ -2,8 +2,8 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from app.api.business_spec import BUSINESS_TAGS, _refs
 from app.main import app
+from app.openapi.business_spec import BUSINESS_TAGS, _refs
 
 
 class BusinessSpecTests(unittest.TestCase):

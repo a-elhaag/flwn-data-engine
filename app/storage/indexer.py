@@ -29,8 +29,7 @@ from app.db.models.files import File
 from app.db.models.meetings import Recording
 from app.db.models.memory import Chunk
 from app.db.session import session_for, workspace_session
-from app.meetings import transcripts
-from app.storage import extract, media
+from app.storage import extract, media, transcripts
 from app.storage.blobs import BlobStorage
 from app.storage.chunking import Section, chunk_sections
 from app.storage.errors import Unindexable

@@ -35,7 +35,8 @@ app/
     auth.py, tokens.py service key and workspace-locked, scoped tokens
     errors.py          domain errors mapped to HTTP statuses
   meetings/            meetings, consent, recordings, transcripts
-  mcp_tools/           MCP server for agents, mounted at /mcp
+  openapi/             Swagger metadata: field docs, examples, summaries, the business slice, the explorer page
+  mcp_tools/           MCP server for agents, mounted at /mcp (server.py plus memory, context, atom and admin tools)
   memory/              Memory Steward
     steward.py         write, read, revise, sweep, organize
     store.py           every SQL statement for memories

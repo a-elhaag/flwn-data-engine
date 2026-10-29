@@ -26,9 +26,9 @@ from sqlalchemy.exc import IntegrityError
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.api import auth, tokens
-from app.api.examples import EXAMPLES
 from app.db.base import Base
 from app.db.session import session_for
+from app.openapi.examples import EXAMPLES
 
 CRUD_TABLES = {
     "links",

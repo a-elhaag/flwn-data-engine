@@ -20,6 +20,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.db.atom_access import AtomAccessError, current_context
+
 
 class _DatabaseSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -66,8 +68,6 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
 
     `service=True` lifts the workspace restriction for trusted admin work that spans workspaces.
     """
-    from app.atoms.access import AtomAccessError, current_context
-
     atom = current_context()
     viewer = None if service else _viewer.get()
     if atom and (service or str(workspace_id) != str(atom.workspace_id)):

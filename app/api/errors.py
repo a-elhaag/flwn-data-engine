@@ -3,7 +3,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.atoms.access import AtomAccessError
+from app.db.atom_access import AtomAccessError
 from app.decisions.errors import ConflictNotFound, ConflictStateError, HumanRequired
 from app.meetings.errors import (
     ConsentMissing,
