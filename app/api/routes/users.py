@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api.auth import service_only
-from app.api.identity_schemas import UserCreate, UserOut, UserPage, UserUpdate
 from app.api.paging import split_page
-from app.identity.users import UserConflict, UserNotFound, UserService
+from app.api.schemas.identity import UserCreate, UserOut, UserPage, UserUpdate
+from app.domain.identity.users import UserConflict, UserNotFound, UserService
 
 router = APIRouter(prefix="/users", dependencies=[Depends(service_only)])
 

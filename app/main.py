@@ -8,23 +8,23 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 
 from app.api import errors
-from app.api import explorer as explorer_page
-from app.api.business_spec import business_openapi
-from app.api.examples import EXAMPLES
-from app.api.field_docs import COMMON, FIELD_DOCS
-from app.api.operations import OPERATIONS
 from app.api.routes import router
-from app.config import settings
-from app.mcp_tools.server import build_app, create_mcp
-from app.storage import indexer
-from app.storage.blobs import get_storage
+from app.core.config import settings
+from app.domain.storage import indexer
+from app.domain.storage.blobs import get_storage
+from app.integrations.mcp.server import build_app, create_mcp
+from app.openapi import explorer as explorer_page
+from app.openapi.business_spec import business_openapi
+from app.openapi.examples import EXAMPLES
+from app.openapi.field_docs import COMMON, FIELD_DOCS
+from app.openapi.operations import OPERATIONS
 
 DESCRIPTION = """
 REST API for the flwn data engine: workspace memory, files, meetings, atoms, planning and collaboration.
 
 **Authentication.** Two kinds of caller:
 
-- **Agents** send `Authorization: Bearer <token>`. Mint a token with `POST /auth/tokens`; its scopes
+- **Agents** send `Authorization: Bearer <token>`, a token signed by the backend; its scopes
   decide which endpoints it may call, and it is locked to one workspace.
 - **The trusted backend** sends the service key in `X-Data-Api-Key`, and `X-Acting-Member-Id` to act
   for a member. Endpoints marked "Trusted backend only" accept nothing else.

@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow, author, viewer
-from app.api.collab_schemas import (
+from app.api.paging import split_page
+from app.api.schemas.collab import (
     BlockCreate,
     BlockOut,
     BlockPage,
@@ -31,8 +32,7 @@ from app.api.collab_schemas import (
     MessagePage,
     MessageUpdate,
 )
-from app.api.paging import split_page
-from app.collaboration.service import (
+from app.domain.collaboration.service import (
     ChannelService,
     CollaborationConflict,
     CollaborationForbidden,

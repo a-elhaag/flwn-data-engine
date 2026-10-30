@@ -6,8 +6,8 @@ from uuid import UUID
 from fastapi import APIRouter, Query
 
 from app.api.deps import ADMIN, CONFLICTS_READ, CONFLICTS_WRITE, Conflicts
-from app.api.schemas import FlagConflictRequest, ResolveConflictRequest
-from app.decisions.service import ConflictPage, ConflictView
+from app.api.schemas.common import FlagConflictRequest, ResolveConflictRequest
+from app.domain.decisions.service import ConflictPage, ConflictView
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/decision-conflicts")
 

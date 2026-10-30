@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.api.auth import Principal, WorkspaceId
 from app.api.deps import FILES_DELETE, FILES_READ, FILES_WRITE, Files
-from app.api.schemas import FileKind, SearchFilesRequest, StartUploadRequest
-from app.storage.files import DownloadLink, FilePage, FileRecord, UploadTicket
-from app.storage.search import FileHit, search_files
+from app.api.schemas.common import FileKind, SearchFilesRequest, StartUploadRequest
+from app.domain.storage.files import DownloadLink, FilePage, FileRecord, UploadTicket
+from app.domain.storage.search import FileHit, search_files
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/files")
 

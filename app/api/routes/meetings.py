@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 
 from app.api.auth import Principal
 from app.api.deps import MEETINGS_READ, MEETINGS_WRITE, Meetings
-from app.api.schemas import (
+from app.api.schemas.common import (
     ConsentRequest,
     CreateMeetingRequest,
     IngestTranscriptRequest,
@@ -15,8 +15,8 @@ from app.api.schemas import (
     StartRecordingRequest,
     UpdateMeetingRequest,
 )
-from app.meetings.service import MeetingPage, MeetingView, RecordingStart, TranscriptView
-from app.meetings.transcripts import Segment
+from app.domain.meetings.service import MeetingPage, MeetingView, RecordingStart, TranscriptView
+from app.domain.storage.transcripts import Segment
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/meetings")
 

@@ -26,9 +26,9 @@ from sqlalchemy.exc import IntegrityError
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.api import auth, tokens
-from app.api.examples import EXAMPLES
 from app.db.base import Base
 from app.db.session import session_for
+from app.openapi.examples import EXAMPLES
 
 CRUD_TABLES = {
     "links",
@@ -253,7 +253,6 @@ def _register(table, models: dict) -> dict:
             raise HTTPException(404, f"{label} not found")
         return row
 
-    # ---- list ------------------------------------------------------------------------------
     def list_rows(workspace_id, request, limit: int = 50, offset: int = 0):
         with session_for(str(workspace_id)) as session:
             query = select(model)
@@ -301,7 +300,6 @@ def _register(table, models: dict) -> dict:
         "Paginated with `limit` and `offset`.",
     )
 
-    # ---- get one ---------------------------------------------------------------------------
     def get_row(workspace_id, request, **keys):
         with session_for(str(workspace_id)) as session:
             row = lookup(session, workspace_id, keys)
@@ -324,7 +322,6 @@ def _register(table, models: dict) -> dict:
     if table.name not in CRUD_TABLES:
         return summaries
 
-    # ---- create ----------------------------------------------------------------------------
     def create_row(workspace_id, request, body):
         data = body.model_dump(exclude_unset=True)
         if has_actor:
@@ -359,7 +356,6 @@ def _register(table, models: dict) -> dict:
         "Missing required fields are a 422.",
     )
 
-    # ---- update ----------------------------------------------------------------------------
     def update_row(workspace_id, request, body, **keys):
         changes = body.model_dump(exclude_unset=True)
         with session_for(str(workspace_id)) as session:
@@ -395,7 +391,6 @@ def _register(table, models: dict) -> dict:
         "Only the fields you send change.",
     )
 
-    # ---- delete ----------------------------------------------------------------------------
     def delete_row(workspace_id, request, **keys):
         with session_for(str(workspace_id)) as session:
             row = lookup(session, workspace_id, keys)

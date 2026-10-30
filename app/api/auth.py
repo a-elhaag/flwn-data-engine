@@ -22,9 +22,10 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Path, Request
 
-from app import members
 from app.api import tokens
-from app.config import settings
+from app.core.config import settings
+from app.db.session import bind_viewer
+from app.domain.identity import viewer as members
 
 WorkspaceId = Annotated[UUID, Path()]
 
@@ -106,7 +107,7 @@ def allow(
     """Dependency factory. scope=None means service callers only.
 
     write_scope: the scope for requests that change data (any method but GET and HEAD); scope
-    then covers reads only. The service key passes every scope check (D36).
+    then covers reads only. The service key passes every scope check.
     A token holding the `admin` scope passes every scope check except scope=None.
     """
 
@@ -135,7 +136,7 @@ def allow(
                     raise HTTPException(
                         status_code=403, detail="Member is not active in this workspace"
                     )
-        from app.atoms.access import (
+        from app.db.atom_access import (
             AtomAccessError,
             AtomContext,
             bind_context,
@@ -163,7 +164,14 @@ def allow(
                 )
         request.state.principal = principal
         # Async yield keeps the ContextVar in the event-loop task copied into sync endpoints.
-        with bind_context(context):
+        # Each non-admin member sees only their own private rows (db/sql/60_member_privacy.sql).
+        # The service key, an admin token and atoms (own rules above) have no per-member limit.
+        limited = not (
+            context
+            or (principal.service and not principal.member_id)
+            or tokens.SCOPE_ADMIN in principal.scopes
+        )
+        with bind_context(context), bind_viewer((principal.member_id or "") if limited else None):
             yield principal
 
     return Depends(dependency)

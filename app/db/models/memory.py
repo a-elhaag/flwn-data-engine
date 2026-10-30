@@ -223,9 +223,6 @@ class Chunk(IdPk, Tenant, Stamps, Base):
     )
 
 
-# ------------------------------------------------------------ agents
-
-
 class AgentRun(IdPk, Tenant, Created, Base):
     """One invocation of an agent (Ghost Engineer, Decision Ledger, ...)."""
 

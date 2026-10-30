@@ -6,11 +6,13 @@ from unittest.mock import patch
 
 import db_support
 import env  # noqa: F401  (sets the environment the app needs to import)
+import signing
+from factories import JWKS
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.api import tokens
-from app.config import settings
+from app.core.config import settings
 from app.db.session import workspace_session
 from app.main import create_app
 
@@ -66,7 +68,7 @@ class WorkspaceTokenClient(TestClient):
         if found and "Authorization" not in headers:
             workspace = found.group(1)
             member = self.member_for(workspace) if self.member_for else None
-            token, _ = tokens.mint(workspace, tokens.AGENT_SCOPES, "test-admin", 300, member)
+            token, _ = signing.mint(workspace, tokens.AGENT_SCOPES, "test-admin", 300, member)
             headers["Authorization"] = f"Bearer {token}"
             headers["X-Data-API-Key"] = ""
         return super().request(method, url, headers=headers, **kwargs)
@@ -82,15 +84,15 @@ class MemoryHarness(unittest.TestCase):
         self.chat = ChatStub()
         for mock_patch in (
             patch("app.db.session.engine", return_value=self.engine),
-            patch("app.clients.inference.embed", return_value=unit(0)),
+            patch("app.integrations.inference.embed", return_value=unit(0)),
             patch(
-                "app.clients.inference.embed_many",
+                "app.integrations.inference.embed_many",
                 side_effect=lambda texts: [unit(0) for _ in texts],
             ),
-            patch("app.clients.inference.chat", side_effect=self.chat),
+            patch("app.integrations.inference.chat", side_effect=self.chat),
             patch.object(settings, "MEMORY_DEDUP_THRESHOLD", 1.1),
             patch.object(settings, "MEMORY_RERANK", False),  # tests that want it turn it on
-            patch.object(settings, "MEMORY_TOKEN_SECRET", TOKEN_SECRET),
+            patch.object(settings, "TOKEN_JWKS", JWKS),
             patch.object(settings, "AGENT_TOKENS_ENABLED", True),  # token tests; off in production
         ):
             mock_patch.start()
@@ -100,8 +102,6 @@ class MemoryHarness(unittest.TestCase):
         self.client = self.client_class(create_app(), headers={"X-Data-API-Key": "test-data-key"})
         self.client.__enter__()
         self.addCleanup(self.client.__exit__, None, None, None)
-
-    # -- database helpers (service session: they bypass the workspace restriction) ----
 
     def sql(self, statement: str, **params):
         with workspace_session(self.engine, "", service=True) as session:
@@ -160,8 +160,6 @@ class MemoryHarness(unittest.TestCase):
             "select count(*) as n from memories where workspace_id = :w", w=workspace_id
         )[0]["n"]
 
-    # -- API helpers --------------------------------------------------------------
-
     def remember(self, workspace: str) -> str:
         response = self.client.post(
             f"/workspaces/{workspace}/memories",
@@ -195,7 +193,7 @@ class CrudHarness(MemoryHarness):
 
     def token_headers(self, workspace: str, *scopes: str, member: str | None = None) -> dict:
         """Authorization headers for a token with exactly these scopes."""
-        token, _ = tokens.mint(workspace, set(scopes), "test-user", 300, member)
+        token, _ = signing.mint(workspace, set(scopes), "test-user", 300, member)
         return {"Authorization": f"Bearer {token}", "X-Data-API-Key": ""}
 
     NO_TOKEN = {"Authorization": "", "X-Data-API-Key": ""}

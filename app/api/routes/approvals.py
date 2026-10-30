@@ -5,15 +5,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 
-from app.api.approval_schemas import (
+from app.api.auth import WorkspaceId, allow
+from app.api.routes.atoms import _call
+from app.api.schemas.approvals import (
     ApprovalBootstrap,
     ApprovalDecision,
     ApprovalOutcome,
     CreateApproval,
 )
-from app.api.auth import WorkspaceId, allow
-from app.api.routes.atoms import _call
-from app.atoms.approvals import ApprovalService
+from app.domain.atoms.approvals import ApprovalService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals")
 

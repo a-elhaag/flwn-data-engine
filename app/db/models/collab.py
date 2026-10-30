@@ -20,8 +20,6 @@ from app.db.base import (
     tfk,
 )
 
-# ----------------------------------------------------------- docs (Notion)
-
 
 class Collection(IdPk, Tenant, Stamps, SoftDelete, Base):
     """A Notion database: a schema of properties. Each row is a doc."""
@@ -172,9 +170,6 @@ class DocVersion(IdPk, Tenant, Created, Base):
     )
 
 
-# ------------------------------------------------------------------ chat
-
-
 class Channel(IdPk, Tenant, Stamps, Base):
     __tablename__ = "channels"
 
@@ -241,9 +236,6 @@ class Message(IdPk, Tenant, Created, Base):
             postgresql_where=text("parent_message_id is not null"),
         ),
     )
-
-
-# --------------------------------------------------------------- comments
 
 
 class Comment(IdPk, Tenant, Stamps, Base):
@@ -344,9 +336,6 @@ class Reaction(IdPk, Tenant, Created, Base):
         tfk("message_id", "messages", "cascade"),
         tfk("task_id", "tasks", "cascade"),
     )
-
-
-# ------------------------------------------------- links, mentions, social
 
 
 class Link(IdPk, Tenant, Created, Base):
