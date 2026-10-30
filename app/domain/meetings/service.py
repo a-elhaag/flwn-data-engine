@@ -26,10 +26,15 @@ from app.db.models.meetings import (
     TranscriptSegment,
 )
 from app.db.session import session_for
-from app.meetings.errors import ConsentMissing, MeetingForbidden, MeetingNotFound, MeetingStateError
-from app.storage import transcripts
-from app.storage.files import FileService, UploadTicket
-from app.storage.transcripts import Segment
+from app.domain.meetings.errors import (
+    ConsentMissing,
+    MeetingForbidden,
+    MeetingNotFound,
+    MeetingStateError,
+)
+from app.domain.storage import transcripts
+from app.domain.storage.files import FileService, UploadTicket
+from app.domain.storage.transcripts import Segment
 
 NEXT_STATUS = {
     "scheduled": {"live", "ended", "canceled"},
@@ -143,8 +148,6 @@ class MeetingService:
                 ) from None
             raise
 
-    # -- access -----------------------------------------------------------------------------------
-
     def _meeting(
         self, session, meeting_id: str, *, host_only: bool = False, lock: bool = False
     ) -> Meeting:
@@ -217,8 +220,6 @@ class MeetingService:
                 for p, name in rows
             ],
         )
-
-    # -- meetings ------------------------------------------------------------------------------------
 
     def create(
         self,
@@ -343,8 +344,6 @@ class MeetingService:
             self._log(session, meeting.id, "invited", members=[str(m) for m in member_ids])
             return self._view(session, meeting)
 
-    # -- consent and recordings --------------------------------------------------------------------------
-
     def consent(self, meeting_id: str, status: str) -> MeetingView:
         """A participant answers for themselves, and only for themselves."""
         with session_for(self.workspace_id) as session:
@@ -421,8 +420,6 @@ class MeetingService:
             self._flush(session)
             self._log(session, meeting_id, "recording_started", file_id=ticket.file_id)
             return RecordingStart(str(recording.id), ticket)
-
-    # -- transcripts ------------------------------------------------------------------------------------------
 
     def ingest_transcript(
         self, meeting_id: str, segments: list[Segment], language: str | None = None

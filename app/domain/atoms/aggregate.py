@@ -2,7 +2,6 @@
 
 from sqlalchemy import func, select
 
-from app.atoms.skills import _uuid
 from app.db.atom_access import AtomContext, aggregate_session, live_grants
 from app.db.models.atoms import AtomConnection
 from app.db.models.collab import Doc, Message
@@ -10,6 +9,7 @@ from app.db.models.files import File
 from app.db.models.meetings import Meeting
 from app.db.models.memory import Memory
 from app.db.models.planning import Project, Task
+from app.domain.atoms.skills import _uuid
 
 # Grouping arbitrary strings (titles, labels, JSON properties, toolkits) can disclose raw data.
 RESOURCES = {

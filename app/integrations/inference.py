@@ -13,8 +13,8 @@ from functools import lru_cache
 
 import httpx
 
-from app.clients.resilience import RateLimiter, call_with_retries
-from app.config import settings
+from app.core.config import settings
+from app.integrations.resilience import RateLimiter, call_with_retries
 
 API_VERSION = "2024-05-01-preview"
 EMBED_BATCH_SIZE = 16

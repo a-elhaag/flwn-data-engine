@@ -16,8 +16,8 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobSasPermissions, BlobServiceClient, generate_blob_sas
 
-from app.config import settings
-from app.storage.errors import StorageNotConfigured, Unindexable
+from app.core.config import settings
+from app.domain.storage.errors import StorageNotConfigured, Unindexable
 
 # One container per kind of content, so lifecycle and access rules can differ.
 WORKSPACE_FILES = "workspace-files"

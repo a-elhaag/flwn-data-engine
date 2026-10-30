@@ -17,7 +17,7 @@ from app.db.atom_access import current_context, require_row_access
 from app.db.errors import InvalidReference, WorkspaceNotFound
 from app.db.models.memory import Memory
 from app.db.session import tune_vector_search
-from app.memory.errors import MemberNotFound
+from app.domain.memory.errors import MemberNotFound
 
 
 def to_datetime(timestamp: float) -> datetime:
@@ -41,8 +41,6 @@ class MemoryStore:
     def _visible(self, include_superseded: bool = False):
         query = select(Memory).where(Memory.workspace_id == self.workspace_id)
         return query if include_superseded else query.where(Memory.status != "superseded")
-
-    # -- write ---------------------------------------------------------------
 
     def insert(
         self,
@@ -158,8 +156,6 @@ class MemoryStore:
         return self.session.execute(
             delete(Memory).where(Memory.workspace_id == self.workspace_id)
         ).rowcount
-
-    # -- read ----------------------------------------------------------------
 
     def get(self, memory_id: str | uuid.UUID, *, with_raw: bool = False) -> Memory | None:
         query = select(Memory).where(

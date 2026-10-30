@@ -6,8 +6,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from app.config import settings
-from app.storage.errors import Unindexable
+from app.core.config import settings
+from app.domain.storage.errors import Unindexable
 
 AUDIO_MIME = {
     "audio/wav", "audio/x-wav", "audio/wave", "audio/mpeg", "audio/mp3", "audio/ogg", "audio/opus",

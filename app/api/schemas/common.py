@@ -6,8 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.api import tokens
-
 NonBlank = Annotated[str, Field(min_length=1, max_length=100000, pattern=r"\S")]
 
 
@@ -61,25 +59,6 @@ class CleanupResponse(BaseModel):
 class OrganizeRequest(BaseModel):
     dry_run: bool = False
     max_clusters: int = Field(default=50, ge=1, le=500)
-
-
-# A token gets only what is asked for. Without a request it can read, and nothing else.
-DEFAULT_SCOPES = sorted({tokens.SCOPE_READ, tokens.SCOPE_FILES_READ})
-
-
-class TokenRequest(BaseModel):
-    workspace_id: UUID
-    member_id: UUID | None = None  # the member the token acts as; recommended
-    atom_id: UUID | None = None
-    run_id: UUID | None = None
-    subject: NonBlank = "agent"
-    scopes: list[str] = Field(default_factory=lambda: list(DEFAULT_SCOPES))
-    ttl_seconds: int = Field(default=3600, ge=1)
-
-
-class TokenResponse(BaseModel):
-    token: str
-    expires_at: int
 
 
 class RevocationRequest(BaseModel):

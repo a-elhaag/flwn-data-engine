@@ -13,13 +13,13 @@ import math
 import time
 from dataclasses import dataclass
 
-from app.clients import inference
-from app.clients.ranking import FUSION_K, fuse, relevance  # noqa: F401  (re-exported)
-from app.config import settings
+from app.core.config import settings
 from app.db.models.memory import Memory
 from app.db.session import session_for
-from app.memory import prompts
-from app.memory.store import MemoryStore, stored_at
+from app.domain.memory import prompts
+from app.domain.memory.store import MemoryStore, stored_at
+from app.integrations import inference
+from app.integrations.ranking import FUSION_K, fuse, relevance  # noqa: F401  (re-exported)
 
 logger = logging.getLogger(__name__)
 RECENCY_FLOOR = 0.5

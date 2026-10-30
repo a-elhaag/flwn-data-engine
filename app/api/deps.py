@@ -6,11 +6,11 @@ from fastapi import Depends, Request
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, allow
-from app.decisions.service import ConflictService
-from app.meetings.service import MeetingService
-from app.memory.steward import MemorySteward
-from app.storage.blobs import BlobStorage, get_storage
-from app.storage.files import FileService
+from app.domain.decisions.service import ConflictService
+from app.domain.meetings.service import MeetingService
+from app.domain.memory.steward import MemorySteward
+from app.domain.storage.blobs import BlobStorage, get_storage
+from app.domain.storage.files import FileService
 
 
 def _actor(request: Request) -> str | None:

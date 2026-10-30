@@ -16,8 +16,8 @@ from app.db import events
 from app.db.models.identity import Member
 from app.db.models.memory import Decision, DecisionConflict, Memory
 from app.db.session import session_for
-from app.decisions.errors import ConflictNotFound, ConflictStateError, HumanRequired
-from app.memory.errors import MemoryNotFound
+from app.domain.decisions.errors import ConflictNotFound, ConflictStateError, HumanRequired
+from app.domain.memory.errors import MemoryNotFound
 
 
 @dataclass

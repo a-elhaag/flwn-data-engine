@@ -7,8 +7,8 @@ background worker does.
 
 from dataclasses import dataclass
 
-from app.clients import inference
-from app.memory import prompts
+from app.domain.memory import prompts
+from app.integrations import inference
 
 
 @dataclass

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request
 
 from app.api.auth import WorkspaceId
 from app.api.routes.atoms import ADMIN, _call
-from app.atoms.skills import SkillService
+from app.domain.atoms.skills import SkillService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/skills", dependencies=[ADMIN])
 

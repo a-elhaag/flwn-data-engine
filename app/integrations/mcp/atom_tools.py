@@ -9,13 +9,13 @@ from mcp.server.fastmcp import Context
 from pydantic import Field
 
 from app.api.tokens import Claims
-from app.mcp_tools.core import READ_ONLY, WRITES, Label, Text, _guarded, _tool
+from app.integrations.mcp.core import READ_ONLY, WRITES, Label, Text, _guarded, _tool
 
 logger = logging.getLogger(__name__)
 
 
 def _atom_service(claims: Claims):
-    from app.atoms.service import AtomService
+    from app.domain.atoms.service import AtomService
 
     if not claims.atom_id or not claims.run_id:
         raise PermissionError("This tool requires a run-scoped atom token")
@@ -145,7 +145,7 @@ async def atom_connection_report(
 
 
 def _skill_service(claims: Claims):
-    from app.atoms.skills import SkillService
+    from app.domain.atoms.skills import SkillService
 
     return SkillService(
         claims.workspace_id, actor=claims.member_id, atom_id=claims.atom_id, run_id=claims.run_id
@@ -232,7 +232,7 @@ async def aggregate_read(
     group_by: str | None = None,
     trend: str | None = None,
 ) -> dict:
-    from app.atoms.aggregate import AggregateService
+    from app.domain.atoms.aggregate import AggregateService
 
     return await _guarded(
         ctx,
@@ -266,7 +266,7 @@ async def atom_approval_create(
     assigned_to: uuid.UUID | None = None,
     expires_at: datetime | None = None,
 ) -> dict:
-    from app.atoms.approvals import ApprovalService
+    from app.domain.atoms.approvals import ApprovalService
 
     return await _guarded(
         ctx,
@@ -289,7 +289,7 @@ async def atom_approval_create(
 
 
 def _approval_service(claims: Claims):
-    from app.atoms.approvals import ApprovalService
+    from app.domain.atoms.approvals import ApprovalService
 
     return ApprovalService(
         claims.workspace_id,

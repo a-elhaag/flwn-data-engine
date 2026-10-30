@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.clients.inference import Transcription
 from app.db.models.meetings import Transcript, TranscriptSegment
+from app.integrations.inference import Transcription
 
 
 @dataclass(frozen=True)

@@ -29,7 +29,6 @@ COMMON = {
 }
 
 FIELD_DOCS: dict[str, dict[str, str]] = {
-    # ---- memory -----------------------------------------------------------------------------
     "RememberRequest": {
         "text": "What to remember. Written as a sentence or a short note.",
         "source": "Where this came from, for example `chat`, `meeting` or `ticket`.",
@@ -103,7 +102,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "never_recalled": "Memories that recall has never returned.",
         "by_source": "Count of memories per source.",
     },
-    # ---- conflicts ----------------------------------------------------------------------------
     "FlagConflictRequest": {
         "decision_id": "Id of the existing decision memory that the proposal may contradict.",
         "proposal": "The new idea or change being proposed.",
@@ -129,7 +127,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "resolution_note": "The note given when it was resolved.",
     },
     "ConflictPage": {"items": "The conflict flags on this page."},
-    # ---- files -----------------------------------------------------------------------------------
     "SearchFilesRequest": {
         "query": "What to look for in the files, in natural language.",
         "limit": "How many passages to return (1 to 50).",
@@ -185,7 +182,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "url": "Short-lived link to download the file.",
         "expires_at": "When the link stops working.",
     },
-    # ---- meetings ---------------------------------------------------------------------------------
     "CreateMeetingRequest": {
         "title": "Meeting title, up to 300 characters.",
         "participants": "Member ids invited to the meeting.",
@@ -263,25 +259,10 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
     },
     "InviteRequest": {"member_ids": "Members to invite. Between 1 and 200."},
     "ConsentRequest": {"status": "`granted` to agree to be recorded, or `declined`."},
-    # ---- token (dormant; see D36) ---------------------------------------------------------------
-    "TokenRequest": {
-        "workspace_id": "Workspace the token works in. The token cannot reach any other.",
-        "member_id": "Member the token acts as. Recommended: it sets who is recorded as the author.",
-        "atom_id": "Atom this run belongs to. Only for atom run tokens.",
-        "run_id": "Atom run this token is for. Only for atom run tokens.",
-        "subject": "Who the token is issued to. For a human member this must be their user id.",
-        "scopes": "What the token may do, for example `memory:read` or `planning:write`.",
-        "ttl_seconds": "How long the token lasts, in seconds.",
-    },
     "RevocationRequest": {
         "jti": "The token's `jti` claim. The token stops working at once.",
         "expires_at": "The token's own `exp`, in Unix seconds. The entry is dropped after it.",
     },
-    "TokenResponse": {
-        "token": "The signed token. Send it as `Authorization: Bearer <token>`.",
-        "expires_at": "When the token expires, as seconds since the Unix epoch.",
-    },
-    # ---- workspaces, members, teams -----------------------------------------------------------
     "WorkspaceCreate": {
         "name": "Workspace name.",
         "slug": "URL-safe name, unique ignoring case. Letters, digits and single hyphens.",
@@ -369,7 +350,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
     "TeamMembersUpdate": {
         "member_ids": "The full new list of team members. Replaces the current list."
     },
-    # ---- users ----------------------------------------------------------------------------------------
     "UserCreate": {
         "email": "Email address. Unique ignoring case.",
         "name": "Full name.",
@@ -392,7 +372,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "updated_at": "When the account was last changed.",
     },
     "UserPage": {"items": "The users on this page."},
-    # ---- projects, work items, tasks, sprints ---------------------------------------------------------
     "ProjectCreate": {
         "key": "Short code used in task identifiers, for example `FLWN` gives `FLWN-12`. 1 to 10 uppercase letters and digits, starting with a letter.",
         "name": "Project name.",
@@ -549,7 +528,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "updated_at": "When the sprint was last changed.",
     },
     "SprintPage": {"items": "The sprints on this page."},
-    # ---- collaboration: comments, docs, channels, messages -------------------------------------------
     "CommentCreate": {
         "target_type": "What the comment is on: `task`, `work_item`, `project`, `project_update`, `sprint` or `doc`.",
         "target_id": "Id of the thing being commented on.",
@@ -721,7 +699,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "created_at": "When it was sent.",
     },
     "MessagePage": {"items": "The messages on this page."},
-    # ---- atoms (AI workers) ------------------------------------------------------------------------
     "CreateAtom": {
         "name": "Name of the atom.",
         "description": "What the atom does. Null if none.",
@@ -823,7 +800,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "status": "`succeeded`, `failed` or `unknown` (when the result could not be confirmed).",
         "result": "What happened. Free-form JSON.",
     },
-    # ---- errors --------------------------------------------------------------------------------------
     "HTTPValidationError": {"detail": "The problems found, one entry per field."},
     "ValidationError": {
         "loc": "Where the problem is: the path to the field in the request.",

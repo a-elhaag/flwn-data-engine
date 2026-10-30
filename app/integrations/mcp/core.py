@@ -10,11 +10,11 @@ from mcp.server.fastmcp import Context
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from app import members
 from app.api import tokens
 from app.api.tokens import Claims
-from app.atoms.service import AtomError, AtomNotFound
-from app.memory.errors import MaintenanceBusy, MemoryNotFound, WorkspaceNotFound
+from app.domain.atoms.service import AtomError, AtomNotFound
+from app.domain.identity import viewer as members
+from app.domain.memory.errors import MaintenanceBusy, MemoryNotFound, WorkspaceNotFound
 
 logger = logging.getLogger(__name__)
 

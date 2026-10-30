@@ -8,9 +8,14 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import actor, allow, service_only
-from app.api.identity_schemas import WorkspaceCreate, WorkspaceOut, WorkspacePage, WorkspaceUpdate
 from app.api.paging import split_page
-from app.identity.workspaces import WorkspaceConflict, WorkspaceNotFound, WorkspaceService
+from app.api.schemas.identity import (
+    WorkspaceCreate,
+    WorkspaceOut,
+    WorkspacePage,
+    WorkspaceUpdate,
+)
+from app.domain.identity.workspaces import WorkspaceConflict, WorkspaceNotFound, WorkspaceService
 
 router = APIRouter(prefix="/workspaces")
 # Creating and listing workspaces happens before any workspace token exists: backend only.

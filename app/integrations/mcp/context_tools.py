@@ -9,11 +9,11 @@ from pydantic import Field
 
 from app.api import tokens
 from app.api.tokens import Claims
-from app.decisions.service import ConflictService
-from app.mcp_tools.core import READ_ONLY, WRITES, MemoryId, Text, _guarded, _id, _tool
-from app.meetings.errors import MeetingNotFound
-from app.meetings.service import MeetingService
-from app.storage.search import search_files
+from app.domain.decisions.service import ConflictService
+from app.domain.meetings.errors import MeetingNotFound
+from app.domain.meetings.service import MeetingService
+from app.domain.storage.search import search_files
+from app.integrations.mcp.core import READ_ONLY, WRITES, MemoryId, Text, _guarded, _id, _tool
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from typing import Any
 from mcp.server.fastmcp import Context
 
 from app.api import tokens
-from app.api.atom_schemas import (
+from app.api.schemas.atoms import (
     AtomVersionBody,
     AttachmentState,
     ConfigureAtom,
@@ -19,12 +19,12 @@ from app.api.atom_schemas import (
     SkillAttachment,
 )
 from app.api.tokens import Claims
-from app.mcp_tools.core import DESTROYS, READ_ONLY, WRITES, _guarded, _tool
+from app.integrations.mcp.core import DESTROYS, READ_ONLY, WRITES, _guarded, _tool
 
 logger = logging.getLogger(__name__)
 
 
-# --- atom administration -----------------------------------------------------------------------
+# Atom administration.
 # The same operations as the REST routes under /workspaces/{id}/atoms, for MCP clients such as an
 # assistant that builds atoms for a human. A human member's token with `atoms:admin` is required,
 # and AtomService applies the same role rules (owner/admin, or a member's own personal atom).
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def _admin_service(claims: Claims):
-    from app.atoms.service import AtomService
+    from app.domain.atoms.service import AtomService
 
     if claims.atom_id:
         raise PermissionError("Atom administration needs a human member token, not a run token")
@@ -202,7 +202,7 @@ async def atom_connection_delete(
 
 
 def _admin_skills(claims: Claims):
-    from app.atoms.skills import SkillService
+    from app.domain.atoms.skills import SkillService
 
     if claims.atom_id:
         raise PermissionError("Atom administration needs a human member token, not a run token")

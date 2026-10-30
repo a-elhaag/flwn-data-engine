@@ -11,8 +11,8 @@ from pydantic import Field
 
 from app.api import tokens
 from app.api.tokens import Claims
-from app.mcp_tools.core import DESTROYS, READ_ONLY, WRITES, MemoryId, _guarded, _id, _tool
-from app.memory.steward import MemorySteward
+from app.domain.memory.steward import MemorySteward
+from app.integrations.mcp.core import DESTROYS, READ_ONLY, WRITES, MemoryId, _guarded, _id, _tool
 
 logger = logging.getLogger(__name__)
 

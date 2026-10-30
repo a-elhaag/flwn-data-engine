@@ -15,17 +15,17 @@ import psycopg
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from app.config import settings
+from app.core.config import settings
 from app.db import events
 from app.db.errors import InvalidReference, WorkspaceNotFound
 from app.db.models.files import File
 from app.db.models.identity import Workspace
 from app.db.models.memory import Chunk
 from app.db.session import session_for
-from app.storage import blobs, indexer
-from app.storage.blobs import BlobStorage
-from app.storage.errors import FileNotFound, UploadIncomplete, UploadRejected
-from app.storage.search import FileHit, search_files
+from app.domain.storage import blobs, indexer
+from app.domain.storage.blobs import BlobStorage
+from app.domain.storage.errors import FileNotFound, UploadIncomplete, UploadRejected
+from app.domain.storage.search import FileHit, search_files
 
 MB = 1024 * 1024
 # Single-request uploads over 256 MiB need this service version or later (limit 5000 MiB).

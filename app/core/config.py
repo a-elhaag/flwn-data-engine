@@ -14,20 +14,14 @@ class Settings(BaseSettings):
     PARSE_DEPLOYMENT: str = "Cohere-parse-v5"  # reads images and scanned pages (image input only)
     PARSE_INTERVAL_SECONDS: float = 10.0  # the deployment's quota is tiny: about one page per 10s
 
-    # Workspace-scoped agent tokens (REST bearer + MCP). Blank disables them.
-    MEMORY_TOKEN_SECRET: str = ""
-    # Off for now: the service key is the only credential (D36). Set true to turn tokens back on.
-    AGENT_TOKENS_ENABLED: bool = False
-    MEMORY_TOKEN_ISSUER: str = "flwn-data-engine"
-    MEMORY_TOKEN_MAX_TTL_SECONDS: int = 24 * 60 * 60
+    # Workspace-scoped tokens (REST bearer + MCP). Off: only the service key is accepted.
+    AGENT_TOKENS_ENABLED: bool = True
     # Backend-signed tokens (EdDSA or ES256): this service only verifies them. Give the backend's
     # public keys as a JWKS document (TOKEN_JWKS) or a URL (TOKEN_JWKS_URL); `kid` picks the key.
     TOKEN_ISSUER: str = "flwn-backend"
     TOKEN_AUDIENCE: str = "data-engine"
     TOKEN_JWKS: str = ""
     TOKEN_JWKS_URL: str = ""
-    # Until the backend mints, the HS256 tokens from /auth/tokens still verify. Turn off to cut over.
-    TOKEN_ALLOW_LEGACY_HS256: bool = True
     # Comma-separated Host headers allowed on /mcp. Blank disables the check.
     MCP_ALLOWED_HOSTS: str = ""
 
@@ -68,13 +62,6 @@ class Settings(BaseSettings):
     def not_blank(cls, value: str, info) -> str:
         if not value.strip():
             raise ValueError(f"{info.field_name} is required and cannot be blank")
-        return value
-
-    @field_validator("MEMORY_TOKEN_SECRET")
-    @classmethod
-    def strong_secret(cls, value: str) -> str:
-        if value and len(value) < 32:
-            raise ValueError("MEMORY_TOKEN_SECRET must be at least 32 characters")
         return value
 
 

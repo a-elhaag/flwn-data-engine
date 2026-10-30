@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
-from app.api.identity_schemas import NonBlank
+from app.api.schemas.identity import NonBlank
 from app.db.models.collab import BLOCK_TYPES
 
 CommentTargetType = Literal["task", "work_item", "project", "project_update", "sprint", "doc"]

@@ -11,9 +11,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.responses import JSONResponse
 
 from app.api import tokens
-from app.config import settings
-from app.mcp_tools import admin_tools, atom_tools, context_tools, memory_tools  # noqa: F401  (register the tools)
-from app.mcp_tools.core import _SPECS
+from app.core.config import settings
+from app.integrations.mcp import admin_tools, atom_tools, context_tools, memory_tools  # noqa: F401  (register the tools)
+from app.integrations.mcp.core import _SPECS
 
 INSTRUCTIONS = (
     "Shared workspace memory. Use memory_recall before deciding or answering from "

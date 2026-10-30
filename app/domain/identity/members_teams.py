@@ -8,7 +8,7 @@ from sqlalchemy import delete, exists, false, func, or_, select, true
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
 from app.db.session import session_for
-from app.members import Viewer
+from app.domain.identity.viewer import Viewer
 
 
 class IdentityNotFound(LookupError):

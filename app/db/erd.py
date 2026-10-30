@@ -1,12 +1,4 @@
-"""Draw the schema as an interactive graph: python -m app.db.erd [output.html]
-
-Reads the SQLAlchemy models, so the picture cannot drift from the code. The output is a single
-page (d3 from cdnjs) that can be opened locally or published as an Artifact.
-"""
-
-import json
-import sys
-from pathlib import Path
+"""The schema as tables and relationships, read from the SQLAlchemy models (feeds the explorer)."""
 
 from sqlalchemy.dialects import postgresql
 
@@ -89,16 +81,3 @@ def build() -> dict:
         "tables": tables,
         "edges": [{"source": s, "target": t, "via": via} for (s, t), via in sorted(edges.items())],
     }
-
-
-def render() -> str:
-    template = (Path(__file__).parent / "erd_template.html").read_text()
-    return template.replace("__DATA__", json.dumps(build(), separators=(",", ":")))
-
-
-if __name__ == "__main__":
-    out = Path(sys.argv[1] if len(sys.argv) > 1 else "docs/schema-graph.html")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render())
-    data = build()
-    print(f"wrote {out}: {len(data['tables'])} tables, {len(data['edges'])} relationships")

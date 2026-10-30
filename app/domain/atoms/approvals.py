@@ -11,7 +11,14 @@ from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 
-from app.atoms.service import (
+from app.db import session as db
+from app.db.atom_access import current_context
+from app.db.models.atoms import AtomConnection
+from app.db.models.collab import Notification
+from app.db.models.identity import Member
+from app.db.models.memory import AgentRun, Approval
+from app.db.session import workspace_session
+from app.domain.atoms.service import (
     AtomPermissionError,
     AtomService,
     AtomStateError,
@@ -21,13 +28,6 @@ from app.atoms.service import (
     _uuid,
     _view,
 )
-from app.db import session as db
-from app.db.atom_access import current_context
-from app.db.models.atoms import AtomConnection
-from app.db.models.collab import Notification
-from app.db.models.identity import Member
-from app.db.models.memory import AgentRun, Approval
-from app.db.session import workspace_session
 
 
 class ApprovalService(AtomService):

@@ -455,7 +455,7 @@ class AtomService:
             return _view(version)
 
     def load_active_config(self, atom_id=None):
-        from app.atoms.skills import SkillService
+        from app.domain.atoms.skills import SkillService
 
         target = atom_id or self.atom_id
         with self._session(atom_id=target) as session:

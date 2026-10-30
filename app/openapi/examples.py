@@ -13,7 +13,6 @@ CONNECTION = "5c9e2b71-4a08-4d3f-b6e1-8a7d0c3f5e19"
 STAMP = "2026-10-17T09:30:00Z"
 
 EXAMPLES: dict[str, dict] = {
-    # Memory
     "RememberRequest": {
         "text": "We decided to use Postgres with pgvector for memory.",
         "source": "chat",
@@ -29,17 +28,7 @@ EXAMPLES: dict[str, dict] = {
     "AnchorRequest": {"pinned": True},
     "CleanupRequest": {"retention_days": 30, "dry_run": True},
     "OrganizeRequest": {"dry_run": True, "max_clusters": 50},
-    # Auth
-    "TokenRequest": {
-        "workspace_id": WS,
-        "member_id": MEMBER,
-        "subject": "planner-agent",
-        "scopes": ["memory:read", "memory:write"],
-        "ttl_seconds": 3600,
-    },
-    "TokenResponse": {"token": "<signed-token>", "expires_at": 1792229400},
     "RevocationRequest": {"jti": "7c1f0c52a4f94b0e", "expires_at": 1792229400},
-    # Conflicts
     "FlagConflictRequest": {
         "decision_id": "d6b3f1a8-7c42-4e95-a0b1-3f8e5c2d9a67",
         "proposal": "Switch memory storage to Redis.",
@@ -47,7 +36,6 @@ EXAMPLES: dict[str, dict] = {
         "similarity": 0.82,
     },
     "ResolveConflictRequest": {"status": "dismissed", "note": "Proposal withdrawn."},
-    # Files
     "StartUploadRequest": {
         "kind": "pdf",
         "name": "q3-roadmap.pdf",
@@ -57,7 +45,6 @@ EXAMPLES: dict[str, dict] = {
         "project_id": PROJECT,
     },
     "SearchFilesRequest": {"query": "Q3 roadmap", "limit": 5, "kind": "pdf"},
-    # Meetings
     "CreateMeetingRequest": {
         "title": "Sprint planning",
         "participants": [MEMBER],
@@ -83,7 +70,6 @@ EXAMPLES: dict[str, dict] = {
             }
         ],
     },
-    # Atoms
     "CreateAtom": {
         "name": "Weekly digest",
         "description": "Summarises the week's decisions.",
@@ -128,7 +114,6 @@ EXAMPLES: dict[str, dict] = {
         "estimated_cost": "0.05",
         "estimated_actions": 3,
     },
-    # Approvals
     "CreateApproval": {
         "kind": "atom_action",
         "title": "Post weekly digest to #general",
@@ -142,7 +127,6 @@ EXAMPLES: dict[str, dict] = {
     "ApprovalDecision": {"status": "approved", "comment": "Looks good."},
     "ApprovalBootstrap": {"estimated_cost": "0.05", "estimated_actions": 1},
     "ApprovalOutcome": {"status": "succeeded", "result": {"message_ts": "1792229400.0001"}},
-    # Identity
     "WorkspaceCreate": {"name": "Acme", "slug": "acme", "description": "Acme product team"},
     "WorkspaceUpdate": {"description": "Acme product and design"},
     "MemberCreate": {
@@ -155,7 +139,6 @@ EXAMPLES: dict[str, dict] = {
     "TeamCreate": {"key": "ENG", "name": "Engineering", "visibility": "workspace"},
     "TeamUpdate": {"name": "Platform Engineering"},
     "TeamMembersUpdate": {"member_ids": [MEMBER]},
-    # Planning
     "ProjectCreate": {
         "key": "DATA",
         "name": "Data Engine",
@@ -182,7 +165,6 @@ EXAMPLES: dict[str, dict] = {
         "assignee_id": MEMBER,
     },
     "TaskUpdate": {"status": "in_review", "assignee_id": MEMBER},
-    # Collaboration
     "CommentCreate": {
         "target_type": "task",
         "target_id": WORK_ITEM,

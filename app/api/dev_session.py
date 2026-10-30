@@ -15,18 +15,16 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 
-from app.api import tokens
 from app.db.models.identity import Member, User, Workspace
 from app.db.session import database_url, service_session
-from app.identity.members_teams import MemberService
-from app.identity.workspaces import WorkspaceService
+from app.domain.identity.members_teams import MemberService
+from app.domain.identity.workspaces import WorkspaceService
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 PG_ENV = ("PGHOST", "PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE")
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 MARKER = "dev_session"
 SHARED_SLUG = "dev-shared"
-TTL_SECONDS = 12 * 60 * 60
 
 
 def _is_local(host: str) -> bool:
@@ -129,15 +127,8 @@ def _member(workspace_id: str, email: str, name: str, role: str) -> tuple[str, s
     return str(found[0]), str(found[1])
 
 
-def _entry(workspace_id: str, member_id: str, user_id: str) -> dict:
-    entry = {"workspace_id": workspace_id, "member_id": member_id}
-    if (
-        tokens.enabled()
-    ):  # off by default (D36): then the service key plus member id is the credential
-        entry["token"], entry["expires_at"] = tokens.mint(
-            workspace_id, set(tokens.AGENT_SCOPES), user_id, TTL_SECONDS, member_id
-        )
-    return entry
+def _entry(workspace_id: str, member_id: str) -> dict:
+    return {"workspace_id": workspace_id, "member_id": member_id}
 
 
 def sign_in(email: str, name: str) -> dict:
@@ -155,6 +146,6 @@ def sign_in(email: str, name: str) -> dict:
     _mark_user(user_id)
     return {
         "user_id": user_id,
-        "personal": _entry(personal, mine, user_id),
-        "shared": _entry(shared, theirs, user_id),
+        "personal": _entry(personal, mine),
+        "shared": _entry(shared, theirs),
     }

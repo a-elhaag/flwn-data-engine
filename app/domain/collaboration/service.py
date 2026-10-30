@@ -19,7 +19,7 @@ from app.db.models.files import File
 from app.db.models.identity import Member, Team, Workspace
 from app.db.models.planning import Project, ProjectUpdate, Sprint, Task, WorkItem
 from app.db.session import session_for
-from app.members import Viewer
+from app.domain.identity.viewer import Viewer
 
 COMMENT_TARGETS = {
     "task": Task,

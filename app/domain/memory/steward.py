@@ -10,17 +10,17 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from app.clients import inference
-from app.config import settings
+from app.core.config import settings
 from app.db import events
 from app.db.atom_access import current_context
 from app.db.models.memory import Memory
 from app.db.session import advisory_lock, session_for
-from app.memory import prompts, vectorizer
-from app.memory.errors import ConfirmationRequired, MaintenanceBusy, MemoryNotFound
-from app.memory.recall import RankedResult
-from app.memory.recall import recall as run_recall
-from app.memory.store import MemoryStore, stored_at
+from app.domain.memory import prompts, vectorizer
+from app.domain.memory.errors import ConfirmationRequired, MaintenanceBusy, MemoryNotFound
+from app.domain.memory.recall import RankedResult
+from app.domain.memory.recall import recall as run_recall
+from app.domain.memory.store import MemoryStore, stored_at
+from app.integrations import inference
 
 logger = logging.getLogger(__name__)
 DAY = 24 * 60 * 60
@@ -142,8 +142,6 @@ class MemorySteward:
         with session_for(self.workspace_id) as session:
             yield MemoryStore(session, self.workspace_id)
 
-    # -- write ---------------------------------------------------------------
-
     def remember(self, text: str, source: str, agent: str) -> str:
         return self.remember_detailed(text, source, agent).point_id
 
@@ -215,8 +213,6 @@ class MemorySteward:
             self._log(store, row.id, "pinned" if pinned else "unpinned")
             return _record(row, with_raw=True)
 
-    # -- read ----------------------------------------------------------------
-
     def recall(
         self, query: str, agent: str, limit: int = 5, sources: list[str] | None = None
     ) -> list[RankedResult]:
@@ -257,8 +253,6 @@ class MemorySteward:
             by_source=data["by_source"],
         )
 
-    # -- delete --------------------------------------------------------------
-
     def forget(self, point_id: str) -> None:
         memory_id = uuid.UUID(point_id)
         with self._store() as store:
@@ -282,8 +276,6 @@ class MemorySteward:
             )
         logger.warning("purge: workspace=%s deleted=%d", self.workspace_id, deleted)
         return deleted
-
-    # -- maintenance ---------------------------------------------------------
 
     @contextmanager
     def _exclusive(self):

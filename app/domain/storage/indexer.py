@@ -21,18 +21,18 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, delete, or_, select
 
-from app.clients import inference
-from app.config import settings
+from app.core.config import settings
 from app.db import events
 from app.db import session as db
 from app.db.models.files import File
 from app.db.models.meetings import Recording
 from app.db.models.memory import Chunk
 from app.db.session import session_for, workspace_session
-from app.storage import extract, media, transcripts
-from app.storage.blobs import BlobStorage
-from app.storage.chunking import Section, chunk_sections
-from app.storage.errors import Unindexable
+from app.domain.storage import extract, media, transcripts
+from app.domain.storage.blobs import BlobStorage
+from app.domain.storage.chunking import Section, chunk_sections
+from app.domain.storage.errors import Unindexable
+from app.integrations import inference
 
 logger = logging.getLogger(__name__)
 INDEXABLE_SOURCES = {"workspace", "agent", "import"}

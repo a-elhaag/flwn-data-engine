@@ -4,11 +4,11 @@ import logging
 
 from sqlalchemy import text
 
-from app.clients import inference
-from app.config import settings
+from app.core.config import settings
 from app.db import session
-from app.storage import blobs
-from app.storage.blobs import get_storage
+from app.domain.storage import blobs
+from app.domain.storage.blobs import get_storage
+from app.integrations import inference
 
 logger = logging.getLogger(__name__)
 

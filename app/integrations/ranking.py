@@ -3,8 +3,8 @@
 import logging
 import uuid
 
-from app.clients import inference
-from app.config import settings
+from app.core.config import settings
+from app.integrations import inference
 
 logger = logging.getLogger(__name__)
 

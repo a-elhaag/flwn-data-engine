@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 
-from app.clients.ranking import FUSION_K, fuse
 from app.db.atom_access import (
     AtomContext,
     current_context,
@@ -17,7 +16,8 @@ from app.db.atom_access import (
 from app.db.models.atoms import Atom, AtomConnection, AtomSkill, CatalogSkill, Skill
 from app.db.models.identity import Member
 from app.db.session import tune_vector_search
-from app.memory import vectorizer
+from app.domain.memory import vectorizer
+from app.integrations.ranking import FUSION_K, fuse
 
 PERMISSIONS = {name: i for i, name in enumerate(("read", "draft", "write", "destructive"))}
 

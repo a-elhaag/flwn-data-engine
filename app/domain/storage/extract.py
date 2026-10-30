@@ -14,11 +14,11 @@ from xml.etree import ElementTree
 import pypdfium2
 from pypdf import PdfReader
 
-from app.clients import inference
-from app.config import settings
-from app.storage.chunking import Section
-from app.storage.errors import Unindexable
-from app.storage.media import media_kind
+from app.core.config import settings
+from app.domain.storage.chunking import Section
+from app.domain.storage.errors import Unindexable
+from app.domain.storage.media import media_kind
+from app.integrations import inference
 
 logger = logging.getLogger(__name__)
 TEXT_TYPES = {
