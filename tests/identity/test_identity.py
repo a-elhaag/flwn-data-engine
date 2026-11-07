@@ -288,16 +288,42 @@ class UsersApiTests(CrudHarness):
 
 
 class WorkspacesApiTests(CrudHarness):
+    def owner(self) -> str:
+        """A user to own new workspaces; deleted after the workspaces (cleanups run in reverse)."""
+        (user,) = self.sql(
+            "insert into users (email, name) values (:e, 'Owner') returning id",
+            e=f"{uuid.uuid4().hex[:10]}@example.com",
+        )
+        self.addCleanup(self.sql, "delete from users where id = :i", i=user["id"])
+        self.addCleanup(self.sql, "delete from workspaces where created_by = :i", i=user["id"])
+        return str(user["id"])
+
     def test_workspace_crud_and_soft_delete(self):
+        owner = self.owner()
         created = self.client.post(
             "/workspaces",
-            json={"name": "Research", "slug": "research-team", "description": "Initial"},
+            json={
+                "name": "Research",
+                "slug": "research-team",
+                "description": "Initial",
+                "owner_user_id": owner,
+            },
         )
         self.assertEqual(created.status_code, 201, created.text)
         workspace = created.json()
         workspace_id = workspace["id"]
         self.assertEqual((workspace["name"], workspace["slug"]), ("Research", "research-team"))
         self.assertEqual(workspace["settings"], {})
+        self.assertEqual(workspace["created_by"], owner)
+        (member,) = self.sql(
+            "select * from members where workspace_id = :w and user_id = :u",
+            w=workspace_id,
+            u=owner,
+        )
+        self.assertEqual(
+            (str(member["user_id"]), member["type"], member["role"], member["status"]),
+            (owner, "HUMAN", "owner", "active"),
+        )
 
         self.assertEqual(self.client.get(f"/workspaces/{workspace_id}").json(), workspace)
         self.assertIn(
@@ -325,8 +351,14 @@ class WorkspacesApiTests(CrudHarness):
         )
 
     def test_workspace_slug_is_case_insensitively_unique(self):
-        self.client.post("/workspaces", json={"name": "A", "slug": "shared-slug"})
-        conflict = self.client.post("/workspaces", json={"name": "B", "slug": "SHARED-SLUG"})
+        owner = self.owner()
+        first = self.client.post(
+            "/workspaces", json={"name": "A", "slug": "shared-slug", "owner_user_id": owner}
+        )
+        self.assertEqual(first.status_code, 201, first.text)
+        conflict = self.client.post(
+            "/workspaces", json={"name": "B", "slug": "SHARED-SLUG", "owner_user_id": owner}
+        )
         self.assertEqual(conflict.status_code, 409, conflict.text)
 
     def test_workspace_routes_require_service_credentials(self):

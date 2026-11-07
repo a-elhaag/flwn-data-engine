@@ -33,7 +33,16 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(409, "workspace conflicts with an existing record") from None
 
 
-@router.post("", status_code=201, response_model=WorkspaceOut, dependencies=[BACKEND])
+@router.post(
+    "",
+    status_code=201,
+    response_model=WorkspaceOut,
+    dependencies=[BACKEND],
+    responses={
+        404: {"description": "owner_user_id names no live user"},
+        409: {"description": "slug already taken"},
+    },
+)
 def create_workspace(body: WorkspaceCreate):
     return _call(WorkspaceService().create, **body.model_dump())
 

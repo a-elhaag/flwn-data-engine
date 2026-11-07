@@ -1,6 +1,6 @@
 """Trusted CRUD for user accounts (backend only: users belong to no single workspace)."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -8,8 +8,9 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api.auth import service_only
 from app.api.paging import split_page
-from app.api.schemas.identity import UserCreate, UserOut, UserPage, UserUpdate
-from app.domain.identity.users import UserConflict, UserNotFound, UserService
+from app.api.schemas.identity import MembershipList, UserCreate, UserOut, UserPage, UserUpdate
+from app.domain.identity.owners import LAST_OWNER, LastOwner
+from app.domain.identity.users import EMAIL_TAKEN, UserConflict, UserNotFound, UserService
 
 router = APIRouter(prefix="/users", dependencies=[Depends(service_only)])
 
@@ -21,8 +22,14 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(404, str(exc)) from None
     except UserConflict as exc:
         raise HTTPException(409, str(exc)) from None
-    except IntegrityError:
+    except LastOwner:
+        raise HTTPException(409, LAST_OWNER) from None
+    except IntegrityError as exc:
+        if "uq_users_email" in str(exc.orig):  # lost a race with another create
+            raise HTTPException(409, EMAIL_TAKEN) from None
         raise HTTPException(409, "user conflicts with an existing record") from None
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from None
 
 
 @router.post("", status_code=201, response_model=UserOut)
@@ -46,12 +53,30 @@ def get_user(user_id: UUID):
     return _call(UserService().get, str(user_id))
 
 
+@router.get(
+    "/{user_id}/memberships",
+    response_model=MembershipList,
+    responses={404: {"description": "User not found or deleted"}},
+)
+def list_user_memberships(
+    user_id: UUID,
+    status: Literal["active", "suspended"] | None = None,
+    type: Literal["HUMAN", "AI"] | None = None,
+):
+    items = _call(UserService().memberships, str(user_id), status=status, type=type)
+    return MembershipList(items=items, total=len(items))
+
+
 @router.patch("/{user_id}", response_model=UserOut)
 def update_user(user_id: UUID, body: UserUpdate):
     return _call(UserService().update, str(user_id), **body.model_dump(exclude_unset=True))
 
 
-@router.delete("/{user_id}", status_code=204)
+@router.delete(
+    "/{user_id}",
+    status_code=204,
+    responses={409: {"description": "last_owner: the user is a workspace's last active owner"}},
+)
 def delete_user(user_id: UUID):
     _call(UserService().delete, str(user_id))
     return Response(status_code=204)

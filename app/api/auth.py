@@ -15,6 +15,7 @@ Whoever acts must be an active member of the workspace, checked on every request
 a member stops their tokens immediately.
 """
 
+import logging
 import secrets
 from dataclasses import dataclass, replace
 from typing import Annotated
@@ -28,6 +29,7 @@ from app.db.session import bind_viewer
 from app.domain.identity import viewer as members
 
 WorkspaceId = Annotated[UUID, Path()]
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -47,12 +49,34 @@ class Principal:
 
 
 def _service_key_valid(key: str | None) -> bool:
-    return key is not None and secrets.compare_digest(key.encode(), settings.DATA_API_KEY.encode())
+    """The current key or, during a rotation, the next one. Both are compared in constant time."""
+    if key is None:
+        return False
+    given = key.encode()
+    current = secrets.compare_digest(given, settings.DATA_API_KEY.encode())
+    upcoming = bool(settings.DATA_API_KEY_NEXT) and secrets.compare_digest(
+        given, settings.DATA_API_KEY_NEXT.encode()
+    )
+    return current or upcoming
 
 
-def _principal(x_data_api_key: str | None, authorization: str | None) -> Principal:
+def _reject_service_key(request: Request | None, key: str | None) -> None:
+    """Log a refused service key with the caller's address (never the key itself)."""
+    if key:  # a missing key is an ordinary unauthenticated call, a wrong one is worth an alert
+        source = request.client.host if request is not None and request.client else "unknown"
+        log.warning("service key rejected: source_ip=%s path=%s", source, _path(request))
+
+
+def _path(request: Request | None) -> str:
+    return request.url.path if request is not None else "?"
+
+
+def _principal(
+    x_data_api_key: str | None, authorization: str | None, request: Request | None = None
+) -> Principal:
     if _service_key_valid(x_data_api_key):
         return Principal(subject="service", service=True)
+    _reject_service_key(request, x_data_api_key)
     if authorization and authorization.lower().startswith("bearer "):
         try:
             claims = tokens.verify(authorization[7:].strip())
@@ -91,9 +115,11 @@ def _acting_for(principal: Principal, workspace_id: UUID, header: str | None) ->
 
 
 def service_only(
+    request: Request,
     x_data_api_key: Annotated[str | None, Header()] = None,
 ) -> Principal:
     if not _service_key_valid(x_data_api_key):
+        _reject_service_key(request, x_data_api_key)
         raise HTTPException(status_code=401, detail="Invalid data API key")
     return Principal(subject="service", service=True)
 
@@ -119,7 +145,7 @@ def allow(
         x_acting_member_id: Annotated[str | None, Header()] = None,
     ) -> Principal:
         needed = write_scope if write_scope and request.method not in ("GET", "HEAD") else scope
-        principal = _principal(x_data_api_key, authorization)
+        principal = _principal(x_data_api_key, authorization, request)
         if principal.service:
             principal = _acting_for(principal, workspace_id, x_acting_member_id)
         else:

@@ -36,6 +36,16 @@ class AtomServiceTest(unittest.TestCase):
                 .where(T("members").c.id == self.ws["human"])
                 .values(role="owner")
             )
+            # A second owner, so tests may demote or suspend the first (last-owner rule).
+            keeper = add(conn, "users", email=f"k{uuid.uuid4().hex[:8]}@example.com", name="K")
+            add(
+                conn,
+                "members",
+                workspace_id=self.ws["workspace_id"],
+                user_id=keeper,
+                type="HUMAN",
+                role="owner",
+            )
         self.workspaces = [self.ws["workspace_id"]]
         self.service = AtomService(self.ws["workspace_id"], self.ws["human"], bind=ENGINE)
         self.atom = self.service.create("Reporter", max_runs_per_day=10, max_cost_per_day="10")

@@ -17,7 +17,9 @@ from sqlalchemy.engine import make_url
 
 from app.db.models.identity import Member, User, Workspace
 from app.db.session import database_url, service_session
+from app.domain.identity.email import canonical_email
 from app.domain.identity.members_teams import MemberService
+from app.domain.identity.users import UserService, email_matches
 from app.domain.identity.workspaces import WorkspaceService
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
@@ -73,7 +75,7 @@ def direct(headers) -> bool:
 def _claim_user(email: str) -> None:
     """Refuse an email that belongs to an account this tool did not create."""
     with service_session() as session:
-        settings = session.scalar(select(User.settings).where(func.lower(User.email) == email))
+        settings = session.scalar(select(User.settings).where(email_matches(email)))
     if settings is not None and not settings.get(MARKER):
         raise RealUser("that email belongs to a real account; dev sign-in only uses its own")
 
@@ -85,8 +87,20 @@ def _mark_user(user_id: str) -> None:
             user.settings = {**user.settings, MARKER: True}
 
 
-def _workspace(slug: str, name: str) -> str:
-    """The workspace with this slug, made by this tool; a real workspace by that name is refused."""
+def _user(email: str, name: str) -> str:
+    """The dev account for this email, created (and marked as this tool's) on first use."""
+    with service_session() as session:
+        found = session.scalar(select(User.id).where(email_matches(email)))
+    if found is not None:
+        return str(found)
+    return str(UserService().create(email=email, name=name, settings={MARKER: True}).id)
+
+
+def _workspace(slug: str, name: str, owner_user_id: str) -> str:
+    """The workspace with this slug, made by this tool; a real workspace by that name is refused.
+
+    A new one is owned by the person signing in.
+    """
     with service_session() as session:
         found = session.execute(
             select(Workspace.id, Workspace.settings).where(
@@ -94,7 +108,11 @@ def _workspace(slug: str, name: str) -> str:
             )
         ).first()
     if found is None:
-        return str(WorkspaceService().create(name=name, slug=slug, settings={MARKER: True}).id)
+        return str(
+            WorkspaceService()
+            .create(name=name, slug=slug, owner_user_id=owner_user_id, settings={MARKER: True})
+            .id
+        )
     if not found.settings.get(MARKER):
         raise RealUser(f"a workspace called {slug} already exists and is not a dev workspace")
     return str(found.id)
@@ -108,7 +126,7 @@ def _member(workspace_id: str, email: str, name: str, role: str) -> tuple[str, s
             .join(User, User.id == Member.user_id)
             .where(
                 Member.workspace_id == workspace_id,
-                func.lower(User.email) == email,
+                email_matches(email),
                 Member.deleted_at.is_(None),
             )
         ).first()
@@ -136,12 +154,13 @@ def sign_in(email: str, name: str) -> dict:
 
     Calling again with the same email returns the same workspaces and members.
     """
-    email = email.strip().lower()
+    email = canonical_email(email)
     _claim_user(email)
     key = hashlib.sha256(email.encode()).hexdigest()[:10]
-    personal = _workspace(f"personal-{key}", f"{name} (personal)")
-    shared = _workspace(SHARED_SLUG, "Dev shared")
-    mine, user_id = _member(personal, email, name, "owner")
+    user_id = _user(email, name)
+    personal = _workspace(f"personal-{key}", f"{name} (personal)", user_id)
+    shared = _workspace(SHARED_SLUG, "Dev shared", user_id)  # the first to sign in owns it
+    mine, _ = _member(personal, email, name, "owner")
     theirs, _ = _member(shared, email, name, "admin")
     _mark_user(user_id)
     return {

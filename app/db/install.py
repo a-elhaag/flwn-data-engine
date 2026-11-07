@@ -36,12 +36,21 @@ APP_ROLE_GRANTS = (
     "alter default privileges in schema public grant select, insert, update, delete on tables to {}",
     "alter default privileges in schema public grant usage, select on sequences to {}",
 )
+APP_ROLE_FUNCTIONS = ("public.memberships_for_user(uuid)",)
 
 
 def grant_privileges(raw, role: str) -> None:
     """Give an existing role the table access the application needs (never superuser)."""
     for statement in APP_ROLE_GRANTS:
         raw.execute(sql.SQL(statement).format(sql.Identifier(role)))
+    # Cross-workspace helpers are not executable by PUBLIC (db/sql/60_identity.sql).
+    for function in APP_ROLE_FUNCTIONS:
+        if raw.execute("select to_regprocedure(%s)", (function,)).fetchone()[0] is not None:
+            raw.execute(
+                sql.SQL("grant execute on function {} to {}").format(
+                    sql.SQL(function), sql.Identifier(role)
+                )
+            )
 
 
 def grant_app_role(conn: Connection, role: str, password: str | None = None) -> None:

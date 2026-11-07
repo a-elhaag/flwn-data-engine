@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATA_API_KEY: str
+    # Rotation: during a key change both keys are accepted (docs: flwnBackend AUTH.md). Blank = off.
+    DATA_API_KEY_NEXT: str = ""
     AZURE_FOUNDRY_ENDPOINT: str
     AZURE_FOUNDRY_KEY: str
     MEMORY_CHAT_DEPLOYMENT: str = "gpt-6-luna"

@@ -1,20 +1,29 @@
 """Identity and workspace request and response bodies."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+
+from app.domain.identity.email import canonical_email
 
 NonBlank = Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
 Slug = Annotated[
     str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")
+]
+# Stored and compared in canonical form only (app/identity/email.py, the backend's definition).
+Email = Annotated[
+    str,
+    Field(min_length=3, max_length=320, examples=["ada@example.com"]),
+    AfterValidator(canonical_email),
 ]
 
 
 class WorkspaceCreate(BaseModel):
     name: NonBlank
     slug: Slug
+    owner_user_id: UUID
     description: Annotated[str, Field(max_length=2000)] | None = None
     settings: dict = Field(default_factory=dict)
 
@@ -60,10 +69,7 @@ class MemberCreate(BaseModel):
     role: str = "member"
     status: str = "active"
     name: NonBlank | None = None
-    email: (
-        Annotated[str, Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
-        | None
-    ) = None
+    email: Email | None = None
     agent_kind: str | None = None
     avatar_url: Annotated[str, Field(max_length=2000)] | None = None
     settings: dict = Field(default_factory=dict)
@@ -80,6 +86,8 @@ class MemberCreate(BaseModel):
                 raise ValueError("AI members require name and agent_kind")
             if self.email:
                 raise ValueError("AI members cannot have an email")
+            if self.role == "owner":
+                raise ValueError("AI members cannot be owners")
         else:
             raise ValueError("type must be HUMAN or AI")
         if self.role not in {"owner", "admin", "member", "viewer"}:
@@ -93,10 +101,7 @@ class MemberUpdate(BaseModel):
     role: str | None = None
     status: str | None = None
     name: NonBlank | None = None
-    email: (
-        Annotated[str, Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
-        | None
-    ) = None
+    email: Email | None = None
     avatar_url: Annotated[str, Field(max_length=2000)] | None = None
     settings: dict | None = None
 
@@ -201,9 +206,6 @@ class TeamMembersUpdate(BaseModel):
     member_ids: list[UUID] = Field(max_length=500)
 
 
-Email = Annotated[str, Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
-
-
 class UserCreate(BaseModel):
     email: Email
     name: NonBlank
@@ -244,3 +246,32 @@ class UserPage(BaseModel):
     limit: int
     offset: int
     has_more: bool = False
+
+
+class MembershipOut(BaseModel):
+    """One of a user's memberships, with the workspace it belongs to."""
+
+    member_id: UUID
+    workspace_id: UUID
+    workspace_name: str
+    workspace_slug: str
+    user_id: UUID
+    type: str
+    role: str
+    status: str
+
+
+class MembershipList(BaseModel):
+    items: list[MembershipOut]
+    total: int
+
+
+class OwnershipTransfer(BaseModel):
+    to_member_id: UUID
+    demote_self_to: Literal["admin", "member"] | None = None
+
+
+class OwnershipTransferOut(BaseModel):
+    workspace_id: UUID
+    from_member: MemberOut
+    to_member: MemberOut

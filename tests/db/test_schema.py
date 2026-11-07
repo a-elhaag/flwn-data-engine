@@ -493,3 +493,60 @@ class MigrationBaselineTest(unittest.TestCase):
     def _drop(admin, name):
         with admin.connect() as conn:
             conn.execute(text(f'drop database "{name}" with (force)'))
+
+
+class EmailMigrationTest(unittest.TestCase):
+    """0002 rewrites users.email canonically and stops on addresses it cannot merge or read."""
+
+    def fresh(self):
+        db_support.engine()
+        admin = db_support._state["admin"]
+        name = f"flwn_mail_{uuid.uuid4().hex[:8]}"
+        with admin.connect() as conn:
+            conn.execute(text(f'create database "{name}"'))
+        self.addCleanup(MigrationBaselineTest._drop, admin, name)
+        url = make_url(admin.url).set(database=name).render_as_string(hide_password=False)
+        cfg = Config(str(ROOT / "alembic.ini"))
+        cfg.set_main_option("script_location", str(ROOT / "migrations"))
+        env = patch.dict(os.environ, {"DATABASE_ADMIN_URL": url, "DATABASE_URL": url})
+        env.start()
+        self.addCleanup(env.stop)
+        command.upgrade(cfg, "0001")
+        engine = create_engine(url)
+        self.addCleanup(engine.dispose)
+        return cfg, engine
+
+    def emails(self, engine, *emails):
+        with engine.begin() as conn:
+            for email in emails:
+                conn.execute(text("insert into users (email, name) values (:e, 'U')"), {"e": email})
+
+    def test_rewrites_emails_canonically(self):
+        cfg, engine = self.fresh()
+        self.emails(engine, "  Bob@Example.COM", "user@B\u00fccher.example", "ok@example.com")
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            stored = set(conn.scalars(text("select email from users")))
+            version = conn.scalar(text("select version_num from alembic_version"))
+        self.assertEqual(
+            stored, {"bob@example.com", "user@xn--bcher-kva.example", "ok@example.com"}
+        )
+        self.assertEqual(version, "0002")
+
+    def test_collisions_and_invalid_addresses_stop_the_migration(self):
+        for emails in (
+            ("x@B\u00fccher.example", "x@xn--bcher-kva.example"),  # one canonical address
+            ("fine@example.com", "nobody@localhost"),  # cannot be canonicalized
+        ):
+            with self.subTest(emails=emails):
+                cfg, engine = self.fresh()
+                self.emails(engine, *emails)
+                with self.assertRaises(RuntimeError):
+                    command.upgrade(cfg, "head")
+                with engine.connect() as conn:
+                    self.assertEqual(
+                        set(conn.scalars(text("select email from users"))), set(emails)
+                    )
+                    self.assertEqual(
+                        conn.scalar(text("select version_num from alembic_version")), "0001"
+                    )

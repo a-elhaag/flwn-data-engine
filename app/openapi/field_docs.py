@@ -268,6 +268,7 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "slug": "URL-safe name, unique ignoring case. Letters, digits and single hyphens.",
         "description": "What the workspace is for. Up to 2000 characters.",
         "settings": "Workspace settings, such as retention periods. Free-form JSON.",
+        "owner_user_id": "The user who owns the new workspace. An active HUMAN `owner` member is created for them in the same transaction; 404 if the user does not exist or is deleted.",
     },
     "WorkspaceUpdate": {
         "name": "New name. Leave out to keep the current one.",
@@ -372,6 +373,29 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "updated_at": "When the account was last changed.",
     },
     "UserPage": {"items": "The users on this page."},
+    "MembershipOut": {
+        "member_id": "Id of the member (the user inside this workspace).",
+        "workspace_id": "Workspace of the membership.",
+        "workspace_name": "Name of the workspace.",
+        "workspace_slug": "Slug of the workspace.",
+        "user_id": "The user account.",
+        "type": "`HUMAN` or `AI`.",
+        "role": "`owner`, `admin`, `member` or `viewer`.",
+        "status": "`active` or `suspended`.",
+    },
+    "MembershipList": {
+        "items": "The memberships, oldest workspace first. Not paginated.",
+        "total": "Number of memberships returned.",
+    },
+    "OwnershipTransfer": {
+        "to_member_id": "The new owner: an active HUMAN member of this workspace, not the acting one.",
+        "demote_self_to": "The acting owner's new role, `admin` or `member`. Null keeps them an owner as well.",
+    },
+    "OwnershipTransferOut": {
+        "workspace_id": "The workspace.",
+        "from_member": "The acting owner, after the change.",
+        "to_member": "The new owner, after the change.",
+    },
     "ProjectCreate": {
         "key": "Short code used in task identifiers, for example `FLWN` gives `FLWN-12`. 1 to 10 uppercase letters and digits, starting with a letter.",
         "name": "Project name.",
