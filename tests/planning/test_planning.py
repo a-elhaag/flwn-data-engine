@@ -167,6 +167,12 @@ class PlanningQueriesTests(CrudHarness):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def test_project_key_cannot_be_changed(self):
+        url = f"{self.base}/projects/{self.project['id']}"
+        self.assertEqual(self.client.patch(url, json={"key": "NEW"}).status_code, 422)
+        self.assertEqual(self.client.get(url).json()["key"], "FLWN")
+        self.assertEqual(self.client.patch(url, json={"name": "Renamed"}).status_code, 200)
+
     def test_task_by_key(self):
         first, second = self.task(), self.task()
         found = self.client.get(f"{self.base}/tasks/by-key/FLWN-2")

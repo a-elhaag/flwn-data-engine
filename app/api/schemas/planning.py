@@ -41,7 +41,9 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectUpdate(BaseModel):
-    key: ProjectKey | None = None
+    # The key is fixed after creation: task identifiers (FLWN-12) are built from it.
+    model_config = ConfigDict(extra="forbid")
+
     name: NonBlank | None = None
     description: Annotated[str, Field(max_length=10000)] | None = None
     status: str | None = None

@@ -385,7 +385,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "color": "Color for the project.",
     },
     "ProjectUpdate": {
-        "key": "New short code.",
         "name": "New name.",
         "description": "New description.",
         "status": "`backlog`, `planned`, `in_progress`, `paused`, `completed` or `canceled`.",
