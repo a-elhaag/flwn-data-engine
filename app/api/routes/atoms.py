@@ -5,7 +5,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
-from app.api.atom_schemas import (
+from app.api.auth import WorkspaceId, allow, service_only
+from app.api.schemas.atoms import (
     ActivateVersion,
     AtomVersionBody,
     AttachmentState,
@@ -18,8 +19,7 @@ from app.api.atom_schemas import (
     SkillAttachment,
     StartRun,
 )
-from app.api.auth import WorkspaceId, allow, service_only
-from app.atoms.service import AtomService, scheduler_workspaces
+from app.domain.atoms.service import AtomService, scheduler_workspaces
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/atoms")
 scheduler_router = APIRouter(prefix="/atoms")
@@ -156,7 +156,7 @@ def connection(atom_id: UUID, body: ConnectionBody, service: Service):
 
 @router.post("/{atom_id}/skills", dependencies=[ADMIN])
 def attach_skill(workspace_id: WorkspaceId, atom_id: UUID, body: SkillAttachment, request: Request):
-    from app.atoms.skills import SkillService
+    from app.domain.atoms.skills import SkillService
 
     service = SkillService(str(workspace_id), actor=request.state.principal.member_id)
     return _call(
@@ -176,7 +176,7 @@ def configure_attachment(
     body: AttachmentState,
     request: Request,
 ):
-    from app.atoms.skills import SkillService
+    from app.domain.atoms.skills import SkillService
 
     service = SkillService(str(workspace_id), actor=request.state.principal.member_id)
     return _call(

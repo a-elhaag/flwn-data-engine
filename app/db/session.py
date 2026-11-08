@@ -7,7 +7,7 @@ every query.
 DATABASE_URL is the application's connection and must use a role WITHOUT superuser or BYPASSRLS
 (a managed server's admin role usually has BYPASSRLS, which silently turns the policies off).
 DATABASE_ADMIN_URL, used only to install the schema, may be that admin role. Both are read
-here, not in app.config, so installing works without the API's other settings.
+here, not in app.core.config, so installing works without the API's other settings.
 """
 
 from contextlib import contextmanager, suppress

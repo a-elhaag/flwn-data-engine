@@ -22,10 +22,10 @@ from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, Path, Request
 
-from app import members
 from app.api import tokens
-from app.config import settings
+from app.core.config import settings
 from app.db.session import bind_viewer
+from app.domain.identity import viewer as members
 
 WorkspaceId = Annotated[UUID, Path()]
 
@@ -107,7 +107,7 @@ def allow(
     """Dependency factory. scope=None means service callers only.
 
     write_scope: the scope for requests that change data (any method but GET and HEAD); scope
-    then covers reads only. The service key passes every scope check (D36).
+    then covers reads only. The service key passes every scope check.
     A token holding the `admin` scope passes every scope check except scope=None.
     """
 

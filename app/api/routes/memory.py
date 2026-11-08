@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Response
 
 from app.api.deps import ADMIN, DELETE, READ, WRITE, Memory
-from app.api.schemas import (
+from app.api.schemas.common import (
     AnchorRequest,
     CleanupRequest,
     CleanupResponse,
@@ -19,8 +19,8 @@ from app.api.schemas import (
     RememberResponse,
     ReviseRequest,
 )
-from app.memory.recall import RankedResult
-from app.memory.steward import BrowsePage, MemoryRecord, OrganizeResult, Stats
+from app.domain.memory.recall import RankedResult
+from app.domain.memory.steward import BrowsePage, MemoryRecord, OrganizeResult, Stats
 
 router = APIRouter(prefix="/workspaces/{workspace_id}")
 

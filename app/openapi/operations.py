@@ -6,15 +6,10 @@ Applied to the OpenAPI document in one place; a test fails if a route is missing
 W = "/workspaces/{workspace_id}"
 
 OPERATIONS: dict[str, tuple[str, str]] = {
-    # System
     "GET /healthz": ("Liveness check", "Returns 200 while the process is up. No auth."),
     "GET /readyz": (
         "Readiness check",
         "Checks the database and storage. 503 when a dependency is down. Needs the service key.",
-    ),
-    "POST /auth/tokens": (
-        "Mint a workspace token",
-        "Trusted backend only. Returns a signed token locked to one workspace, limited to the requested scopes. Without `scopes` it can only read memory and files.",
     ),
     "POST /auth/revocations": (
         "Revoke a token",
@@ -28,7 +23,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Workspaces with scheduler work",
         "Trusted backend only. Ids of workspaces that have an active atom with an enabled schedule, or an approved approval waiting to run. The scheduler polls only these.",
     ),
-    # Memory
     f"POST {W}/memories": (
         "Remember",
         "Store one memory. Near-identical text is deduplicated and `deduplicated` is true. Needs `memory:write`.",
@@ -81,7 +75,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Pin or unpin a memory",
         "Set `pinned` true or false. Needs `memory:write`.",
     ),
-    # Files
     f"POST {W}/files": (
         "Start an upload",
         "Registers the file and returns a one-time `upload_url`. PUT the bytes there, then call **Complete upload**. Needs `files:write`.",
@@ -114,7 +107,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Get a download link",
         "Returns a short-lived signed URL. Needs `files:read`.",
     ),
-    # Meetings
     f"POST {W}/meetings": (
         "Create a meeting",
         "Creates a meeting with optional participants. The caller becomes host. Needs `meetings:write`.",
@@ -151,7 +143,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Get the transcript",
         "Returns segments in order, paginated. Needs `meetings:read`.",
     ),
-    # Decision conflicts
     f"POST {W}/decision-conflicts": (
         "Flag a conflict",
         "Record that a proposal contradicts an earlier decision memory. Needs `conflicts:write`.",
@@ -168,7 +159,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Resolve a conflict",
         "Mark it `accepted`, `dismissed` or `resolved`, with an optional note.",
     ),
-    # Atoms
     f"POST {W}/atoms": (
         "Create an atom",
         "An atom is a scheduled agent with daily run, cost and action budgets. Starts as a draft. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
@@ -253,7 +243,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Start a run",
         "Starts a run for a schedule slot. `idempotency_key` guards against duplicate runs. Fails if a daily budget would be exceeded. Trusted backend only.",
     ),
-    # Approvals
     f"POST {W}/approvals": (
         "Request an approval",
         "An atom asks a human to approve one tool call before it runs. Needs `atoms:run`.",
@@ -282,7 +271,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Report the outcome",
         "Record `succeeded`, `failed` or `unknown` and the tool result. Needs `atoms:run`.",
     ),
-    # Skills
     f"POST {W}/skills/{{skill_id}}/promote": (
         "Promote a skill",
         "Makes a local skill available to the whole workspace. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
@@ -291,7 +279,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Delete a skill",
         "Soft delete. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
-    # Workspaces
     "POST /workspaces": (
         "Create a workspace",
         "Trusted backend only. `slug` is lowercase letters, digits and hyphens.",
@@ -309,7 +296,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Delete a workspace",
         "Soft delete. Needs a token with the `admin` scope.",
     ),
-    # Users
     "POST /users": (
         "Create a user",
         "Trusted backend only. A user is a person's global account; they join workspaces as members. Email is unique ignoring case.",
@@ -327,7 +313,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Delete a user",
         "Soft delete. Their memberships are not changed. Trusted backend only. Returns 204.",
     ),
-    # Identity
     f"POST {W}/members": (
         "Create a member",
         "`type` is `HUMAN` (needs name and email) or `AI` (needs name and `agent_kind`). Role is `owner`, `admin`, `member` or `viewer`.",
@@ -348,7 +333,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Replace team members",
         "Sets the full member list. Members not listed are removed.",
     ),
-    # Planning
     f"POST {W}/projects": (
         "Create a project",
         "`key` becomes the prefix of task identifiers, for example `DATA-1`.",
@@ -426,7 +410,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Delete a sprint",
         "Hard delete. Its tasks are kept and go back to the backlog (`sprint_id` becomes null). Returns 204.",
     ),
-    # Collaboration
     f"POST {W}/comments": (
         "Create a comment",
         "Attach a comment to a task, work item, project, project update, sprint or doc. Set `parent_comment_id` to reply.",

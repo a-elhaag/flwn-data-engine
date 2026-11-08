@@ -1,12 +1,12 @@
-"""Development sign-in: see app/dev_session.py. Hidden from the docs; 404 unless the database is local."""
+"""Development sign-in: see app/api/dev_session.py. Hidden from the docs; 404 unless the database is local."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import dev_session
-from app.api.identity_schemas import Email, NonBlank
+from app.api import dev_session
+from app.api.schemas.identity import Email, NonBlank
 
 router = APIRouter(prefix="/dev", include_in_schema=False)
 

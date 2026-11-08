@@ -1,6 +1,6 @@
 """The explorer: the schema as a diagram, with each table's endpoints listed under it.
 
-Built at request time from the same sources as the rest of the docs: the model metadata (erd.py)
+Built at request time from the same sources as the rest of the docs: the model metadata (db/erd.py)
 and the OpenAPI document. Nothing is copied by hand, so it cannot drift from the code.
 """
 

@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.config import settings
+from app.core.config import settings
 from app.db import session as db
 from app.db.base import PRIORITIES, WORK_STATUSES
 
@@ -93,8 +93,6 @@ class Seeder:
         if response.status_code not in expect:
             raise RuntimeError(f"{method} {url} -> {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
-
-    # -- one workspace ----------------------------------------------------------------------
 
     def workspace(self, spec) -> dict:
         ws = self.call("POST", "/workspaces", json={"name": spec["name"], "slug": spec["slug"]})[

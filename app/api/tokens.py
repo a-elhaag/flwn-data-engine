@@ -1,16 +1,14 @@
-"""Workspace-scoped tokens: verified here, signed by the backend (docs/AUTH_DESIGN.pdf).
+"""Workspace-scoped tokens: verified here, signed by the backend.
 
 The workspace lives in the signed token, never in tool arguments, so a caller cannot
 reach another workspace by changing a parameter. The token can also name the member it acts as
 (`mem`), which is how writes record who did them.
 
-This service only verifies. Backend tokens are EdDSA or ES256, picked by `kid` from the backend's
-public keys, and carry iss, aud, sub, ws, typ, ctx, scope, iat, exp and jti. The HS256 tokens
-from `mint` (the legacy /auth/tokens route) still verify while TOKEN_ALLOW_LEGACY_HS256 is on.
+This service only verifies. Tokens are EdDSA or ES256, picked by `kid` from the backend's public
+keys, and carry iss, aud, sub, ws, typ, ctx, scope, iat, exp and jti.
 """
 
 import json
-import time
 import uuid
 from dataclasses import dataclass
 from functools import lru_cache
@@ -20,7 +18,7 @@ from jwt import PyJWKClient, PyJWKSet
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import revocation
-from app.config import settings
+from app.core.config import settings
 
 SCOPE_READ = "memory:read"
 SCOPE_WRITE = "memory:write"
@@ -106,7 +104,7 @@ class Claims:
     member_id: str | None = None  # the member (human or AI agent) this token acts as
     atom_id: str | None = None
     run_id: str | None = None
-    ctx: str | None = None  # "personal" or "workspace"; legacy tokens only carry it for atoms
+    ctx: str | None = None  # "personal" or "workspace"
     typ: str = "agent"  # human, agent, run or service
     jti: str | None = None
     obo: str | None = None  # the human an agent acts for (typ=agent)
@@ -127,49 +125,6 @@ def _member(value) -> str | None:
         return str(uuid.UUID(str(value)))
     except ValueError:
         raise TokenError("member must be a UUID") from None
-
-
-def enabled() -> bool:
-    return settings.AGENT_TOKENS_ENABLED and bool(settings.MEMORY_TOKEN_SECRET)
-
-
-def mint(
-    workspace_id: str,
-    scopes: set[str] | frozenset[str],
-    subject: str,
-    ttl_seconds: int,
-    member_id: str | None = None,
-    atom_id: str | None = None,
-    run_id: str | None = None,
-    ctx: str | None = None,
-) -> tuple[str, int]:
-    if not enabled():
-        raise TokenError("tokens are disabled: MEMORY_TOKEN_SECRET is not set")
-    workspace_id = _workspace(workspace_id)
-    member_id = _member(member_id)
-    atom_id, run_id = _member(atom_id), _member(run_id)
-    _atom_claims(member_id, atom_id, run_id, scopes, ttl_seconds, ctx)
-    unknown = set(scopes) - AGENT_SCOPES
-    if unknown:
-        raise TokenError(f"unknown scopes: {sorted(unknown)}")
-    if not 1 <= ttl_seconds <= settings.MEMORY_TOKEN_MAX_TTL_SECONDS:
-        raise TokenError(f"ttl_seconds must be 1-{settings.MEMORY_TOKEN_MAX_TTL_SECONDS}")
-    now = int(time.time())
-    expires_at = now + ttl_seconds
-    claims = {
-        "iss": settings.MEMORY_TOKEN_ISSUER,
-        "sub": subject,
-        "ws": workspace_id,
-        "scope": " ".join(sorted(scopes)),
-        "iat": now,
-        "exp": expires_at,
-    }
-    if member_id:
-        claims["mem"] = member_id
-    if atom_id:
-        claims.update(atom_id=atom_id, run_id=run_id, ctx=ctx)
-    token = jwt.encode(claims, settings.MEMORY_TOKEN_SECRET, algorithm="HS256")
-    return token, expires_at
 
 
 def _atom_claims(member_id, atom_id, run_id, scopes, ttl_seconds, ctx):
@@ -193,11 +148,9 @@ def verify(token: str) -> Claims:
         alg = jwt.get_unverified_header(token).get("alg")
     except jwt.PyJWTError:
         raise TokenError("invalid or expired token") from None
-    if alg in SIGNED_ALGS:
-        return _verify_signed(token)
-    if alg == "HS256" and settings.TOKEN_ALLOW_LEGACY_HS256 and enabled():
-        return _verify_legacy(token)
-    raise TokenError("invalid or expired token")
+    if alg not in SIGNED_ALGS:
+        raise TokenError("invalid or expired token")
+    return _verify_signed(token)
 
 
 @lru_cache
@@ -268,37 +221,4 @@ def _verify_signed(token: str) -> Claims:
         jti=jti,
         obo=obo,
         act=str(data["act"]) if data.get("act") else None,
-    )
-
-
-def _verify_legacy(token: str) -> Claims:
-    try:
-        data = jwt.decode(
-            token,
-            settings.MEMORY_TOKEN_SECRET,
-            algorithms=["HS256"],
-            issuer=settings.MEMORY_TOKEN_ISSUER,
-            options={"require": ["exp", "iss", "sub", "ws"]},
-        )
-    except jwt.PyJWTError as exc:
-        raise TokenError("invalid or expired token") from exc
-    atom_id, run_id = _member(data.get("atom_id")), _member(data.get("run_id"))
-    member_id = _member(data.get("mem"))
-    scopes = frozenset(str(data.get("scope", "")).split())
-    try:
-        ttl_seconds = int(data["exp"]) - int(data["iat"]) if atom_id or run_id else 0
-    except (KeyError, TypeError, ValueError, OverflowError):
-        raise TokenError("atom tokens require valid iat and exp") from None
-    ctx = data.get("ctx")
-    _atom_claims(member_id, atom_id, run_id, scopes, ttl_seconds, ctx)
-    return Claims(
-        workspace_id=_workspace(data["ws"]),
-        scopes=frozenset(str(data.get("scope", "")).split()),
-        subject=str(data["sub"]),
-        expires_at=int(data["exp"]),
-        member_id=member_id,
-        atom_id=atom_id,
-        run_id=run_id,
-        ctx=ctx,
-        typ="run" if atom_id else ("agent" if member_id else "service"),
     )

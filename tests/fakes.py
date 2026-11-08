@@ -1,6 +1,6 @@
 """Test doubles shared by the file tests."""
 
-from app.storage.blobs import BlobInfo
+from app.domain.storage.blobs import BlobInfo
 
 
 class FakeBlobs:
@@ -22,7 +22,7 @@ class FakeBlobs:
         return self.stored.get((container, path))
 
     def download(self, container, path, max_bytes):
-        from app.storage.errors import Unindexable
+        from app.domain.storage.errors import Unindexable
 
         info = self.stored[(container, path)]
         if info.size > max_bytes:

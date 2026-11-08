@@ -73,11 +73,10 @@ az containerapp env create -n "$CAE" -g "$RG" -l "$LOC" --infrastructure-subnet-
 CAE_DOMAIN=$(az containerapp env show -n "$CAE" -g "$RG" --query properties.defaultDomain -o tsv)
 FQDN="$APP.$CAE_DOMAIN"
 
-# Signed-token auth: the backend's (or dev) public keys and the on-switch. TOKEN_JWKS comes from .env;
-# without it the app stays on the service key alone.
+# Signed-token auth: the backend's public keys, from .env. Without them only the service key works.
 TOKEN_ENV=()
 if [ -n "$(env_val TOKEN_JWKS)" ]; then
-  TOKEN_ENV=("TOKEN_JWKS=$(env_val TOKEN_JWKS)" AGENT_TOKENS_ENABLED=true)
+  TOKEN_ENV=("TOKEN_JWKS=$(env_val TOKEN_JWKS)")
 fi
 
 APP_ARGS=(
@@ -86,9 +85,9 @@ APP_ARGS=(
   --cpu 0.5 --memory 1Gi --min-replicas 0 --max-replicas 1
   --target-port 8002 --ingress external
   --secrets "database-url=$(env_val DATABASE_URL)" "foundry-key=$(env_val AZURE_FOUNDRY_KEY)" \
-            "data-api-key=$(env_val DATA_API_KEY)" "token-secret=$(env_val MEMORY_TOKEN_SECRET)"
+            "data-api-key=$(env_val DATA_API_KEY)"
   --env-vars DATABASE_URL=secretref:database-url AZURE_FOUNDRY_KEY=secretref:foundry-key \
-             DATA_API_KEY=secretref:data-api-key MEMORY_TOKEN_SECRET=secretref:token-secret \
+             DATA_API_KEY=secretref:data-api-key \
              "AZURE_FOUNDRY_ENDPOINT=$(env_val AZURE_FOUNDRY_ENDPOINT)" \
              "AZURE_STORAGE_ACCOUNT_URL=https://$SA.blob.core.windows.net" \
              AZURE_CLIENT_ID="$(az identity show -n "$ID" -g "$RG" --query clientId -o tsv)" \

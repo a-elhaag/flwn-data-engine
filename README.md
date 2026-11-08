@@ -22,47 +22,33 @@ AI engine ──┘                      └─ Azure Blob Storage      (files, 
   the app connects as a role without `BYPASSRLS` (see Configuration).
 - **Bytes never pass through the API.** Uploads and downloads use short-lived signed links.
 
+For AI agents and tools: start with [`AGENTS.md`](AGENTS.md); the API, MCP, schema and config references in `docs/` are generated from the code (`./run.sh docs`).
+
 ## Project structure
 
 ```
 app/
   main.py              application factory
-  config.py            settings from the environment
+  core/                config.py (settings from the environment), health.py
   api/                 HTTP layer
-    routes/            memory.py, files.py, meetings.py, planning.py, identity.py, system.py ...
-    schemas.py         request and response bodies
-    deps.py            shared dependencies and required permissions
-    auth.py, tokens.py service key and workspace-locked, scoped tokens
-    errors.py          domain errors mapped to HTTP statuses
-  meetings/            meetings, consent, recordings, transcripts
-  openapi/             Swagger metadata: field docs, examples, summaries, the business slice, the explorer page
-  mcp_tools/           MCP server for agents, mounted at /mcp (server.py plus memory, context, atom and admin tools)
-  memory/              Memory Steward
-    steward.py         write, read, revise, sweep, organize
-    store.py           every SQL statement for memories
-    recall.py          query rewrite, search, ranking
-    prompts.py         hardened prompts and strict JSON parsing
-    vectorizer.py      compress + embed
-  storage/             Azure Blob and file search
-    blobs.py           signed links, upload checks
-    files.py           file registry
-    indexer.py         background worker: extract, chunk, embed
-    extract.py         text, PDF (pypdf), scans and images (Parse)
-    chunking.py        structure-aware chunks with page and heading citations
-    search.py          hybrid search over file chunks
-  clients/             Foundry inference, retries and rate limiting, readiness checks
-  db/                  schema
-    models/            SQLAlchemy models by domain
-    sql/               functions, triggers, row-level security
-    install.py         creates the schema from the models (the tests use it)
-    session.py         engine, workspace-scoped sessions, advisory locks
-    erd.py             draws the schema as an interactive graph
+    routes/            one module per area: memory, files, meetings, planning, identity, atoms ...
+    schemas/           request and response bodies: common, atoms, approvals, collab, identity, planning
+    auth.py, tokens.py, revocation.py   service key and workspace-locked, scoped tokens
+    deps.py, errors.py, paging.py, generic_crud.py, dev_session.py
+  domain/              business logic, no HTTP
+    atoms/             atom service, skills, approvals, aggregate
+    collaboration/  decisions/  identity/  meetings/  planning/
+    memory/            Memory Steward: steward, store, recall, prompts, vectorizer
+    storage/           blobs, files, indexer, extract, chunking, search, media, transcripts
+  integrations/        inference.py (Foundry), ranking.py, resilience.py, mcp/ (MCP server at /mcp)
+  openapi/             Swagger metadata: field docs, examples, summaries, business slice, explorer page
+  db/                  models/ by domain, sql/ (functions, triggers, RLS), install, session, seed, erd
 migrations/            Alembic: one frozen baseline, later changes on top
-alembic.ini
-tests/                 unit and database tests
-docs/                  API and design documents
-infra/provision.sh     PostgreSQL and Blob Storage provisioning
-infra/deploy.sh        ACR, networking and Azure Container Apps deployment
+tests/                 one folder per area (atoms, auth, api, memory ...) plus shared support modules
+postman/               generated collection, environment, business OpenAPI slice
+docs/                  generated references: api, mcp, schema, config (build.py)
+AGENTS.md              guide for AI agents
+infra/                 provision.sh, deploy.sh (Azure)
 .github/workflows/     CI
 ```
 
@@ -77,21 +63,19 @@ bash run.sh                   # API on http://localhost:8002 (docs at /docs)
 ```
 
 Other commands: `bash run.sh test`, `bash run.sh lint`, `bash run.sh ready` (live dependency
-check), `bash run.sh erd` (rebuild `docs/schema-graph.html`), `bash run.sh openapi` (rebuild
-`docs/postman/flwn-data-engine.openapi.json`, the Postman import).
+check), `bash run.sh postman` (rebuild the
+Postman collection). Tests are discovered with `-s tests -t tests`.
 
 ### Who can call what
 
-- **Service key (`X-Data-API-Key`):** the only credential for now. Send `X-Acting-Member-Id` to
-  record changes against a member. Tokens are switched off (`AGENT_TOKENS_ENABLED=false`); see D36.
+- **Service key (`X-Data-API-Key`):** the trusted backend. Send `X-Acting-Member-Id` to record
+  changes against a member.
+- **Bearer token:** signed by the backend (EdDSA or ES256) and verified here with `TOKEN_JWKS` or
+  `TOKEN_JWKS_URL`. Locked to one workspace and limited to its scopes. This service never mints
+  tokens. `AGENT_TOKENS_ENABLED=false` switches them off.
 - With the key, private channels and private teams are visible to an admin, but direct and agent
   channels are visible only to their members. Without a member id, changes are not attributed.
-- Setting `AGENT_TOKENS_ENABLED=true` turns the token rules back on (D29 to D32). Tokens are
-  signed by the backend (EdDSA or ES256) and verified here with `TOKEN_JWKS` or `TOKEN_JWKS_URL`;
-  see [`docs/AUTH_DESIGN.md`](docs/AUTH_DESIGN.md). HS256 tokens from `/auth/tokens` still verify
-  while `TOKEN_ALLOW_LEGACY_HS256` is on.
 
-Decisions and reasons: [`docs/MERGE_DECISIONS.md`](docs/MERGE_DECISIONS.md).
 
 ### Database installation and Atoms upgrade
 
@@ -108,7 +92,7 @@ The upgrade requires `DATABASE_ADMIN_URL` (no fallback to `DATABASE_URL`). Set `
 the runtime database role, replacing `flwn_app` if needed. It is additive, transactional and
 idempotent, uses bounded locks, and preserves rows and the existing role's login/password.
 Never use `--reset` on an existing database. Rolling back to the old image leaves the additive
-schema in place. See [Atoms installation](docs/ATOMS_API.md#installation-and-verification).
+schema in place.
 
 ## Configuration
 
@@ -120,10 +104,8 @@ See `.env.example`. The settings that matter most:
 | `DATABASE_ADMIN_URL` | Administrative schema installation/upgrade connection; required by the Atoms upgrade. Never use it for the API. |
 | `AZURE_STORAGE_ACCOUNT_URL` | Enables the file routes. Access is by Entra ID, no keys. |
 | `AZURE_FOUNDRY_*`, `EMBEDDING_DEPLOYMENT` | Chat and embedding models. |
-| `MEMORY_TOKEN_SECRET` | 32+ characters. Only for the legacy HS256 `/auth/tokens` route. |
 | `TOKEN_JWKS` / `TOKEN_JWKS_URL` | The backend's public keys (a JWKS document, or its URL). `kid` picks the key. |
 | `TOKEN_ISSUER`, `TOKEN_AUDIENCE` | Expected `iss` (default `flwn-backend`) and this service's name in `aud` (default `data-engine`). |
-| `TOKEN_ALLOW_LEGACY_HS256` | Default true. Turn off once the backend mints. |
 
 Create the least-privilege role with `APP_DB_PASSWORD=... python -m app.db.install --app-role flwn_app`.
 
@@ -146,25 +128,10 @@ and private endpoints, builds the image in ACR, and creates or updates the app. 
 from the gitignored `.env`. These scripts describe deployment intent; their presence does not
 confirm that resources are provisioned or that a deployment is healthy.
 
-## Docs
-
-- [`docs/ATOMS_API.md`](docs/ATOMS_API.md): atom administration, MCP tools, run tokens, grants and soft deletion.
-- [`docs/ATOMS_AI_ENGINE_INTEGRATION.md`](docs/ATOMS_AI_ENGINE_INTEGRATION.md): AI-engine scheduler/worker handoff, request examples, retries and acceptance checklist.
-- [`docs/MEMORY_API.md`](docs/MEMORY_API.md): memory routes, auth, behavior, limits.
-- [`docs/MEMORY_TOOLS.md`](docs/MEMORY_TOOLS.md): MCP tools and the agent usage guide.
-- [`docs/CONFLICTS_API.md`](docs/CONFLICTS_API.md): decision conflict flags and human resolution.
-- [`docs/MEETINGS_API.md`](docs/MEETINGS_API.md): meetings, consent, recordings, transcripts.
-- [`docs/FILES_API.md`](docs/FILES_API.md): file upload, download and storage layout.
-- [`docs/MERGE_DECISIONS.md`](docs/MERGE_DECISIONS.md): why each design choice was made when the branches were merged.
-- [`docs/postman/`](docs/postman/README.md): Postman import and how to get a token.
-- [`docs/CRUD_STATUS.md`](docs/CRUD_STATUS.md): which resources have full, partial or no CRUD.
-- [`docs/ATOMIZER_AND_ATOM_TOOLS_TASK.md`](docs/ATOMIZER_AND_ATOM_TOOLS_TASK.md): specified atom tools and Atomizer support, not built yet.
-- [`docs/schema-graph.html`](docs/schema-graph.html): the database as an interactive graph.
-
 ## Known gaps
 
 - Recall is hybrid (vector + keyword) with a reranker, but there is no relevance cut-off yet: it
   always returns the best few, even when none is a good match.
 - File search has no relevance cut-off yet: it returns the best few chunks even when none matches.
 - Writes embed synchronously; there is no background worker.
-- Several tables still have no REST API (milestones, labels, folders, invitations and more). See [`docs/CRUD_STATUS.md`](docs/CRUD_STATUS.md) for the full list.
+- Several tables still have no REST API (milestones, labels, folders, invitations and more).

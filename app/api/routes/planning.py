@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow
 from app.api.paging import split_page
-from app.api.planning_schemas import (
+from app.api.schemas.planning import (
     ProjectCreate,
     ProjectOut,
     ProjectPage,
@@ -28,7 +28,7 @@ from app.api.planning_schemas import (
     WorkItemUpdate,
 )
 from app.db.base import WORK_STATUSES
-from app.planning.service import (
+from app.domain.planning.service import (
     PlanningConflict,
     PlanningNotFound,
     ProjectService,

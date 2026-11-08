@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow, viewer
-from app.api.identity_schemas import (
+from app.api.paging import split_page
+from app.api.schemas.identity import (
     MemberCreate,
     MemberOut,
     MemberPage,
@@ -19,8 +20,7 @@ from app.api.identity_schemas import (
     TeamPage,
     TeamUpdate,
 )
-from app.api.paging import split_page
-from app.identity.members_teams import (
+from app.domain.identity.members_teams import (
     IdentityConflict,
     IdentityNotFound,
     MemberService,
