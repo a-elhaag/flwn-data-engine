@@ -367,6 +367,7 @@ class TaskService:
         assignee_id=None,
         status=None,
         sprint_id=None,
+        work_item_id=None,
         backlog=None,
     ):
         """backlog=True: tasks in no sprint. backlog=False: tasks in a sprint."""
@@ -383,6 +384,8 @@ class TaskService:
                 query = query.where(Task.status == status)
             if sprint_id is not None:
                 query = query.where(Task.sprint_id == sprint_id)
+            if work_item_id is not None:
+                query = query.where(Task.work_item_id == work_item_id)
             if backlog is not None:
                 query = query.where(
                     Task.sprint_id.is_(None) if backlog else Task.sprint_id.is_not(None)
