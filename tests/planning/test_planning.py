@@ -167,6 +167,16 @@ class PlanningQueriesTests(CrudHarness):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
+    def test_tasks_filtered_by_work_item(self):
+        other = self.client.post(
+            f"{self.base}/projects/{self.project['id']}/work-items",
+            json={"title": "other", "type": "FEATURE"},
+        ).json()
+        mine = {self.task()["id"], self.task()["id"]}
+        self.task(work_item_id=other["id"])
+        found = self.client.get(self.tasks_url, params={"work_item_id": self.item["id"]}).json()
+        self.assertEqual({t["id"] for t in found["items"]}, mine)
+
     def test_task_by_key(self):
         first, second = self.task(), self.task()
         found = self.client.get(f"{self.base}/tasks/by-key/FLWN-2")

@@ -173,6 +173,7 @@ def list_tasks(
     assignee_id: UUID | None = None,
     status: str | None = None,
     sprint_id: UUID | None = None,
+    work_item_id: UUID | None = None,
     backlog: bool | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -187,6 +188,7 @@ def list_tasks(
         assignee_id=assignee_id,
         status=status,
         sprint_id=sprint_id,
+        work_item_id=work_item_id,
         backlog=backlog,
     )
     items, has_more = split_page(items, limit)

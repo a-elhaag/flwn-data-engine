@@ -370,7 +370,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"GET {W}/projects/{{project_id}}/tasks": (
         "List tasks",
-        "Filter by `assignee_id`, `status`, `sprint_id`, or `backlog` (`true`: in no sprint). Paginated with `limit` and `offset`; `has_more` says whether another page follows.",
+        "Filter by `assignee_id`, `status`, `sprint_id`, `work_item_id`, or `backlog` (`true`: in no sprint). Paginated with `limit` and `offset`; `has_more` says whether another page follows.",
     ),
     f"GET {W}/tasks/by-key/{{key}}": (
         "Get a task by its key",
