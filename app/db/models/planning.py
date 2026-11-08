@@ -192,7 +192,7 @@ class Task(IdPk, Tenant, Stamps, SoftDelete, Base):
         pfk("work_item_id", "work_items", "cascade"),
         pfk("sprint_id", "sprints", "set null"),
         pfk("milestone_id", "milestones", "set null"),
-        tfk("parent_task_id", "tasks", "set null"),
+        pfk("parent_task_id", "tasks", "set null"),  # a sub-task stays in its parent's project
         tfk("assignee_id", "members", "set null"),
         tfk("created_by", "members", "set null"),
         Index("uq_tasks_project_id_number", "project_id", "number", unique=True),

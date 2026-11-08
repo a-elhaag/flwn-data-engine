@@ -231,6 +231,38 @@ class SchemaTest(unittest.TestCase):
                 sprint_id=sprint,
             )
         )
+        # a sub-task whose parent task belongs to a different project
+        other_backlog = add(
+            self.conn, "backlogs", workspace_id=a["workspace_id"], project_id=other, name="B"
+        )
+        other_item = add(
+            self.conn,
+            "work_items",
+            workspace_id=a["workspace_id"],
+            project_id=other,
+            backlog_id=other_backlog,
+            title="w",
+            type="FEATURE",
+        )
+        parent = add(
+            self.conn,
+            "tasks",
+            workspace_id=a["workspace_id"],
+            project_id=other,
+            work_item_id=other_item,
+            title="parent",
+        )
+        self.raises_integrity(
+            lambda: add(
+                self.conn,
+                "tasks",
+                workspace_id=a["workspace_id"],
+                project_id=a["project"],
+                work_item_id=a["item"],
+                title="z",
+                parent_task_id=parent,
+            )
+        )
 
     def test_row_level_security(self):
         a, b = make_workspace(self.conn, "alpha"), make_workspace(self.conn, "beta")
