@@ -462,11 +462,11 @@ EXAMPLES.update(
         "SprintCreate": {
             "name": "Sprint 14",
             "goal": "Ship the export feature",
-            "status": "planned",
             "start_date": "2026-11-02",
             "end_date": "2026-11-15",
         },
         "SprintUpdate": {"status": "active", "goal": "Ship export and the new report"},
+        "SprintComplete": {"move_open_tasks_to": "backlog"},
         "UserCreate": {
             "email": "ada@example.com",
             "name": "Ada Lovelace",

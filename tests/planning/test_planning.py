@@ -115,12 +115,73 @@ class PlanningApiTests(CrudHarness):
         self.assertEqual(kept.status_code, 200, kept.text)
         self.assertIsNone(kept.json()["sprint_id"])
 
+    def test_sprint_rules(self):
+        project = self.project(self.team_a)
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+        first, second = self.sprint(self.team_a, project["id"]), self.sprint(self.team_a, project["id"])
+        self.assertEqual((first["started_at"], first["completed_at"]), (None, None))
+
+        def post(path, **kw):
+            return self.client.post(f"{base}/sprints/{path}", **kw)
+
+        def patch(sprint, status):
+            return self.client.patch(f"{base}/sprints/{sprint['id']}", json={"status": status})
+
+        # planned cannot jump to completed
+        r = patch(first, "completed")
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "invalid_sprint_transition"))
+        started = post(f"{first['id']}/start")
+        self.assertEqual(started.status_code, 200, started.text)
+        self.assertIsNotNone(started.json()["started_at"])
+        # one active sprint per project
+        r = post(f"{second['id']}/start")
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "sprint_already_active"))
+        self.assertEqual(patch(second, "active").status_code, 409)
+        # a task cannot be created in a completed sprint, nor moved into one
+        item = self.work_item(self.team_a, project["id"])
+        task = self.client.post(
+            f"{base}/tasks",
+            json={"work_item_id": item["id"], "title": "open", "sprint_id": first["id"]},
+        ).json()
+        done = self.client.post(
+            f"{base}/tasks",
+            json={"work_item_id": item["id"], "title": "done", "sprint_id": first["id"],
+                  "status": "done"},
+        ).json()
+        # complete: the open task goes to the planned sprint, the done one stays
+        r = post(f"{first['id']}/complete", json={"move_open_tasks_to": first["id"]})
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "target_sprint_not_planned"))
+        r = post(f"{first['id']}/complete", json={"move_open_tasks_to": second["id"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["status"], "completed")
+        self.assertIsNotNone(r.json()["completed_at"])
+        get = lambda t: self.client.get(f"{base}/tasks/{t['id']}").json()["sprint_id"]  # noqa: E731
+        self.assertEqual((get(task), get(done)), (second["id"], first["id"]))
+        # completed is final
+        for status in ("planned", "active", "completed"):
+            r = patch(first, status)
+            self.assertEqual(r.status_code, 409 if status != "completed" else 200, status)
+        # no new task in a completed sprint; the done task may stay where it is
+        r = self.client.post(
+            f"{base}/tasks", json={"work_item_id": item["id"], "title": "x", "sprint_id": first["id"]}
+        )
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "sprint_completed"))
+        r = self.client.patch(f"{base}/tasks/{task['id']}", json={"sprint_id": first["id"]})
+        self.assertEqual(r.status_code, 409)
+        r = self.client.patch(f"{base}/tasks/{done['id']}", json={"sprint_id": first["id"], "title": "d"})
+        self.assertEqual(r.status_code, 200, r.text)
+        # the default target is the backlog
+        post(f"{second['id']}/start")
+        r = post(f"{second['id']}/complete")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(get(task))
+
     def test_sprint_rejects_bad_dates_and_status(self):
         project = self.project(self.team_a)
         url = f"/workspaces/{self.team_a}/projects/{project['id']}/sprints"
         for body in (
             {"name": "S", "start_date": "2026-02-02", "end_date": "2026-02-01"},
-            {"name": "S", "status": "done"},
+            {"name": "S", "status": "active"},  # a sprint always starts planned
             {"name": "  "},
         ):
             self.assertEqual(self.client.post(url, json=body).status_code, 422, body)

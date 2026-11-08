@@ -156,11 +156,11 @@ class Seeder:
                 json={
                     "name": "Sprint 1",
                     "goal": f"First cut of {name}",
-                    "status": "active",
                     "start_date": today.isoformat(),
                     "end_date": (today + timedelta(days=14)).isoformat(),
                 },
             )["id"]
+            acting("POST", f"/projects/{project}/sprints/{sprint}/start")
             counts["sprints"] += 1
             for number, title in enumerate(items):
                 item = acting(

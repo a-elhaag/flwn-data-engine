@@ -159,6 +159,8 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/projects/{project_id}/sprints/{sprint_id}` | Get a sprint | scope `planning:read`, writes `planning:write` |
 | `PATCH /workspaces/{ws}/projects/{project_id}/sprints/{sprint_id}` | Update a sprint | scope `planning:read`, writes `planning:write` |
 | `DELETE /workspaces/{ws}/projects/{project_id}/sprints/{sprint_id}` | Delete a sprint | scope `planning:read`, writes `planning:write` |
+| `POST /workspaces/{ws}/projects/{project_id}/sprints/{sprint_id}/complete` | Complete a sprint | scope `planning:read`, writes `planning:write` |
+| `POST /workspaces/{ws}/projects/{project_id}/sprints/{sprint_id}/start` | Start a sprint | scope `planning:read`, writes `planning:write` |
 | `GET /workspaces/{ws}/projects/{project_id}/tasks` | List tasks | scope `planning:read`, writes `planning:write` |
 | `POST /workspaces/{ws}/projects/{project_id}/tasks` | Create a task | scope `planning:read`, writes `planning:write` |
 | `GET /workspaces/{ws}/projects/{project_id}/tasks/{task_id}` | Get a task | scope `planning:read`, writes `planning:write` |

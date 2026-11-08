@@ -4094,7 +4094,7 @@
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/projects/{{projectId}}/sprints",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Sprint 14\",\n  \"goal\": \"Ship the export feature\",\n  \"status\": \"planned\",\n  \"start_date\": \"2026-11-02\",\n  \"end_date\": \"2026-11-15\"\n}",
+              "raw": "{\n  \"name\": \"Sprint 14\",\n  \"goal\": \"Ship the export feature\",\n  \"start_date\": \"2026-11-02\",\n  \"end_date\": \"2026-11-15\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4627,6 +4627,79 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Complete a sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/projects/{{projectId}}/sprints/{{sprintId}}/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"move_open_tasks_to\": \"backlog\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Start a sprint",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/projects/{{projectId}}/sprints/{{sprintId}}/start"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]

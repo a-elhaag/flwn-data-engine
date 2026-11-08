@@ -392,7 +392,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"DELETE {W}/projects/{{project_id}}/tasks/{{task_id}}": ("Delete a task", "Returns 204."),
     f"POST {W}/projects/{{project_id}}/sprints": (
         "Create a sprint",
-        "Status is `planned`, `active` or `completed`. `end_date` cannot be before `start_date`.",
+        "A new sprint is always `planned`. `end_date` cannot be before `start_date`.",
     ),
     f"GET {W}/projects/{{project_id}}/sprints": (
         "List sprints",
@@ -404,7 +404,15 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"PATCH {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
         "Update a sprint",
-        "Only the fields you send change.",
+        "Only the fields you send change. Status moves only planned to active and active to completed (409 `invalid_sprint_transition`); a project has one active sprint (409 `sprint_already_active`).",
+    ),
+    f"POST {W}/projects/{{project_id}}/sprints/{{sprint_id}}/start": (
+        "Start a sprint",
+        "planned to active. 409 `sprint_already_active` if the project has an active sprint. Sets `started_at`.",
+    ),
+    f"POST {W}/projects/{{project_id}}/sprints/{{sprint_id}}/complete": (
+        "Complete a sprint",
+        "active to completed, in one transaction. Sets `completed_at` and moves unfinished tasks (not done or canceled) to `move_open_tasks_to`: `backlog` (default) or a planned sprint of the project. Tasks cannot be added to a completed sprint (409 `sprint_completed`).",
     ),
     f"DELETE {W}/projects/{{project_id}}/sprints/{{sprint_id}}": (
         "Delete a sprint",

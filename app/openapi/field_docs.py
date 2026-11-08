@@ -503,14 +503,13 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
     "SprintCreate": {
         "name": "Sprint name.",
         "goal": "What the sprint is meant to achieve.",
-        "status": "`planned`, `active` or `completed`. Defaults to `planned`.",
         "start_date": "First day of the sprint (YYYY-MM-DD).",
         "end_date": "Last day of the sprint (YYYY-MM-DD). Must not be before `start_date`.",
     },
     "SprintUpdate": {
         "name": "New name.",
         "goal": "New goal.",
-        "status": "`planned`, `active` or `completed`.",
+        "status": "`active` (from `planned`) or `completed` (from `active`). Any other move is 409 `invalid_sprint_transition`.",
         "start_date": "New first day (YYYY-MM-DD).",
         "end_date": "New last day (YYYY-MM-DD).",
     },
@@ -523,8 +522,13 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "status": "`planned`, `active` or `completed`.",
         "start_date": "First day. Null if not set.",
         "end_date": "Last day. Null if not set.",
+        "started_at": "When the sprint became active. Set by the engine; null while planned.",
+        "completed_at": "When the sprint was completed. Set by the engine; null before.",
         "created_at": "When the sprint was created.",
         "updated_at": "When the sprint was last changed.",
+    },
+    "SprintComplete": {
+        "move_open_tasks_to": "Where unfinished tasks go: `backlog` (default) or the id of a planned sprint of the same project.",
     },
     "SprintPage": {"items": "The sprints on this page."},
     "CommentCreate": {

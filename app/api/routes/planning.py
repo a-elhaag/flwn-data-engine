@@ -14,6 +14,7 @@ from app.api.schemas.planning import (
     ProjectOut,
     ProjectPage,
     ProjectUpdate,
+    SprintComplete,
     SprintCreate,
     SprintOut,
     SprintPage,
@@ -50,7 +51,9 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(404, str(exc)) from None
     except PlanningConflict as exc:
         raise HTTPException(409, str(exc)) from None
-    except IntegrityError:
+    except IntegrityError as exc:
+        if "uq_sprints_one_active" in str(exc.orig):  # lost a race with another start
+            raise HTTPException(409, "sprint_already_active") from None
         raise HTTPException(409, "resource conflicts with an existing record") from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
@@ -269,6 +272,41 @@ def update_sprint(
         str(project_id),
         str(sprint_id),
         **body.model_dump(exclude_unset=True),
+    )
+
+
+SPRINT_409 = {409: {"description": "invalid_sprint_transition, sprint_already_active, ..."}}
+
+
+@router.post(
+    "/projects/{project_id}/sprints/{sprint_id}/start",
+    response_model=SprintOut,
+    responses=SPRINT_409,
+)
+def start_sprint(request: Request, workspace_id: WorkspaceId, project_id: UUID, sprint_id: UUID):
+    return _call(
+        SprintService(str(workspace_id), actor(request)).start, str(project_id), str(sprint_id)
+    )
+
+
+@router.post(
+    "/projects/{project_id}/sprints/{sprint_id}/complete",
+    response_model=SprintOut,
+    responses=SPRINT_409,
+)
+def complete_sprint(
+    request: Request,
+    workspace_id: WorkspaceId,
+    project_id: UUID,
+    sprint_id: UUID,
+    body: SprintComplete = SprintComplete(),
+):
+    target = body.move_open_tasks_to
+    return _call(
+        SprintService(str(workspace_id), actor(request)).complete,
+        str(project_id),
+        str(sprint_id),
+        "backlog" if target == "backlog" else str(target),
     )
 
 

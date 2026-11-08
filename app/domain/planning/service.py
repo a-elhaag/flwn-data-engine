@@ -491,6 +491,7 @@ class TaskService:
             events.record(session, str(self.workspace_id), self.actor, "task", row.id, "deleted")
 
     def _validate_task_refs(self, session, project, fields, task_id=None):
+        self._refuse_completed_sprint(session, project, fields, task_id)
         for key, model in (("sprint_id", Sprint), ("milestone_id", Milestone)):
             if fields.get(key) is not None:
                 value = uuid.UUID(str(fields[key]))
@@ -540,6 +541,26 @@ class TaskService:
                 self._refuse_task_cycle(session, task_id, value)
             fields["parent_task_id"] = value
 
+    def _refuse_completed_sprint(self, session, project, fields, task_id):
+        """A task cannot be put into a completed sprint (staying in one it is already in is fine)."""
+        if fields.get("sprint_id") is None:
+            return
+        wanted = uuid.UUID(str(fields["sprint_id"]))
+        status = session.scalar(
+            select(Sprint.status).where(
+                Sprint.workspace_id == self.workspace_id,
+                Sprint.project_id == project.id,
+                Sprint.id == wanted,
+            )
+        )
+        if status != "completed":  # a missing sprint is reported as not found below
+            return
+        current = (
+            session.scalar(select(Task.sprint_id).where(Task.id == task_id)) if task_id else None
+        )
+        if current != wanted:
+            raise PlanningConflict("sprint_completed")
+
     def _refuse_task_cycle(self, session, task_id, parent_id):
         """A task cannot be its own ancestor: walk up from the new parent and look for it."""
         seen, current = set(), parent_id
@@ -565,6 +586,9 @@ def _sprint(session, workspace_id, project_id, sprint_id):
     if row is None:
         raise PlanningNotFound("sprint not found")
     return row
+
+
+SPRINT_MOVES = {("planned", "active"), ("active", "completed")}
 
 
 class SprintService:
@@ -604,6 +628,8 @@ class SprintService:
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
             row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            if "status" in fields:
+                self._move(session, row, fields.pop("status"))
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()
@@ -611,6 +637,70 @@ class SprintService:
                 session, str(self.workspace_id), self.actor, "sprint", row.id, "updated", fields
             )
             return row
+
+    def start(self, project_id, sprint_id):
+        """planned -> active. 409 if the project already has an active sprint."""
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            self._move(session, row, "active")
+            session.flush()
+            events.record(session, str(self.workspace_id), self.actor, "sprint", row.id, "started")
+            return row
+
+    def complete(self, project_id, sprint_id, move_open_tasks_to="backlog"):
+        """active -> completed. Unfinished tasks go to the backlog or a planned sprint, in one go."""
+        with session_for(str(self.workspace_id)) as session:
+            project = _project(session, self.workspace_id, project_id)
+            row = _sprint(session, self.workspace_id, project.id, sprint_id)
+            target = None
+            if move_open_tasks_to != "backlog":
+                target = _sprint(session, self.workspace_id, project.id, move_open_tasks_to)
+                if target.id == row.id or target.status != "planned":
+                    raise PlanningConflict("target_sprint_not_planned")
+            self._move(session, row, "completed")
+            open_tasks = session.scalars(
+                select(Task).where(
+                    Task.workspace_id == self.workspace_id,
+                    Task.sprint_id == row.id,
+                    Task.deleted_at.is_(None),
+                    Task.status.not_in(("done", "canceled")),
+                )
+            ).all()
+            for task in open_tasks:
+                task.sprint_id = target.id if target else None
+            session.flush()
+            events.record(
+                session,
+                str(self.workspace_id),
+                self.actor,
+                "sprint",
+                row.id,
+                "completed",
+                {"moved_tasks": len(open_tasks)},
+            )
+            return row
+
+    def _move(self, session, row, status):
+        """Planned -> active -> completed only, one active sprint per project, times kept."""
+        if status == row.status:
+            return
+        if (row.status, status) not in SPRINT_MOVES:
+            raise PlanningConflict("invalid_sprint_transition")
+        if status == "active":
+            other = session.scalar(
+                select(Sprint.id).where(
+                    Sprint.workspace_id == self.workspace_id,
+                    Sprint.project_id == row.project_id,
+                    Sprint.status == "active",
+                )
+            )
+            if other is not None:
+                raise PlanningConflict("sprint_already_active")
+            row.started_at = datetime.now(UTC)
+        else:
+            row.completed_at = datetime.now(UTC)
+        row.status = status
 
     def delete(self, project_id, sprint_id):
         """Hard delete. The database clears sprint_id on its tasks, which go back to the backlog."""
