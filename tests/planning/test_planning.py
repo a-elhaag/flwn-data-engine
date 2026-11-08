@@ -200,6 +200,18 @@ class PlanningQueriesTests(CrudHarness):
         found = self.client.get(self.tasks_url, params={"work_item_id": self.item["id"]}).json()
         self.assertEqual({t["id"] for t in found["items"]}, mine)
 
+    def test_sub_tasks_cannot_form_a_loop(self):
+        a = self.task()
+        b = self.task(parent_task_id=a["id"])
+        c = self.task(parent_task_id=b["id"])
+        url = f"{self.tasks_url}/{a['id']}"
+        for parent in (b["id"], c["id"]):  # a child, and a grandchild, as the new parent
+            response = self.client.patch(url, json={"parent_task_id": parent})
+            self.assertEqual((response.status_code, response.json()["detail"]), (409, "task_cycle"))
+        self.assertIsNone(self.client.get(url).json()["parent_task_id"])
+        moved = self.client.patch(f"{self.tasks_url}/{c['id']}", json={"parent_task_id": a["id"]})
+        self.assertEqual(moved.status_code, 200, moved.text)
+
     def test_task_by_key(self):
         first, second = self.task(), self.task()
         found = self.client.get(f"{self.base}/tasks/by-key/FLWN-2")

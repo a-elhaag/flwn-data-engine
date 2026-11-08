@@ -536,7 +536,22 @@ class TaskService:
                 is None
             ):
                 raise PlanningNotFound("parent task not found")
+            if task_id is not None:
+                self._refuse_task_cycle(session, task_id, value)
             fields["parent_task_id"] = value
+
+    def _refuse_task_cycle(self, session, task_id, parent_id):
+        """A task cannot be its own ancestor: walk up from the new parent and look for it."""
+        seen, current = set(), parent_id
+        while current is not None and current not in seen:
+            if current == task_id:
+                raise PlanningConflict("task_cycle")
+            seen.add(current)
+            current = session.scalar(
+                select(Task.parent_task_id).where(
+                    Task.workspace_id == self.workspace_id, Task.id == current
+                )
+            )
 
 
 def _sprint(session, workspace_id, project_id, sprint_id):
