@@ -9,6 +9,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.api.schemas.identity import NonBlank
 from app.db.base import PRIORITIES, WORK_STATUSES
 
+def _reject_null(model: BaseModel, required: set[str]) -> None:
+    """An update may leave a field out, but it cannot set a required column to null."""
+    for field in model.model_fields_set & required:
+        if getattr(model, field) is None:
+            raise ValueError(f"{field} cannot be null")
+
+
 ProjectKey = Annotated[str, Field(min_length=1, max_length=10, pattern=r"^[A-Z][A-Z0-9]*$")]
 
 
@@ -58,6 +65,7 @@ class ProjectUpdate(BaseModel):
     def validate_project_update(self):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
+        _reject_null(self, {"key", "name", "status"})
         if self.status is not None and self.status not in {
             "backlog",
             "planned",
@@ -126,6 +134,7 @@ class WorkItemUpdate(BaseModel):
     def validate_work_item_update(self):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
+        _reject_null(self, {"title", "type", "priority", "status"})
         if self.type is not None and self.type not in {"FEATURE", "STORY", "BUG"}:
             raise ValueError("invalid work item type")
         if self.priority is not None and self.priority not in PRIORITIES:
@@ -203,6 +212,7 @@ class TaskUpdate(BaseModel):
     def validate_task_update(self):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
+        _reject_null(self, {"title", "status", "priority"})
         if self.priority is not None and self.priority not in PRIORITIES:
             raise ValueError("invalid priority")
         if self.status is not None and self.status not in WORK_STATUSES:
@@ -274,6 +284,7 @@ class SprintUpdate(BaseModel):
     def validate_sprint_update(self):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
+        _reject_null(self, {"name", "status"})
         if self.status is not None and self.status not in SPRINT_STATUSES:
             raise ValueError("invalid sprint status")
         if self.start_date and self.end_date and self.end_date < self.start_date:

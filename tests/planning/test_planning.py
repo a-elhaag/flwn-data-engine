@@ -173,6 +173,23 @@ class PlanningQueriesTests(CrudHarness):
         self.assertEqual(self.client.get(url).json()["key"], "FLWN")
         self.assertEqual(self.client.patch(url, json={"name": "Renamed"}).status_code, 200)
 
+    def test_updates_reject_null_for_required_fields(self):
+        base = f"{self.base}/projects/{self.project['id']}"
+        sprint = self.client.post(f"{base}/sprints", json={"name": "S1"}).json()
+        cases = [
+            (base, {"name": None}),
+            (f"{base}/work-items/{self.item['id']}", {"title": None}),
+            (f"{base}/work-items/{self.item['id']}", {"status": None}),
+            (f"{base}/tasks/{self.task()['id']}", {"priority": None}),
+            (f"{base}/sprints/{sprint['id']}", {"name": None}),
+        ]
+        for url, body in cases:
+            response = self.client.patch(url, json=body)
+            self.assertEqual(response.status_code, 422, (url, body, response.text))
+        # Optional fields can still be cleared.
+        task = self.client.patch(f"{base}/tasks/{self.task()['id']}", json={"due_date": None})
+        self.assertEqual(task.status_code, 200, task.text)
+
     def test_task_by_key(self):
         first, second = self.task(), self.task()
         found = self.client.get(f"{self.base}/tasks/by-key/FLWN-2")
