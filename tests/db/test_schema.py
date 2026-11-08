@@ -403,6 +403,40 @@ class SchemaTest(unittest.TestCase):
             )
         )
 
+    def test_task_times_follow_the_status(self):
+        a = make_workspace(self.conn, "alpha")
+        task = add(
+            self.conn,
+            "tasks",
+            workspace_id=a["workspace_id"],
+            project_id=a["project"],
+            work_item_id=a["item"],
+            title="t",
+            started_at="2020-01-01",  # a writer cannot choose the times
+        )
+
+        def times():
+            return self.conn.execute(
+                text("select started_at, completed_at from tasks where id = :t"), {"t": task}
+            ).one()
+
+        def move(status):
+            self.conn.execute(
+                text("update tasks set status = :s where id = :t"), {"s": status, "t": task}
+            )
+            return times()
+
+        self.assertEqual(tuple(times()), (None, None))
+        started, completed = move("in_progress")
+        self.assertIsNotNone(started)
+        self.assertIsNone(completed)
+        self.assertEqual(tuple(move("in_review")), (started, None))
+        started_again, completed = move("done")
+        self.assertEqual(started_again, started)
+        self.assertIsNotNone(completed)
+        self.assertEqual(tuple(move("in_progress")), (started, None))  # reopened
+        self.assertIsNotNone(move("canceled")[1])
+
     def test_events_are_append_only_and_updated_at_moves(self):
         a = make_workspace(self.conn, "alpha")
         w = a["workspace_id"]
