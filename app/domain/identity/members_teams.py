@@ -117,6 +117,9 @@ class MemberService:
             user_id = None
             if type == "HUMAN":
                 user = session.scalar(select(User).where(email_matches(normalized_email)))
+                if user is not None and user.deleted_at is not None:
+                    # never link a new membership to a deleted account (see users.delete)
+                    raise IdentityConflict("email belongs to a deleted account")
                 if user is None:
                     user = User(email=normalized_email, name=name.strip())
                     session.add(user)
