@@ -350,6 +350,7 @@ _WORK_ITEM = {
     "type": "FEATURE",
     "priority": "high",
     "status": "todo",
+    "task_counts": {"todo": 2, "done": 1},
     "created_at": STAMP,
     "updated_at": STAMP,
 }

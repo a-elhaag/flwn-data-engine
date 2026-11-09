@@ -150,6 +150,7 @@ class WorkItemOut(BaseModel):
     type: str
     priority: str
     status: str
+    task_counts: dict[str, int] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

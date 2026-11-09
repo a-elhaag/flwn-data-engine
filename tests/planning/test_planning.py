@@ -1,6 +1,7 @@
 import uuid
 
 from harness import CrudHarness
+from sqlalchemy import event
 
 
 class PlanningApiTests(CrudHarness):
@@ -76,6 +77,70 @@ class PlanningApiTests(CrudHarness):
     def test_project_and_task_routes_require_service_credentials(self):
         response = self.client.get(f"/workspaces/{self.team_a}/projects", headers=self.NO_TOKEN)
         self.assertEqual(response.status_code, 401)
+
+    def task(self, workspace, project_id, work_item_id, status):
+        response = self.client.post(
+            f"/workspaces/{workspace}/projects/{project_id}/tasks",
+            json={"work_item_id": work_item_id, "title": "Step", "status": status},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_work_item_task_counts_by_status_skip_deleted_tasks(self):
+        project = self.project(self.team_a)
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+        item = self.work_item(self.team_a, project["id"])
+        empty = self.work_item(self.team_a, project["id"])
+        self.task(self.team_a, project["id"], item["id"], "backlog")
+        self.task(self.team_a, project["id"], item["id"], "done")
+        self.task(self.team_a, project["id"], item["id"], "done")
+        gone = self.task(self.team_a, project["id"], item["id"], "todo")
+        self.assertEqual(self.client.delete(f"{base}/tasks/{gone['id']}").status_code, 204)
+
+        page = self.client.get(f"{base}/work-items?limit=10").json()
+        counts = {row["id"]: row["task_counts"] for row in page["items"]}
+        self.assertEqual(counts[item["id"]], {"backlog": 1, "done": 2})
+        self.assertEqual(counts[empty["id"]], {})
+        single = self.client.get(f"{base}/work-items/{item['id']}").json()
+        self.assertEqual(single["task_counts"], {"backlog": 1, "done": 2})
+
+    def test_work_item_list_counts_take_one_query_per_page(self):
+        project = self.project(self.team_a)
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+
+        def list_queries():
+            statements = []
+
+            def record(conn, cursor, statement, *args):
+                statements.append(statement)
+
+            event.listen(self.engine, "before_cursor_execute", record)
+            try:
+                response = self.client.get(f"{base}/work-items?limit=50")
+            finally:
+                event.remove(self.engine, "before_cursor_execute", record)
+            self.assertEqual(response.status_code, 200, response.text)
+            return len(statements), response.json()["items"]
+
+        for _ in range(2):
+            item = self.work_item(self.team_a, project["id"])
+            self.task(self.team_a, project["id"], item["id"], "done")
+        two_queries, two_items = list_queries()
+
+        for _ in range(3):
+            item = self.work_item(self.team_a, project["id"])
+            self.task(self.team_a, project["id"], item["id"], "done")
+            self.task(self.team_a, project["id"], item["id"], "todo")
+        five_queries, five_items = list_queries()
+
+        self.assertEqual(len(two_items), 2)
+        self.assertEqual(len(five_items), 5)
+        self.assertEqual(two_queries, five_queries)
+        self.assertEqual([row["task_counts"] for row in two_items], [{"done": 1}] * 2)
+        self.assertEqual(
+            [row["task_counts"] for row in five_items],
+            [{"done": 1}] * 2 + [{"done": 1, "todo": 1}] * 3,
+        )
 
     def test_projects_filter_by_team(self):
         team = self.client.post(
