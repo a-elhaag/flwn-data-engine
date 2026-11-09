@@ -132,17 +132,7 @@ class Sim:
     # --- scenarios ----------------------------------------------------------------------------
     def backend_setup(self):
         tag = uuid.uuid4().hex[:8]
-        ws = self.call(
-            "create workspace",
-            "POST",
-            "/workspaces",
-            201,
-            json={"name": f"zz sim {tag}", "slug": f"zz-sim-{tag}"},
-        )
-        self.ws = ws["id"]
-        self.base = f"/workspaces/{self.ws}"
         self.users = []
-        self.members = {}
         for role, name in (("owner", "Olive Owner"), ("member", "Mo Member")):
             user = self.call(
                 f"create user {role}",
@@ -152,14 +142,36 @@ class Sim:
                 json={"email": f"sim-{role}-{tag}@example.com", "name": name},
             )
             self.users.append(user)
-            member = self.call(
-                f"add {role}",
-                "POST",
-                f"{self.base}/members",
-                201,
-                json={"type": "HUMAN", "role": role, "name": name, "email": user["email"]},
-            )
-            self.members[role] = member["id"]
+        # The workspace is created with its owner in one call (owner_user_id).
+        ws = self.call(
+            "create workspace",
+            "POST",
+            "/workspaces",
+            201,
+            json={
+                "name": f"zz sim {tag}",
+                "slug": f"zz-sim-{tag}",
+                "owner_user_id": self.users[0]["id"],
+            },
+        )
+        self.ws = ws["id"]
+        self.base = f"/workspaces/{self.ws}"
+        listed = self.call("owner member", "GET", f"{self.base}/members", 200)
+        owner = next(m for m in listed["items"] if m["user_id"] == self.users[0]["id"])
+        self.members = {"owner": owner["id"]}
+        member = self.call(
+            "add member",
+            "POST",
+            f"{self.base}/members",
+            201,
+            json={
+                "type": "HUMAN",
+                "role": "member",
+                "name": "Mo Member",
+                "email": self.users[1]["email"],
+            },
+        )
+        self.members["member"] = member["id"]
         self.call("user by email", "GET", f"/users?email={self.users[0]['email']}", 200)
         self.call("list users", "GET", "/users", 200)
         self.call("list workspaces", "GET", "/workspaces", 200)

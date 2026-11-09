@@ -17,6 +17,8 @@ a member stops their tokens immediately.
 
 import logging
 import secrets
+import threading
+import time
 from dataclasses import dataclass, replace
 from typing import Annotated
 from uuid import UUID
@@ -60,11 +62,47 @@ def _service_key_valid(key: str | None) -> bool:
     return current or upcoming
 
 
+_REJECT_LOG_EVERY = 60.0  # seconds: at most one warning per source per minute
+_reject_log_lock = threading.Lock()
+_reject_log: dict[str, tuple[float, int]] = {}  # source -> (last logged at, suppressed since)
+
+
+def _clean(value: str | None, limit: int = 200) -> str:
+    """A log-safe rendering of caller-controlled text: no line breaks or control characters."""
+    if not value:
+        return "-"
+    return value[:limit].encode("unicode_escape").decode("ascii")
+
+
 def _reject_service_key(request: Request | None, key: str | None) -> None:
-    """Log a refused service key with the caller's address (never the key itself)."""
-    if key:  # a missing key is an ordinary unauthenticated call, a wrong one is worth an alert
-        source = request.client.host if request is not None and request.client else "unknown"
-        log.warning("service key rejected: source_ip=%s path=%s", source, _path(request))
+    """Log a refused service key with the caller's address (never the key itself).
+
+    peer is the socket address, which behind the ingress proxy is the proxy; forwarded_for is the
+    X-Forwarded-For header, logged as given because the engine cannot verify it. Both and the path
+    are escaped so a caller cannot inject log lines, and each source logs at most once a minute
+    (with a count of what was suppressed) so a flood cannot fill the logs.
+    """
+    if not key:  # a missing key is an ordinary unauthenticated call, a wrong one is worth an alert
+        return
+    peer = request.client.host if request is not None and request.client else "unknown"
+    forwarded = request.headers.get("x-forwarded-for") if request is not None else None
+    source = f"{peer}|{forwarded or ''}"
+    now = time.monotonic()
+    with _reject_log_lock:
+        last, suppressed = _reject_log.get(source, (0.0, 0))
+        if now - last < _REJECT_LOG_EVERY:
+            _reject_log[source] = (last, suppressed + 1)
+            return
+        if len(_reject_log) > 10_000:
+            _reject_log.clear()
+        _reject_log[source] = (now, 0)
+    log.warning(
+        "service key rejected: peer=%s forwarded_for=%s path=%s suppressed=%d",
+        _clean(peer),
+        _clean(forwarded),
+        _clean(_path(request)),
+        suppressed,
+    )
 
 
 def _path(request: Request | None) -> str:

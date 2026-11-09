@@ -43,7 +43,7 @@ def grant_privileges(raw, role: str) -> None:
     """Give an existing role the table access the application needs (never superuser)."""
     for statement in APP_ROLE_GRANTS:
         raw.execute(sql.SQL(statement).format(sql.Identifier(role)))
-    # Cross-workspace helpers are not executable by PUBLIC (db/sql/60_identity.sql).
+    # Cross-workspace helpers are not executable by PUBLIC (db/sql/70_identity.sql).
     for function in APP_ROLE_FUNCTIONS:
         if raw.execute("select to_regprocedure(%s)", (function,)).fetchone()[0] is not None:
             raw.execute(

@@ -496,7 +496,7 @@ class MigrationBaselineTest(unittest.TestCase):
 
 
 class EmailMigrationTest(unittest.TestCase):
-    """0002 rewrites users.email canonically and stops on addresses it cannot merge or read."""
+    """0005 rewrites users.email canonically and stops on addresses it cannot merge or read."""
 
     def fresh(self):
         db_support.engine()
@@ -511,7 +511,7 @@ class EmailMigrationTest(unittest.TestCase):
         env = patch.dict(os.environ, {"DATABASE_ADMIN_URL": url, "DATABASE_URL": url})
         env.start()
         self.addCleanup(env.stop)
-        command.upgrade(cfg, "0001")
+        command.upgrade(cfg, "0004")  # the revision before ours
         engine = create_engine(url)
         self.addCleanup(engine.dispose)
         return cfg, engine
@@ -531,7 +531,7 @@ class EmailMigrationTest(unittest.TestCase):
         self.assertEqual(
             stored, {"bob@example.com", "user@xn--bcher-kva.example", "ok@example.com"}
         )
-        self.assertEqual(version, "0002")
+        self.assertEqual(version, "0005")
 
     def test_collisions_and_invalid_addresses_stop_the_migration(self):
         for emails in (
@@ -548,5 +548,5 @@ class EmailMigrationTest(unittest.TestCase):
                         set(conn.scalars(text("select email from users"))), set(emails)
                     )
                     self.assertEqual(
-                        conn.scalar(text("select version_num from alembic_version")), "0001"
+                        conn.scalar(text("select version_num from alembic_version")), "0004"
                     )

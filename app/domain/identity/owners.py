@@ -3,7 +3,7 @@
 A change that can remove an owner (role, status, delete, user delete, transfer) first locks all of
 the workspace's owner rows with SELECT ... FOR UPDATE, in id order, inside its own transaction.
 Two such changes on one workspace therefore run one after the other, and the second sees the first
-when it counts. The deferred trigger in db/sql/60_identity.sql backs this up for other writers.
+when it counts. The deferred trigger in db/sql/70_identity.sql backs this up for other writers.
 """
 
 import uuid

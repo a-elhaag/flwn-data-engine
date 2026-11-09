@@ -14,9 +14,11 @@ from harness import CrudHarness
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
+from app.api import auth as auth_module
 from app.api import tokens as t
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.db.session import workspace_session
+from app.domain.identity.members_teams import MemberService
 
 SERVICE = {"Authorization": "", "X-Data-API-Key": "test-data-key"}
 
@@ -429,6 +431,28 @@ class CanonicalEmailApiTests(ContractHarness):
         self.assertEqual((taken.status_code, taken.json()), (409, {"detail": "email_taken"}))
 
 
+class MemberEmailRaceTests(ContractHarness):
+    def test_losing_the_create_race_for_a_new_email_is_email_taken(self):
+        # Two calls add the same new person at once: the second insert hits uq_users_email.
+        clash = IntegrityError(
+            "insert",
+            {},
+            Exception('duplicate key value violates unique constraint "uq_users_email"'),
+        )
+        ws, _ = self.owned_workspace(self.user())
+        with patch.object(MemberService, "create", side_effect=clash):
+            response = self.client.post(
+                f"/workspaces/{ws}/members",
+                json={
+                    "type": "HUMAN",
+                    "role": "member",
+                    "name": "Race",
+                    "email": "race@example.com",
+                },
+            )
+        self.assertEqual((response.status_code, response.json()), (409, {"detail": "email_taken"}))
+
+
 class ServiceKeyTests(ContractHarness):
     def test_next_key_is_accepted_during_rotation(self):
         with patch.object(settings, "DATA_API_KEY_NEXT", "next-data-key"):
@@ -442,14 +466,49 @@ class ServiceKeyTests(ContractHarness):
             self.client.get("/users", headers={"X-Data-API-Key": "next-data-key"}).status_code, 401
         )
 
+    def setUp(self):
+        super().setUp()
+        auth_module._reject_log.clear()  # the per-source rate limit is process-wide
+
     def test_rejected_key_is_logged_with_source_never_the_key(self):
         with self.assertLogs("app.api.auth", level="WARNING") as logs:
             self.client.get("/users", headers={"X-Data-API-Key": "wrong-secret-value"})
+        (line,) = logs.output
+        self.assertIn("peer=", line)
+        self.assertIn("path=/users", line)
+        self.assertNotIn("wrong-secret-value", line)
+
+    def test_rejection_log_cannot_be_injected_and_names_the_forwarded_client(self):
+        with self.assertLogs("app.api.auth", level="WARNING") as logs:
             self.client.get(
-                f"/workspaces/{self.team_a}/members",
-                headers={"X-Data-API-Key": "wrong-secret-value", "Authorization": ""},
+                "/users",
+                headers={"X-Data-API-Key": "bad", "X-Forwarded-For": "203.0.113.9\tFAKE"},
             )
+        (line,) = logs.output
+        self.assertNotIn("\t", line)  # control characters are escaped, never written raw
+        self.assertIn("forwarded_for=203.0.113.9\\tFAKE", line)
+        self.assertEqual(auth_module._clean("a\nb\x1b"), "a\\nb\\x1b")  # newlines too
+
+    def test_rejections_from_one_source_log_once_a_minute(self):
+        with self.assertLogs("app.api.auth", level="WARNING") as logs:
+            for _ in range(5):
+                self.client.get("/users", headers={"X-Data-API-Key": "bad"})
+            # the window passes: the next warning reports what was suppressed
+            source, (last, suppressed) = next(iter(auth_module._reject_log.items()))
+            auth_module._reject_log[source] = (last - 61, suppressed)
+            self.client.get("/users", headers={"X-Data-API-Key": "bad"})
         self.assertEqual(len(logs.output), 2)
-        for line in logs.output:
-            self.assertIn("source_ip=", line)
-            self.assertNotIn("wrong-secret-value", line)
+        self.assertIn("suppressed=4", logs.output[1])
+
+    def test_next_key_is_checked_at_start_up(self):
+        base = {
+            "DATA_API_KEY": "current-key-value",
+            "AZURE_FOUNDRY_ENDPOINT": "https://x.invalid",
+            "AZURE_FOUNDRY_KEY": "k",
+        }
+        for bad in ("current-key-value", "short", " padded-next-key-value ", "   "):
+            with self.subTest(next_key=bad):
+                with self.assertRaises(ValueError):
+                    Settings(_env_file=None, **base, DATA_API_KEY_NEXT=bad)
+        Settings(_env_file=None, **base, DATA_API_KEY_NEXT="another-key-value")  # fine
+        Settings(_env_file=None, **base)  # rotation off

@@ -1,10 +1,10 @@
 -- Identity invariants the backend relies on (flwnBackend docs/AUTH.md §5, §6). Idempotent.
--- Frozen copy of app/db/sql/60_identity.sql as of migration 0002.
+-- Frozen copy of app/db/sql/70_identity.sql as of migration 0005.
 
 -- A user's memberships across every workspace. Row-level security limits a session to one
 -- workspace, so this narrow SECURITY DEFINER function lifts it (app.service, for the duration of
--- the call only) and returns nothing but the listed columns. Not executable by PUBLIC: the
--- installer grants it to the application role.
+-- the call only) and returns nothing but the listed columns. Not executable by PUBLIC: only the
+-- application role gets it (app/db/install.py, and migration 0005 for existing databases).
 create or replace function memberships_for_user(target_user uuid)
 returns table (
     member_id uuid, workspace_id uuid, workspace_name text, workspace_slug text,
@@ -23,20 +23,6 @@ as $$
 $$;
 
 revoke all on function memberships_for_user(uuid) from public;
-
--- Existing application roles (anything that can read members, apart from the owner and
--- built-in roles) keep working after an upgrade.
-do $$
-declare r text;
-begin
-    for r in select rolname from pg_roles
-             where not rolsuper and rolname not like 'pg\_%'
-               and oid <> (select proowner from pg_proc
-                           where oid = 'public.memberships_for_user(uuid)'::regprocedure)
-               and has_table_privilege(oid, 'public.members', 'SELECT') loop
-        execute format('grant execute on function public.memberships_for_user(uuid) to %I', r);
-    end loop;
-end $$;
 
 -- Backstop for the last-owner rule: at commit, a workspace that lost an active human owner must
 -- still have one. The API checks this first (with the owner rows locked) and answers 409

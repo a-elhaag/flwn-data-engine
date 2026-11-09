@@ -13,10 +13,10 @@ engine stores the string it produces, so lookups and the unique index compare th
 5. local part: Unicode NFC, then lowercase one character at a time (Go's simple case mapping)
 6. no dot or +tag stripping: those would merge distinct mailboxes
 
-Lengths are counted in UTF-8 bytes, as Go's len() does, and so is Go's hyphen rule. Checked
-against the Go code on 40,000 random addresses: whenever both accept, the strings are identical,
-and nothing Go rejects is accepted here. Known refusals where Go accepts: symbols UTS #46 allows
-but IDNA 2008 does not (emoji domains), and malformed "xn--" labels Go lets through.
+Lengths are counted in UTF-8 bytes, as Go's len() does, and so is Go's hyphen rule. Only idna's
+public API is used (uts46_remap, check_initial_combiner, valid_contextj, check_bidi); idna is
+pinned below 4 in requirements.txt. tests/identity/test_email_canonical.py holds vectors produced
+by the Go code, so a change on either side fails a test.
 """
 
 import unicodedata
@@ -59,34 +59,48 @@ def _hyphens_ok(label: str) -> bool:
     return not (raw[2:4] == b"--" or raw.startswith(b"-") or raw.endswith(b"-"))
 
 
+_JOINERS = frozenset("‌‍")  # ZWNJ, ZWJ: the CONTEXTJ code points
+
+
 def _check_label(label: str) -> None:
-    """idna.check_label without its character-based hyphen rule (see _hyphens_ok)."""
-    idna.core.check_nfc(label)
-    idna.core.check_initial_combiner(label)
-    classes = idna.idnadata.codepoint_classes
+    """The label checks Go's lookup profile makes after UTS #46 mapping, using only idna's public
+    API: no leading combining mark, joiners only in a valid context, the bidi rule.
+
+    Go does not apply IDNA 2008's per-code-point classes (PVALID/CONTEXTO), so neither do we:
+    an address the backend accepts must never be refused here.
+    """
+    idna.check_initial_combiner(label)
     for pos, char in enumerate(label):
-        code = ord(char)
-        if idna.intranges.intranges_contain(code, classes["PVALID"]):
-            continue
-        if idna.intranges.intranges_contain(code, classes["CONTEXTJ"]):
-            if idna.core.valid_contextj(label, pos):
-                continue
-        elif idna.intranges.intranges_contain(code, classes["CONTEXTO"]):
-            if idna.core.valid_contexto(label, pos):
-                continue
-        raise InvalidEmail()
-    idna.core.check_bidi(label)
+        if char in _JOINERS and not idna.valid_contextj(label, pos):
+            raise InvalidEmail()
+    idna.check_bidi(label)
+
+
+_FULL_STOPS = str.maketrans({"。": ".", "．": ".", "｡": "."})
+
+
+def _labels_ok(domain: str) -> bool:
+    """The backend's labelsOK, on the raw domain before mapping: no empty label, no bare "xn--"
+    label, no "xn--" label holding non-ASCII characters."""
+    for label in domain.translate(_FULL_STOPS).split("."):
+        if not label:
+            return False
+        lowered = _lower(label)
+        if lowered.startswith("xn--") and (len(lowered) == 4 or not label.isascii()):
+            return False
+    return True
 
 
 def _domain_to_ascii(domain: str) -> str:
     """UTS #46 lookup mapping (non-transitional, STD3), then punycode, as Go's idna profile."""
+    if not _labels_ok(domain):
+        raise InvalidEmail()
     try:
         mapped = idna.uts46_remap(domain, std3_rules=True, transitional=False)
         labels = []
         for label in mapped.split("."):
-            if not label:  # Go keeps empty labels unless DNS lengths are verified
-                labels.append(label)
-                continue
+            if not label:  # "a..b", a leading or trailing dot: refused, as the backend does
+                raise InvalidEmail()
             if label.startswith("xn--"):
                 unicode_label = label[4:].encode("ascii").decode("punycode")
                 # an ACE label must decode to a mapped, non-ASCII label that encodes back to it

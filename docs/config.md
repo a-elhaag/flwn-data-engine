@@ -6,6 +6,7 @@ Required ones have no default.
 | Variable | Default |
 | --- | --- |
 | `DATA_API_KEY` | required |
+| `DATA_API_KEY_NEXT` | `''` |
 | `AZURE_FOUNDRY_ENDPOINT` | required |
 | `AZURE_FOUNDRY_KEY` | required |
 | `MEMORY_CHAT_DEPLOYMENT` | `'gpt-6-luna'` |

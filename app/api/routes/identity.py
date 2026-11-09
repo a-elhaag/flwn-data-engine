@@ -30,6 +30,7 @@ from app.domain.identity.members_teams import (
     TeamService,
 )
 from app.domain.identity.owners import LAST_OWNER, LastOwner
+from app.domain.identity.users import EMAIL_TAKEN
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}",
@@ -52,8 +53,10 @@ def _call(fn, *args, **kwargs):
     except LastOwner:
         raise HTTPException(409, LAST_OWNER) from None
     except IntegrityError as exc:
-        if LAST_OWNER in str(exc.orig):  # the database backstop (db/sql/60_identity.sql)
+        if LAST_OWNER in str(exc.orig):  # the database backstop (db/sql/70_identity.sql)
             raise HTTPException(409, LAST_OWNER) from None
+        if "uq_users_email" in str(exc.orig):  # lost a race: another call created that user first
+            raise HTTPException(409, EMAIL_TAKEN) from None
         raise HTTPException(409, "resource conflicts with an existing record") from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None

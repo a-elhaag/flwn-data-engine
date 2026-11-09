@@ -34,7 +34,12 @@ def _user(session, user_id):
 
 
 def email_matches(email: str):
-    """The users.email filter for a canonical address; uses the uq_users_email index."""
+    """The users.email filter for a canonical address.
+
+    Stored emails are already canonical (lowercase), so lowercasing both sides changes nothing
+    for them. It is kept on purpose: uq_users_email is an index on lower(email), and this exact
+    expression is what lets Postgres use it.
+    """
     return func.lower(User.email) == func.lower(email)
 
 
