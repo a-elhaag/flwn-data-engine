@@ -267,14 +267,14 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "name": "Workspace name.",
         "slug": "URL-safe name, unique ignoring case. Letters, digits and single hyphens.",
         "description": "What the workspace is for. Up to 2000 characters.",
-        "settings": "Workspace settings, such as retention periods. Free-form JSON.",
+        "settings": "Workspace settings. `recording_retention_days` (1 to 3650) and `dev_session` (true or false) are checked; any other key is stored as given.",
         "owner_user_id": "The user who owns the new workspace. An active HUMAN `owner` member is created for them in the same transaction; 404 if the user does not exist or is deleted.",
     },
     "WorkspaceUpdate": {
         "name": "New name. Leave out to keep the current one.",
         "slug": "New slug. Leave out to keep the current one.",
         "description": "New description. Send null to clear it.",
-        "settings": "New settings. Replaces the whole object.",
+        "settings": "New settings, replacing the whole object. `recording_retention_days` (1 to 3650) and `dev_session` (true or false) are checked; any other key is stored as given.",
     },
     "WorkspaceOut": {
         "id": "Id of the workspace.",
@@ -346,8 +346,42 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
     },
     "TeamPage": {"items": "The teams on this page."},
     "TeamMembersUpdate": {
-        "member_ids": "The full new list of team members. Replaces the current list."
+        "member_ids": "The full new list of team members. Replaces the current list. Members who stay keep their role; new ones join as `member`."
     },
+    "TeamMemberCreate": {
+        "member_id": "The active workspace member to add to the team.",
+        "role": "`lead` or `member`. Defaults to `member`.",
+    },
+    "TeamMemberUpdate": {"role": "New team role: `lead` or `member`."},
+    "TeamMemberOut": {
+        "member_id": "Id of the workspace member.",
+        "name": "Display name. Null for an AI member without one.",
+        "type": "`HUMAN` or `AI`.",
+        "status": "`active` or `suspended` (the member's status in the workspace).",
+        "role": "The member's role on this team: `lead` or `member`.",
+        "joined_at": "When the member joined the team.",
+    },
+    "TeamMemberPage": {"items": "The team members on this page."},
+    "InvitationCreate": {
+        "email": "Email address of the person to invite. Stored in lower case.",
+        "role": "`admin`, `member` or `viewer`. Defaults to `member`. Owners are not invited.",
+    },
+    "InvitationAccept": {
+        "token": "The invitation token, as returned when the invitation was created.",
+        "name": "Full name. Needed only if the person has no account yet.",
+    },
+    "InvitationOut": {
+        "id": "Id of the invitation.",
+        "workspace_id": "Workspace the invitation is for.",
+        "email": "Email address invited.",
+        "role": "Role the person gets on accepting: `admin`, `member` or `viewer`.",
+        "status": "`pending`, `accepted`, `revoked` or `expired`. A pending invitation past its expiry shows as `expired`.",
+        "invited_by": "The member who sent the invitation. Null if unknown.",
+        "expires_at": "When the invitation stops working (7 days after it was sent).",
+        "accepted_at": "When the invitation was accepted. Null until then.",
+        "created_at": "When the invitation was created.",
+    },
+    "InvitationPage": {"items": "The invitations on this page."},
     "UserCreate": {
         "email": "Email address. Unique ignoring case.",
         "name": "Full name.",
@@ -832,4 +866,10 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "input": "The value that was sent.",
         "ctx": "Extra details about the rule that failed.",
     },
+}
+
+# The created invitation is the invitation plus its one-time token.
+FIELD_DOCS["InvitationCreated"] = {
+    **FIELD_DOCS["InvitationOut"],
+    "token": "The invitation token. Shown only now: send it to the person, it cannot be shown again.",
 }

@@ -10,6 +10,11 @@ from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow, viewer
 from app.api.paging import split_page
 from app.api.schemas.identity import (
+    InvitationAccept,
+    InvitationCreate,
+    InvitationCreated,
+    InvitationOut,
+    InvitationPage,
     MemberCreate,
     MemberOut,
     MemberPage,
@@ -17,11 +22,16 @@ from app.api.schemas.identity import (
     OwnershipTransfer,
     OwnershipTransferOut,
     TeamCreate,
+    TeamMemberCreate,
+    TeamMemberOut,
+    TeamMemberPage,
     TeamMembersUpdate,
+    TeamMemberUpdate,
     TeamOut,
     TeamPage,
     TeamUpdate,
 )
+from app.domain.identity.invitations import InvitationService
 from app.domain.identity.members_teams import (
     IdentityConflict,
     IdentityForbidden,
@@ -164,3 +174,118 @@ def replace_team_members(
 def delete_team(request: Request, workspace_id: WorkspaceId, team_id: UUID):
     _call(TeamService(str(workspace_id), viewer(request)).delete, str(team_id))
     return Response(status_code=204)
+
+
+@router.get("/teams/{team_id}/members", response_model=TeamMemberPage)
+def list_team_members(
+    request: Request,
+    workspace_id: WorkspaceId,
+    team_id: UUID,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    items = _call(
+        TeamService(str(workspace_id), viewer(request)).members, str(team_id), limit + 1, offset
+    )
+    items, has_more = split_page(items, limit)
+    return TeamMemberPage(items=items, limit=limit, offset=offset, has_more=has_more)
+
+
+@router.post(
+    "/teams/{team_id}/members",
+    status_code=201,
+    response_model=TeamMemberOut,
+    dependencies=[ADMIN],
+)
+def add_team_member(
+    request: Request, workspace_id: WorkspaceId, team_id: UUID, body: TeamMemberCreate
+):
+    return _call(
+        TeamService(str(workspace_id), viewer(request)).add_member,
+        str(team_id),
+        str(body.member_id),
+        body.role,
+    )
+
+
+@router.patch(
+    "/teams/{team_id}/members/{member_id}", response_model=TeamMemberOut, dependencies=[ADMIN]
+)
+def change_team_member_role(
+    request: Request,
+    workspace_id: WorkspaceId,
+    team_id: UUID,
+    member_id: UUID,
+    body: TeamMemberUpdate,
+):
+    return _call(
+        TeamService(str(workspace_id), viewer(request)).change_member_role,
+        str(team_id),
+        str(member_id),
+        body.role,
+    )
+
+
+@router.delete("/teams/{team_id}/members/{member_id}", status_code=204, dependencies=[ADMIN])
+def remove_team_member(request: Request, workspace_id: WorkspaceId, team_id: UUID, member_id: UUID):
+    _call(
+        TeamService(str(workspace_id), viewer(request)).remove_member,
+        str(team_id),
+        str(member_id),
+    )
+    return Response(status_code=204)
+
+
+@router.get("/members/{member_id}/teams", response_model=TeamPage)
+def list_member_teams(
+    request: Request,
+    workspace_id: WorkspaceId,
+    member_id: UUID,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    items = _call(
+        TeamService(str(workspace_id), viewer(request)).for_member,
+        str(member_id),
+        limit + 1,
+        offset,
+    )
+    items, has_more = split_page(items, limit)
+    return TeamPage(items=items, limit=limit, offset=offset, has_more=has_more)
+
+
+@router.post(
+    "/invitations",
+    status_code=201,
+    response_model=InvitationCreated,
+    dependencies=[ADMIN],
+)
+def create_invitation(request: Request, workspace_id: WorkspaceId, body: InvitationCreate):
+    invitation, token = _call(
+        InvitationService(str(workspace_id), actor(request)).create, **body.model_dump()
+    )
+    return {**invitation, "token": token}
+
+
+@router.get("/invitations", response_model=InvitationPage, dependencies=[ADMIN])
+def list_invitations(
+    workspace_id: WorkspaceId,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    items = _call(InvitationService(str(workspace_id)).list, limit + 1, offset)
+    items, has_more = split_page(items, limit)
+    return InvitationPage(items=items, limit=limit, offset=offset, has_more=has_more)
+
+
+@router.post(
+    "/invitations/{invitation_id}/revoke", response_model=InvitationOut, dependencies=[ADMIN]
+)
+def revoke_invitation(request: Request, workspace_id: WorkspaceId, invitation_id: UUID):
+    return _call(InvitationService(str(workspace_id), actor(request)).revoke, str(invitation_id))
+
+
+# Backend only: the backend relays the person's sign-in, so no workspace token can accept.
+@router.post("/invitations/accept", response_model=MemberOut, dependencies=[allow(None)])
+def accept_invitation(workspace_id: WorkspaceId, body: InvitationAccept):
+    return _call(InvitationService(str(workspace_id)).accept, body.token, body.name)

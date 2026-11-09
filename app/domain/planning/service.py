@@ -153,7 +153,7 @@ class ProjectService:
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.actor = str(actor) if actor else None  # who is acting, for the audit log
 
-    def list(self, limit=50, offset=0):
+    def list(self, limit=50, offset=0, *, team_id=None):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             return list(
@@ -162,6 +162,7 @@ class ProjectService:
                     .where(
                         Project.workspace_id == self.workspace_id,
                         Project.deleted_at.is_(None),
+                        Project.team_id == team_id if team_id is not None else True,
                     )
                     .order_by(Project.created_at, Project.id)
                     .limit(limit)

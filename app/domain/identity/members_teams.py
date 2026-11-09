@@ -3,10 +3,11 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
+from app.db.models.planning import Project
 from app.db.session import session_for
 from app.domain.identity.email import canonical_email
 from app.domain.identity.owners import ensure_an_owner, lock_owners
@@ -83,6 +84,26 @@ def _member_view(session, row):
         "settings": row.settings,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
+    }
+
+
+def _seat(session, team_id, member_id):
+    """A member's place on a team."""
+    row = session.get(TeamMember, (team_id, uuid.UUID(str(member_id))))
+    if row is None:
+        raise IdentityNotFound("team member not found")
+    return row
+
+
+def _seat_view(session, seat, member):
+    view = _member_view(session, member)
+    return {
+        "member_id": member.id,
+        "name": view["name"],
+        "type": view["type"],
+        "status": view["status"],
+        "role": seat.role,
+        "joined_at": seat.joined_at,
     }
 
 
@@ -290,37 +311,165 @@ class TeamService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = _team(session, self.workspace_id, team_id)
+            owns = session.scalar(
+                select(Project.id).where(
+                    Project.workspace_id == self.workspace_id,
+                    Project.team_id == row.id,
+                    Project.deleted_at.is_(None),
+                )
+            )
+            if owns is not None:
+                raise IdentityConflict("team still owns projects; move them to another team first")
             row.deleted_at = datetime.now(UTC)
             session.flush()
             events.record(session, str(self.workspace_id), self.actor, "team", row.id, "deleted")
 
+    def members(self, team_id, limit=50, offset=0):
+        with session_for(str(self.workspace_id)) as session:
+            _workspace(session, self.workspace_id)
+            team = _team(session, self.workspace_id, team_id)
+            rows = session.execute(
+                select(TeamMember, Member)
+                .join(Member, Member.id == TeamMember.member_id)
+                .where(
+                    TeamMember.workspace_id == self.workspace_id,
+                    TeamMember.team_id == team.id,
+                    Member.deleted_at.is_(None),
+                )
+                .order_by(TeamMember.joined_at, Member.id)
+                .limit(limit)
+                .offset(offset)
+            ).all()
+            return [_seat_view(session, seat, member) for seat, member in rows]
+
+    def for_member(self, member_id, limit=50, offset=0):
+        """The teams a member belongs to."""
+        with session_for(str(self.workspace_id)) as session:
+            _workspace(session, self.workspace_id)
+            member = _member(session, self.workspace_id, member_id)
+            return list(
+                session.scalars(
+                    select(Team)
+                    .where(
+                        Team.workspace_id == self.workspace_id,
+                        Team.deleted_at.is_(None),
+                        Team.id.in_(
+                            select(TeamMember.team_id).where(
+                                TeamMember.workspace_id == self.workspace_id,
+                                TeamMember.member_id == member.id,
+                            )
+                        ),
+                    )
+                    .order_by(Team.created_at, Team.id)
+                    .limit(limit)
+                    .offset(offset)
+                )
+            )
+
+    def add_member(self, team_id, member_id, role):
+        with session_for(str(self.workspace_id)) as session:
+            _workspace(session, self.workspace_id)
+            team = _team(session, self.workspace_id, team_id)
+            member = _member(session, self.workspace_id, member_id)
+            if member.status != "active":
+                raise ValueError("team members must be active members of this workspace")
+            if session.get(TeamMember, (team.id, member.id)) is not None:
+                raise IdentityConflict("member is already on this team")
+            seat = TeamMember(
+                workspace_id=self.workspace_id, team_id=team.id, member_id=member.id, role=role
+            )
+            session.add(seat)
+            session.flush()
+            events.record(
+                session,
+                str(self.workspace_id),
+                self.actor,
+                "team",
+                team.id,
+                "member_added",
+                {"member_id": str(member.id), "role": role},
+            )
+            return _seat_view(session, seat, member)
+
+    def change_member_role(self, team_id, member_id, role):
+        with session_for(str(self.workspace_id)) as session:
+            _workspace(session, self.workspace_id)
+            team = _team(session, self.workspace_id, team_id)
+            seat = _seat(session, team.id, member_id)
+            seat.role = role
+            session.flush()
+            events.record(
+                session,
+                str(self.workspace_id),
+                self.actor,
+                "team",
+                team.id,
+                "member_role_changed",
+                {"member_id": str(seat.member_id), "role": role},
+            )
+            return _seat_view(session, seat, _member(session, self.workspace_id, member_id))
+
+    def remove_member(self, team_id, member_id):
+        with session_for(str(self.workspace_id)) as session:
+            _workspace(session, self.workspace_id)
+            team = _team(session, self.workspace_id, team_id)
+            seat = _seat(session, team.id, member_id)
+            session.delete(seat)
+            session.flush()
+            events.record(
+                session,
+                str(self.workspace_id),
+                self.actor,
+                "team",
+                team.id,
+                "member_removed",
+                {"member_id": str(seat.member_id)},
+            )
+
     def set_members(self, team_id, member_ids):
+        """Sets the whole list. Members who stay keep their role and joined_at; new ones are members.
+
+        A member already on the team may stay even if suspended; a new one must be active.
+        """
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             team = _team(session, self.workspace_id, team_id)
             ids = {uuid.UUID(str(member_id)) for member_id in member_ids}
+            seats = {
+                seat.member_id: seat
+                for seat in session.scalars(
+                    select(TeamMember).where(
+                        TeamMember.workspace_id == self.workspace_id,
+                        TeamMember.team_id == team.id,
+                    )
+                )
+            }
+            added = ids - seats.keys()
             active = set(
                 session.scalars(
                     select(Member.id).where(
                         Member.workspace_id == self.workspace_id,
-                        Member.id.in_(ids) if ids else False,
+                        Member.id.in_(added) if added else False,
                         Member.deleted_at.is_(None),
                         Member.status == "active",
                     )
                 )
             )
-            if active != ids:
-                raise ValueError("all team members must be active members of this workspace")
-            session.execute(
-                delete(TeamMember).where(
-                    TeamMember.workspace_id == self.workspace_id,
-                    TeamMember.team_id == team.id,
-                )
-            )
+            if active != added:
+                raise ValueError("new team members must be active members of this workspace")
+            removed = [member_id for member_id in seats if member_id not in ids]
+            for member_id in removed:
+                session.delete(seats[member_id])
             session.add_all(
-                TeamMember(workspace_id=self.workspace_id, team_id=team.id, member_id=member_id)
-                for member_id in sorted(ids, key=str)
+                TeamMember(
+                    workspace_id=self.workspace_id,
+                    team_id=team.id,
+                    member_id=member_id,
+                    role="member",
+                )
+                for member_id in sorted(added, key=str)
             )
+            session.flush()
             events.record(
                 session,
                 str(self.workspace_id),
@@ -328,6 +477,10 @@ class TeamService:
                 "team",
                 team.id,
                 "members_replaced",
-                {"member_ids": sorted(map(str, ids))},
+                {
+                    "member_ids": sorted(map(str, ids)),
+                    "added": sorted(map(str, added)),
+                    "removed": sorted(map(str, removed)),
+                },
             )
             return team

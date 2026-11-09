@@ -248,7 +248,7 @@ class GenericTableAuthTests(CrudHarness):
 
     def test_unlisted_tables_stay_backend_only(self):
         admin = self.token_headers(self.team_a, t.SCOPE_ADMIN)
-        for table in ("events", "invitations", "notifications"):
+        for table in ("events", "notifications"):
             with self.subTest(table=table):
                 response = self.client.get(f"/workspaces/{self.team_a}/{table}", headers=admin)
                 self.assertEqual(response.status_code, 403, response.text)

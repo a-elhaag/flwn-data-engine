@@ -315,7 +315,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     "DELETE /users/{user_id}": (
         "Delete a user",
-        "Soft delete. Their memberships are not changed. Trusted backend only. Returns 204, or 409 `last_owner` while they are the last active owner of a workspace.",
+        "Soft delete. Their memberships go too: a membership with work is suspended, one without is removed (its team seats too). Trusted backend only. Returns 204, or 409 `last_owner` while they are the last active owner of a workspace.",
     ),
     f"POST {W}/members": (
         "Create a member",
@@ -339,16 +339,58 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"GET {W}/teams": ("List teams", "Paginated with `limit` and `offset`."),
     f"GET {W}/teams/{{team_id}}": ("Get a team", "Returns one team."),
     f"PATCH {W}/teams/{{team_id}}": ("Update a team", "Only the fields you send change."),
-    f"DELETE {W}/teams/{{team_id}}": ("Delete a team", "Returns 204."),
+    f"DELETE {W}/teams/{{team_id}}": (
+        "Delete a team",
+        "Returns 204. 409 while the team still owns projects; move them first.",
+    ),
     f"PUT {W}/teams/{{team_id}}/members": (
         "Replace team members",
-        "Sets the full member list. Members not listed are removed.",
+        "Sets the full member list. Members not listed are removed. Members who stay keep their role and join date; new ones join as `member` and must be active. Suspended members already on the team may stay.",
+    ),
+    f"GET {W}/teams/{{team_id}}/members": (
+        "List team members",
+        "Each member with their team role (`lead` or `member`), join date and workspace status. Paginated.",
+    ),
+    f"POST {W}/teams/{{team_id}}/members": (
+        "Add a team member",
+        "Adds one active workspace member with a role. Needs an administrator. 409 if already on the team.",
+    ),
+    f"PATCH {W}/teams/{{team_id}}/members/{{member_id}}": (
+        "Change a team member's role",
+        "Set the role to `lead` or `member`. Needs an administrator.",
+    ),
+    f"DELETE {W}/teams/{{team_id}}/members/{{member_id}}": (
+        "Remove a team member",
+        "Takes one member off the team; the others are unchanged. Needs an administrator. Returns 204.",
+    ),
+    f"GET {W}/members/{{member_id}}/teams": (
+        "List a member's teams",
+        "Every team the member belongs to. Paginated.",
+    ),
+    f"POST {W}/invitations": (
+        "Invite a person",
+        "Creates an invitation for an email and a role. Returns the token once; only its hash is stored. Valid for 7 days. 409 if the person is already an active member; a pending invitation for the same email is replaced. Needs an administrator.",
+    ),
+    f"GET {W}/invitations": (
+        "List invitations",
+        "Paginated with `limit` and `offset`. Tokens are never returned here. Needs an administrator.",
+    ),
+    f"POST {W}/invitations/{{invitation_id}}/revoke": (
+        "Revoke an invitation",
+        "Only a pending invitation can be revoked. Needs an administrator.",
+    ),
+    f"POST {W}/invitations/accept": (
+        "Accept an invitation",
+        "Trusted backend only. Checks the token, expiry and status, then makes the person an active member in one step. 409 if the invitation is expired, revoked or used, or the email belongs only to a deleted account. Returns the member.",
     ),
     f"POST {W}/projects": (
         "Create a project",
         "`key` becomes the prefix of task identifiers, for example `DATA-1`.",
     ),
-    f"GET {W}/projects": ("List projects", "Paginated with `limit` and `offset`."),
+    f"GET {W}/projects": (
+        "List projects",
+        "Paginated with `limit` and `offset`. Pass `team_id` to list only that team's projects.",
+    ),
     f"GET {W}/projects/{{project_id}}": ("Get a project", "Returns one project."),
     f"PATCH {W}/projects/{{project_id}}": (
         "Update a project",

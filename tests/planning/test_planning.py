@@ -77,6 +77,32 @@ class PlanningApiTests(CrudHarness):
         response = self.client.get(f"/workspaces/{self.team_a}/projects", headers=self.NO_TOKEN)
         self.assertEqual(response.status_code, 401)
 
+    def test_projects_filter_by_team(self):
+        team = self.client.post(
+            f"/workspaces/{self.team_a}/teams", json={"key": "ENG", "name": "Eng"}
+        ).json()
+        other = self.client.post(
+            f"/workspaces/{self.team_a}/teams", json={"key": "OPS", "name": "Ops"}
+        ).json()
+        on_team = self.client.post(
+            f"/workspaces/{self.team_a}/projects",
+            json={"key": "ON", "name": "On", "team_id": team["id"]},
+        ).json()
+        self.project(self.team_a, key="FREE")  # workspace-wide, no team
+        self.client.post(
+            f"/workspaces/{self.team_a}/projects",
+            json={"key": "OTHER", "name": "Other", "team_id": other["id"]},
+        )
+
+        listed = self.client.get(
+            f"/workspaces/{self.team_a}/projects", params={"team_id": team["id"]}
+        )
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual([p["id"] for p in listed.json()["items"]], [on_team["id"]])
+        self.assertEqual(
+            len(self.client.get(f"/workspaces/{self.team_a}/projects").json()["items"]), 3
+        )
+
     def sprint(self, workspace, project_id, **body):
         response = self.client.post(
             f"/workspaces/{workspace}/projects/{project_id}/sprints",
