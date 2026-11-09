@@ -155,27 +155,16 @@ class MemberService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = _member(session, self.workspace_id, member_id)
-            user = session.get(User, row.user_id) if row.user_id else None
-            if "name" in fields:
-                if user:
-                    user.name = fields.pop("name").strip()
-                else:
-                    row.name = fields.pop("name").strip()
-            if "email" in fields:
-                if user is None:
-                    raise ValueError("AI members cannot have an email")
-                email = fields.pop("email").strip().lower()
-                duplicate = session.scalar(
-                    select(User.id).where(func.lower(User.email) == email, User.id != user.id)
+            account = {"name", "email", "avatar_url"} & fields.keys()
+            if row.type == "HUMAN" and account:
+                # These live on the person's user account, shared by every workspace they are in.
+                raise ValueError(
+                    f"{', '.join(sorted(account))} belong to the user account, not the member"
                 )
-                if duplicate:
-                    raise IdentityConflict("email is already in use")
-                user.email = email
-            if "avatar_url" in fields:
-                if user:
-                    user.avatar_url = fields.pop("avatar_url")
-                else:
-                    row.avatar_url = fields.pop("avatar_url")
+            if "email" in fields:
+                raise ValueError("AI members cannot have an email")
+            if "name" in fields:
+                fields["name"] = fields["name"].strip()
             for key, value in fields.items():
                 setattr(row, key, value)
             session.flush()

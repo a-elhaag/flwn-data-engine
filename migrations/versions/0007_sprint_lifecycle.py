@@ -31,8 +31,7 @@ def upgrade() -> None:
     op.execute("alter table sprints add column started_at timestamptz")
     op.execute("alter table sprints add column completed_at timestamptz")
     op.execute(
-        "create unique index uq_sprints_one_active on sprints (project_id) "
-        "where status = 'active'"
+        "create unique index uq_sprints_one_active on sprints (project_id) where status = 'active'"
     )
 
 

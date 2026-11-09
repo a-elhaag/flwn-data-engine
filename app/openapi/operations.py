@@ -321,7 +321,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"GET {W}/members/{{member_id}}": ("Get a member", "Returns one member."),
     f"PATCH {W}/members/{{member_id}}": (
         "Update a member",
-        "Change role, status, name, email or settings.",
+        "Change role, status or settings. An AI member's name and avatar can also change. A person's name, email and avatar belong to their user account, so sending them is 422.",
     ),
     f"DELETE {W}/members/{{member_id}}": ("Remove a member", "Returns 204."),
     f"POST {W}/teams": ("Create a team", "`key` is a short unique code such as `ENG`."),

@@ -297,9 +297,9 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
     "MemberUpdate": {
         "role": "New role: `owner`, `admin`, `member` or `viewer`.",
         "status": "`active` or `suspended`.",
-        "name": "New display name. For a person, this updates their user account.",
-        "email": "New email. Only for a person. Must not already belong to another account.",
-        "avatar_url": "New avatar link. Only for AI members.",
+        "name": "New display name. AI members only: a person's name belongs to their user account, so sending it for a person is 422.",
+        "email": "Not accepted. A person's email belongs to their user account, and AI members have none (422).",
+        "avatar_url": "New avatar link. AI members only (422 for a person).",
         "settings": "New settings. Replaces the whole object.",
     },
     "MemberOut": {

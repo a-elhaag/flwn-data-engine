@@ -118,7 +118,10 @@ class PlanningApiTests(CrudHarness):
     def test_sprint_rules(self):
         project = self.project(self.team_a)
         base = f"/workspaces/{self.team_a}/projects/{project['id']}"
-        first, second = self.sprint(self.team_a, project["id"]), self.sprint(self.team_a, project["id"])
+        first, second = (
+            self.sprint(self.team_a, project["id"]),
+            self.sprint(self.team_a, project["id"]),
+        )
         self.assertEqual((first["started_at"], first["completed_at"]), (None, None))
 
         def post(path, **kw):
@@ -145,8 +148,12 @@ class PlanningApiTests(CrudHarness):
         ).json()
         done = self.client.post(
             f"{base}/tasks",
-            json={"work_item_id": item["id"], "title": "done", "sprint_id": first["id"],
-                  "status": "done"},
+            json={
+                "work_item_id": item["id"],
+                "title": "done",
+                "sprint_id": first["id"],
+                "status": "done",
+            },
         ).json()
         # complete: the open task goes to the planned sprint, the done one stays
         r = post(f"{first['id']}/complete", json={"move_open_tasks_to": first["id"]})
@@ -163,12 +170,15 @@ class PlanningApiTests(CrudHarness):
             self.assertEqual(r.status_code, 409 if status != "completed" else 200, status)
         # no new task in a completed sprint; the done task may stay where it is
         r = self.client.post(
-            f"{base}/tasks", json={"work_item_id": item["id"], "title": "x", "sprint_id": first["id"]}
+            f"{base}/tasks",
+            json={"work_item_id": item["id"], "title": "x", "sprint_id": first["id"]},
         )
         self.assertEqual((r.status_code, r.json()["detail"]), (409, "sprint_completed"))
         r = self.client.patch(f"{base}/tasks/{task['id']}", json={"sprint_id": first["id"]})
         self.assertEqual(r.status_code, 409)
-        r = self.client.patch(f"{base}/tasks/{done['id']}", json={"sprint_id": first["id"], "title": "d"})
+        r = self.client.patch(
+            f"{base}/tasks/{done['id']}", json={"sprint_id": first["id"], "title": "d"}
+        )
         self.assertEqual(r.status_code, 200, r.text)
         # the default target is the backlog
         post(f"{second['id']}/start")

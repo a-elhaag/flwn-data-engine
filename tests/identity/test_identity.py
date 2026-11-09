@@ -171,12 +171,10 @@ class IdentityApiTests(CrudHarness):
 
         updated = self.client.patch(
             f"/workspaces/{self.team_a}/members/{member_id}",
-            json={"name": "Ada Byron", "status": "suspended"},
+            json={"role": "admin", "status": "suspended"},
         )
         self.assertEqual(updated.status_code, 200, updated.text)
-        self.assertEqual(
-            (updated.json()["name"], updated.json()["status"]), ("Ada Byron", "suspended")
-        )
+        self.assertEqual((updated.json()["role"], updated.json()["status"]), ("admin", "suspended"))
         self.assertEqual(
             self.client.get(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 200
         )
@@ -185,6 +183,30 @@ class IdentityApiTests(CrudHarness):
         )
         self.assertEqual(
             self.client.get(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 404
+        )
+
+    def test_member_update_cannot_change_the_user_account(self):
+        base = f"/workspaces/{self.team_a}/members"
+        person = self.client.post(
+            base, json={"type": "HUMAN", "name": "Ada", "email": "ada2@example.com"}
+        ).json()
+        for body in ({"name": "Eve"}, {"email": "eve@example.com"}, {"avatar_url": "http://x/y"}):
+            response = self.client.patch(f"{base}/{person['id']}", json=body)
+            self.assertEqual(response.status_code, 422, (body, response.text))
+        again = self.client.get(f"{base}/{person['id']}").json()
+        self.assertEqual((again["name"], again["email"]), ("Ada", "ada2@example.com"))
+
+        # AI members keep their name and avatar on the member, so those stay editable
+        agent = self.client.post(
+            base, json={"type": "AI", "name": "Ghost", "agent_kind": "ghost_engineer"}
+        ).json()
+        changed = self.client.patch(
+            f"{base}/{agent['id']}", json={"name": "Spirit", "avatar_url": "http://x/a.png"}
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["name"], "Spirit")
+        self.assertEqual(
+            self.client.patch(f"{base}/{agent['id']}", json={"email": "a@b.co"}).status_code, 422
         )
 
     def test_duplicate_member_and_foreign_team_member_are_rejected(self):

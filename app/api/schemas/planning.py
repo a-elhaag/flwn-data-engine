@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.api.schemas.identity import NonBlank
 from app.db.base import PRIORITIES, WORK_STATUSES
 
+
 def _reject_null(model: BaseModel, required: set[str]) -> None:
     """An update may leave a field out, but it cannot set a required column to null."""
     for field in model.model_fields_set & required:
