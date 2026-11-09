@@ -19,6 +19,7 @@ CODES = (
     "atom_access_denied",
     "atom_context_inactive",
     "atom_grant_missing",
+    "atom_in_use",
     "atom_token_context_missing",
     "atom_token_not_checked",
     "atom_token_required",
@@ -54,7 +55,6 @@ CODES = (
     "docx_no_text",
     "docx_unreadable",
     "email_taken",
-    "email_unavailable",
     "ffmpeg_missing",
     "file_empty",
     "file_not_found",
@@ -69,11 +69,28 @@ CODES = (
     "identity_not_found",
     "image_no_text",
     "invalid",
+    "invalid_assignee_id",
+    "invalid_author_id",
+    "invalid_block_id",
+    "invalid_collection_id",
+    "invalid_cover_file_id",
     "invalid_email",
+    "invalid_lead_id",
+    "invalid_member_id",
+    "invalid_milestone_id",
+    "invalid_owner_user_id",
+    "invalid_parent_block_id",
+    "invalid_parent_doc_id",
+    "invalid_parent_message_id",
+    "invalid_parent_task_id",
+    "invalid_project_id",
+    "invalid_sprint_id",
     "invalid_sprint_transition",
     "invalid_state",
     "invalid_status",
     "invalid_target",
+    "invalid_target_id",
+    "invalid_team_id",
     "invalid_value",
     "invitation_expired",
     "invitation_not_found",
@@ -88,6 +105,7 @@ CODES = (
     "meeting_participants_locked",
     "meeting_state_invalid",
     "meeting_transition_invalid",
+    "member_in_use",
     "member_inactive",
     "member_not_found",
     "member_token_required",
@@ -104,7 +122,6 @@ CODES = (
     "owner_target_invalid",
     "owner_target_self",
     "owner_transfer_forbidden",
-    "owner_user_not_found",
     "parent_block_not_found",
     "parent_doc_not_found",
     "parent_task_not_found",
@@ -135,7 +152,6 @@ CODES = (
     "task_cycle",
     "task_key_invalid",
     "task_not_found",
-    "team_has_projects",
     "team_member_inactive",
     "team_member_not_found",
     "team_not_found",
@@ -158,6 +174,7 @@ CODES = (
     "upload_incomplete",
     "upload_rejected",
     "user_conflict",
+    "user_in_use",
     "user_not_found",
     "validation_error",
     "video_format_unsupported",
@@ -187,6 +204,16 @@ class DomainError(Exception):
 
 class Invalid(DomainError, ValueError):
     """A bad value in the request."""
+
+
+class InvalidReference(Invalid):
+    """An id in the request body names nothing in this workspace (422, never 404: 404 is the URL)."""
+
+    def __init__(self, field: str):
+        super().__init__(
+            f"{field.replace('_', ' ')} does not exist in this workspace",
+            code=f"invalid_{field}_id",
+        )
 
 
 class Forbidden(DomainError, PermissionError):

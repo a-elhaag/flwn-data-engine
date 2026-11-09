@@ -112,7 +112,7 @@ class AtomApiTests(MemoryHarness):
         self.sql("update members set status='suspended' where id=:id", id=self.owner)
         self.assertEqual(self.client.get(self.base, headers=self.admin).status_code, 403)
 
-    def test_admin_crud_and_soft_delete(self):
+    def test_admin_crud_and_hard_delete(self):
         atom = self.create_atom()
         path = self.base + "/" + atom["id"]
         self.assertEqual(
@@ -126,9 +126,16 @@ class AtomApiTests(MemoryHarness):
         )
         self.assertEqual(self.client.delete(path, headers=self.admin).status_code, 204)
         self.assertEqual(self.client.get(path, headers=self.admin).status_code, 404)
-        row = self.sql("select status, deleted_at from atoms where id=:id", id=atom["id"])[0]
-        self.assertIsNotNone(row["deleted_at"])
-        self.assertNotEqual(row["status"], "active")
+        self.assertEqual(
+            self.sql("select count(*) as n from atoms where id=:id", id=atom["id"])[0]["n"], 0
+        )
+        # its member identity goes too
+        self.assertEqual(
+            self.sql("select count(*) as n from members where id=:id", id=atom["member_id"])[0][
+                "n"
+            ],
+            0,
+        )
 
     def test_schedule_and_connection_administration(self):
         atom, schedule = self.active_atom()

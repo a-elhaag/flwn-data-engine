@@ -59,7 +59,7 @@ class CollaborationApiTests(CrudHarness):
         invalid_ref = "00000000-0000-4000-8000-000000000000"
         for field in ("collection_id", "cover_file_id"):
             response = self.client.post(base, json={"title": "Invalid ref", field: invalid_ref})
-            self.assertEqual(response.status_code, 404, response.text)
+            self.assertEqual(response.status_code, 422, response.text)  # an id in the body
 
         root_response = self.client.post(base, json={"title": "Root", "project_id": project["id"]})
         self.assertEqual(root_response.status_code, 201, root_response.text)

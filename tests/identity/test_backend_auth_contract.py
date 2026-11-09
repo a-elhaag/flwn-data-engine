@@ -103,9 +103,7 @@ class MembershipsTests(ContractHarness):
         self.join(gone, user)
         self.client.delete(f"/workspaces/{gone}", headers=SERVICE)
         left, _ = self.owned_workspace(other, "Left")
-        self.sql(
-            "update members set deleted_at = now() where id = :i", i=self.join(left, user, "admin")
-        )
+        self.sql("delete from members where id = :i", i=self.join(left, user, "admin"))
 
         response = self.client.get(self.url(user))
         self.assertEqual(response.status_code, 200, response.text)
@@ -210,13 +208,15 @@ class WorkspaceCreateTests(ContractHarness):
         missing = self.client.post(
             "/workspaces", json={**body, "slug": slug + "-x", "owner_user_id": str(uuid.uuid4())}
         )
-        self.assertEqual(missing.status_code, 404, missing.text)
+        self.assertEqual(missing.status_code, 422, missing.text)
+        self.assertEqual(missing.json()["code"], "invalid_owner_user_id")
         deleted = self.user()
         self.client.delete(f"/users/{deleted}")
         gone = self.client.post(
             "/workspaces", json={**body, "slug": slug + "-z", "owner_user_id": deleted}
         )
-        self.assertEqual(gone.status_code, 404, gone.text)
+        self.assertEqual(gone.status_code, 422, gone.text)
+        self.assertEqual(gone.json()["code"], "invalid_owner_user_id")
         no_owner = self.client.post("/workspaces", json={"name": "A", "slug": slug + "-y"})
         self.assertEqual(no_owner.status_code, 422)
         self.assertEqual(
@@ -303,10 +303,14 @@ class LastOwnerTests(ContractHarness):
         legacy = self.workspace("legacy")
         plain = self.member(legacy)
         self.assertEqual(self.patch_member(legacy, plain, role="viewer").status_code, 200)
-        # once the workspace is deleted, its owners may go
-        self.sql("update workspaces set deleted_at = now() where id = :i", i=self.ws)
-        self.sql("update members set role = 'admin' where id = :i", i=self.owner_member)
-        self.assertEqual(self.role(self.owner_member), "admin")
+        # once the workspace is deleted, its owners go with it, which the backstop allows
+        self.sql("delete from workspaces where id = :i", i=self.ws)
+        self.assertEqual(
+            self.sql("select count(*) as n from members where id = :i", i=self.owner_member)[0][
+                "n"
+            ],
+            0,
+        )
 
     def test_concurrent_demotions_of_the_last_two_owners(self):
         second = self.join(self.ws, self.user(), "owner")

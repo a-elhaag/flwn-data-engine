@@ -16,7 +16,6 @@ from app.db.base import (
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -37,7 +36,7 @@ FILE_KINDS = (
 )
 
 
-class Folder(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Folder(IdPk, Tenant, Stamps, Base):
     __tablename__ = "folders"
 
     team_id: Mapped[uuid.UUID | None]
@@ -61,11 +60,10 @@ Index(
     func.coalesce(Folder.parent_folder_id, text(f"'{ZERO_UUID}'::uuid")),
     func.lower(Folder.name),
     unique=True,
-    postgresql_where=text("deleted_at is null"),
 )
 
 
-class File(IdPk, Tenant, Stamps, SoftDelete, Base):
+class File(IdPk, Tenant, Stamps, Base):
     __tablename__ = "files"
 
     folder_id: Mapped[uuid.UUID | None]

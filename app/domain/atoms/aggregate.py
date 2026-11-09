@@ -82,8 +82,6 @@ class AggregateService:
             )
         if target is not None:
             conditions.append(getattr(model, resource_field) == target)
-        if hasattr(model, "deleted_at"):
-            conditions.append(model.deleted_at.is_(None))
         with aggregate_session(self.context, bind=self.bind) as session:
             result = {
                 "count": session.scalar(select(func.count()).select_from(model).where(*conditions))

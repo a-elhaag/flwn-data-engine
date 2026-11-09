@@ -10,7 +10,7 @@ from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, Workspace
 from app.db.models.planning import Backlog, Milestone, Project, Sprint, Task, WorkItem
 from app.db.session import session_for
-from app.domain.error_codes import DomainError, Invalid
+from app.domain.error_codes import DomainError, Invalid, InvalidReference
 
 TASK_KEY = re.compile(r"^([A-Z][A-Z0-9]{0,9})-([1-9][0-9]*)$")
 
@@ -24,12 +24,7 @@ class PlanningConflict(DomainError, ValueError):
 
 
 def _workspace(session, workspace_id):
-    if (
-        session.scalar(
-            select(Workspace.id).where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
-        )
-        is None
-    ):
+    if session.scalar(select(Workspace.id).where(Workspace.id == workspace_id)) is None:
         raise PlanningNotFound("workspace not found", code="workspace_not_found")
 
 
@@ -38,7 +33,6 @@ def _project(session, workspace_id, project_id):
         select(Project).where(
             Project.workspace_id == workspace_id,
             Project.id == uuid.UUID(str(project_id)),
-            Project.deleted_at.is_(None),
         )
     )
     if row is None:
@@ -52,7 +46,6 @@ def _work_item(session, workspace_id, project_id, work_item_id):
             WorkItem.workspace_id == workspace_id,
             WorkItem.project_id == project_id,
             WorkItem.id == uuid.UUID(str(work_item_id)),
-            WorkItem.deleted_at.is_(None),
         )
     )
     if row is None:
@@ -66,7 +59,6 @@ def _task(session, workspace_id, project_id, task_id):
             Task.workspace_id == workspace_id,
             Task.project_id == project_id,
             Task.id == uuid.UUID(str(task_id)),
-            Task.deleted_at.is_(None),
         )
     )
     if row is None:
@@ -82,12 +74,11 @@ def _check_project_refs(session, workspace_id, fields):
                 select(Team.id).where(
                     Team.workspace_id == workspace_id,
                     Team.id == team_id,
-                    Team.deleted_at.is_(None),
                 )
             )
             is None
         ):
-            raise PlanningNotFound("team not found", code="team_not_found")
+            raise InvalidReference("team")
         fields["team_id"] = team_id
     if fields.get("lead_id") is not None:
         lead_id = uuid.UUID(str(fields["lead_id"]))
@@ -96,13 +87,12 @@ def _check_project_refs(session, workspace_id, fields):
                 select(Member.id).where(
                     Member.workspace_id == workspace_id,
                     Member.id == lead_id,
-                    Member.deleted_at.is_(None),
                     Member.status == "active",
                 )
             )
             is None
         ):
-            raise PlanningNotFound("active member not found", code="member_not_found")
+            raise InvalidReference("lead")
         fields["lead_id"] = lead_id
 
 
@@ -111,7 +101,6 @@ def _member_in_workspace(session, workspace_id, member_id):
         select(Member.id).where(
             Member.workspace_id == workspace_id,
             Member.id == uuid.UUID(str(member_id)),
-            Member.deleted_at.is_(None),
         )
     )
     if found is None:
@@ -162,7 +151,6 @@ class ProjectService:
                     select(Project)
                     .where(
                         Project.workspace_id == self.workspace_id,
-                        Project.deleted_at.is_(None),
                         Project.team_id == team_id if team_id is not None else True,
                     )
                     .order_by(Project.created_at, Project.id)
@@ -190,7 +178,6 @@ class ProjectService:
                     select(Project)
                     .where(
                         Project.workspace_id == self.workspace_id,
-                        Project.deleted_at.is_(None),
                         or_(Project.lead_id == member, Project.team_id.in_(on_team)),
                     )
                     .order_by(Project.created_at, Project.id)
@@ -226,40 +213,36 @@ class ProjectService:
             return row
 
     def delete(self, project_id):
+        """Hard delete. Work items, tasks and comments go with the project (ON DELETE CASCADE);
+        the audit log keeps a snapshot of each name."""
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = _project(session, self.workspace_id, project_id)
-            now = datetime.now(UTC)
-            work_items = list(
-                session.scalars(
-                    select(WorkItem).where(
-                        WorkItem.workspace_id == self.workspace_id,
-                        WorkItem.project_id == row.id,
-                        WorkItem.deleted_at.is_(None),
-                    )
+            snapshots = [("project", row.id, {"name": row.name})]
+            for item in session.scalars(
+                select(WorkItem).where(
+                    WorkItem.workspace_id == self.workspace_id, WorkItem.project_id == row.id
                 )
-            )
-            for item in work_items:
-                item.deleted_at = now
-                tasks = session.scalars(
-                    select(Task).where(
-                        Task.workspace_id == self.workspace_id,
-                        Task.project_id == row.id,
-                        Task.work_item_id == item.id,
-                        Task.deleted_at.is_(None),
-                    )
+            ):
+                snapshots.append(("work_item", item.id, {"title": item.title}))
+            for task in session.scalars(
+                select(Task).where(
+                    Task.workspace_id == self.workspace_id, Task.project_id == row.id
                 )
-                for task in tasks:
-                    task.deleted_at = now
-                    events.record(
-                        session, str(self.workspace_id), self.actor, "task", task.id, "deleted"
-                    )
-                events.record(
-                    session, str(self.workspace_id), self.actor, "work_item", item.id, "deleted"
-                )
-            row.deleted_at = now
+            ):
+                snapshots.append(("task", task.id, {"title": task.title}))
+            session.delete(row)
             session.flush()
-            events.record(session, str(self.workspace_id), self.actor, "project", row.id, "deleted")
+            for entity, entity_id, changes in snapshots:
+                events.record(
+                    session,
+                    str(self.workspace_id),
+                    self.actor,
+                    entity,
+                    entity_id,
+                    "deleted",
+                    changes,
+                )
 
 
 class WorkItemService:
@@ -276,7 +259,6 @@ class WorkItemService:
                     .where(
                         WorkItem.workspace_id == self.workspace_id,
                         WorkItem.project_id == project.id,
-                        WorkItem.deleted_at.is_(None),
                     )
                     .order_by(WorkItem.created_at, WorkItem.id)
                     .limit(limit)
@@ -334,25 +316,27 @@ class WorkItemService:
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
             row = _work_item(session, self.workspace_id, project.id, work_item_id)
-            now = datetime.now(UTC)
-            tasks = session.scalars(
+            snapshots = [("work_item", row.id, {"title": row.title})]
+            for task in session.scalars(
                 select(Task).where(
                     Task.workspace_id == self.workspace_id,
                     Task.project_id == project.id,
                     Task.work_item_id == row.id,
-                    Task.deleted_at.is_(None),
                 )
-            )
-            for task in tasks:
-                task.deleted_at = now
-                events.record(
-                    session, str(self.workspace_id), self.actor, "task", task.id, "deleted"
-                )
-            row.deleted_at = now
+            ):
+                snapshots.append(("task", task.id, {"title": task.title}))
+            session.delete(row)  # its tasks go with it (ON DELETE CASCADE)
             session.flush()
-            events.record(
-                session, str(self.workspace_id), self.actor, "work_item", row.id, "deleted"
-            )
+            for entity, entity_id, changes in snapshots:
+                events.record(
+                    session,
+                    str(self.workspace_id),
+                    self.actor,
+                    entity,
+                    entity_id,
+                    "deleted",
+                    changes,
+                )
 
 
 class TaskService:
@@ -378,7 +362,6 @@ class TaskService:
             query = select(Task).where(
                 Task.workspace_id == self.workspace_id,
                 Task.project_id == project.id,
-                Task.deleted_at.is_(None),
             )
             if assignee_id is not None:
                 query = query.where(Task.assignee_id == assignee_id)
@@ -410,9 +393,7 @@ class TaskService:
                 .where(
                     Task.workspace_id == self.workspace_id,
                     Project.key == found.group(1),
-                    Project.deleted_at.is_(None),
                     Task.number == int(found.group(2)),
-                    Task.deleted_at.is_(None),
                 )
             )
             if row is None:
@@ -432,8 +413,6 @@ class TaskService:
                 .where(
                     Task.workspace_id == self.workspace_id,
                     Task.assignee_id == member,
-                    Task.deleted_at.is_(None),
-                    Project.deleted_at.is_(None),
                 )
                 .order_by(Task.created_at, Task.id)
                 .limit(limit)
@@ -488,9 +467,12 @@ class TaskService:
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
             row = _task(session, self.workspace_id, project.id, task_id)
-            row.deleted_at = datetime.now(UTC)
+            snapshot, row_id = {"title": row.title}, row.id
+            session.delete(row)  # its sub-tasks are detached, not deleted (ON DELETE SET NULL)
             session.flush()
-            events.record(session, str(self.workspace_id), self.actor, "task", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "task", row_id, "deleted", snapshot
+            )
 
     def _validate_task_refs(self, session, project, fields, task_id=None):
         self._refuse_completed_sprint(session, project, fields, task_id)
@@ -507,10 +489,7 @@ class TaskService:
                     )
                     is None
                 ):
-                    raise PlanningNotFound(
-                        f"{key.removesuffix('_id')} not found",
-                        code=f"{key.removesuffix('_id')}_not_found",
-                    )
+                    raise InvalidReference(key.removesuffix("_id"))
                 fields[key] = value
         if fields.get("assignee_id") is not None:
             value = uuid.UUID(str(fields["assignee_id"]))
@@ -519,13 +498,12 @@ class TaskService:
                     select(Member.id).where(
                         Member.workspace_id == self.workspace_id,
                         Member.id == value,
-                        Member.deleted_at.is_(None),
                         Member.status == "active",
                     )
                 )
                 is None
             ):
-                raise PlanningNotFound("active assignee not found", code="assignee_not_found")
+                raise InvalidReference("assignee")
             fields["assignee_id"] = value
         if fields.get("parent_task_id") is not None:
             value = uuid.UUID(str(fields["parent_task_id"]))
@@ -536,12 +514,11 @@ class TaskService:
                         Task.workspace_id == self.workspace_id,
                         Task.project_id == project.id,
                         Task.id == value,
-                        Task.deleted_at.is_(None),
                     )
                 )
                 is None
             ):
-                raise PlanningNotFound("parent task not found", code="parent_task_not_found")
+                raise InvalidReference("parent_task")
             if task_id is not None:
                 self._refuse_task_cycle(session, task_id, value)
             fields["parent_task_id"] = value
@@ -670,7 +647,6 @@ class SprintService:
                 select(Task).where(
                     Task.workspace_id == self.workspace_id,
                     Task.sprint_id == row.id,
-                    Task.deleted_at.is_(None),
                     Task.status.not_in(("done", "canceled")),
                 )
             ).all()

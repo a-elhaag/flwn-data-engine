@@ -753,7 +753,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "metadata": "Extra data attached to the message, such as a file reference. Free-form JSON.",
         "pinned_at": "When it was pinned. Null if not pinned.",
         "edited_at": "When it was last edited. Null if never.",
-        "deleted_at": "When it was deleted. Null if not deleted.",
         "created_at": "When it was sent.",
     },
     "MessagePage": {"items": "The messages on this page."},

@@ -277,7 +277,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"DELETE {W}/skills/{{skill_id}}": (
         "Delete a skill",
-        "Soft delete. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
+        "Hard delete. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
     "POST /workspaces": (
         "Create a workspace",
@@ -294,7 +294,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"DELETE {W}": (
         "Delete a workspace",
-        "Soft delete. Needs a token with the `admin` scope.",
+        "Hard delete: everything inside the workspace goes too. Needs a token with the `admin` scope.",
     ),
     "POST /users": (
         "Create a user",
@@ -315,7 +315,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     "DELETE /users/{user_id}": (
         "Delete a user",
-        "Soft delete. Their memberships go too: a membership with work is suspended, one without is removed (its team seats too). Trusted backend only. Returns 204, or 409 `last_owner` while they are the last active owner of a workspace.",
+        "Hard delete. Their memberships go too (team seats with them; references to them become null, the audit log keeps the name). Trusted backend only. Returns 204, or 409 `last_owner` while they are the last active owner of a workspace, or 409 `user_in_use` while they still own atoms, skills or versions.",
     ),
     f"POST {W}/members": (
         "Create a member",
@@ -542,7 +542,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"DELETE {W}/channels/{{channel_id}}/messages/{{message_id}}": (
         "Delete a message",
-        "Soft delete. Returns 204.",
+        "Hard delete. Returns 204.",
     ),
 }
 

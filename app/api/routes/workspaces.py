@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import actor, allow, service_only
-from app.api.errors import api_error
+from app.api.errors import api_error, code_of
 from app.api.paging import split_page
 from app.api.schemas.identity import (
     WorkspaceCreate,
@@ -34,6 +34,8 @@ def _call(fn, *args, **kwargs):
         raise api_error(
             409, "conflict_workspace", "workspace conflicts with an existing record"
         ) from None
+    except ValueError as exc:
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
 @router.post(

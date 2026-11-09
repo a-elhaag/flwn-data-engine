@@ -4,14 +4,13 @@ Emails are stored in canonical form only (app/identity/email.py).
 """
 
 import uuid
-from datetime import UTC, datetime
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.db import events
-from app.db.base import Base
-from app.db.models.identity import Member, TeamMember, User, Workspace
+from app.db.models.identity import Member, User, Workspace
 from app.db.session import service_session, session_for
 from app.domain.error_codes import DomainError
 from app.domain.identity.email import canonical_email, canonical_or_none
@@ -28,25 +27,15 @@ class UserConflict(DomainError, ValueError):
     code = "user_conflict"
 
 
+class UserInUse(UserConflict):
+    code = "user_in_use"
+
+
 def _user(session, user_id):
-    row = session.scalar(
-        select(User).where(User.id == uuid.UUID(str(user_id)), User.deleted_at.is_(None))
-    )
+    row = session.scalar(select(User).where(User.id == uuid.UUID(str(user_id))))
     if row is None:
         raise UserNotFound("user not found", code="user_not_found")
     return row
-
-
-def _has_work(session, member_id) -> bool:
-    """True if any row still points at the member, other than their team seats."""
-    for table in Base.metadata.sorted_tables:
-        if table.name in ("members", "team_members"):
-            continue
-        for column in table.columns:
-            if any(fk.column.table.name == "members" for fk in column.foreign_keys):
-                if session.scalar(select(column).where(column == member_id).limit(1)) is not None:
-                    return True
-    return False
 
 
 def email_matches(email: str):
@@ -70,7 +59,7 @@ def _email_available(session, email, *, exclude_id=None):
 class UserService:
     def list(self, limit=50, offset=0, *, email=None):
         with service_session() as session:
-            query = select(User).where(User.deleted_at.is_(None))
+            query = select(User)
             if email is not None:
                 canonical = canonical_or_none(email)
                 if canonical is None:
@@ -113,18 +102,17 @@ class UserService:
             return row
 
     def delete(self, user_id):
-        """Soft delete the account and its memberships, in one transaction.
+        """Delete the account and every membership, in one transaction.
 
-        A membership the person has done work in is suspended, so the work still shows who did it.
-        One with no work is removed (its team seats go too). Refused (LastOwner) while they are
-        the last active owner of a workspace: make someone else owner first.
+        Each membership goes the way a member delete does: its team seats go, and references to
+        it (assignees, authors) become null, while the audit log keeps a snapshot of the name.
+        Refused (LastOwner) while they are the last active owner of a workspace: make someone
+        else owner first. Refused (UserInUse) while they still own atoms, skills or versions.
         """
         with service_session() as session:
             row = _user(session, user_id)
             owned = session.scalars(
-                select(Member.workspace_id).where(
-                    Member.user_id == row.id, Member.role == "owner", Member.deleted_at.is_(None)
-                )
+                select(Member.workspace_id).where(Member.user_id == row.id, Member.role == "owner")
             ).all()
             before = lock_owners(session, owned)
             for workspace_id, count in before.items():
@@ -134,20 +122,28 @@ class UserService:
                     and not active_owners(session, workspace_id, excluding_user=row.id)
                 ):
                     raise LastOwner()
-            now = datetime.now(UTC)
-            memberships = session.scalars(
-                select(Member).where(Member.user_id == row.id, Member.deleted_at.is_(None))
-            ).all()
-            for member in memberships:
-                if _has_work(session, member.id):
-                    member.status = "suspended"
-                    action = "suspended"
-                else:
-                    session.execute(delete(TeamMember).where(TeamMember.member_id == member.id))
-                    member.deleted_at = now
-                    action = "deleted"
-                events.record(session, str(member.workspace_id), None, "member", member.id, action)
-            row.deleted_at = now
+            memberships = session.scalars(select(Member).where(Member.user_id == row.id)).all()
+            snapshots = [(str(m.workspace_id), m.id, m.type) for m in memberships]
+            name = row.name
+            try:
+                for member in memberships:
+                    session.delete(member)
+                session.delete(row)
+                session.flush()
+            except IntegrityError as exc:
+                raise UserInUse(
+                    "user still owns atoms, skills or versions; transfer or delete them first"
+                ) from exc
+            for workspace_id, member_id, member_type in snapshots:
+                events.record(
+                    session,
+                    workspace_id,
+                    None,
+                    "member",
+                    member_id,
+                    "deleted",
+                    {"type": member_type, "user": name},
+                )
 
     def memberships(self, user_id, *, status=None, type=None):
         """The user's memberships in live workspaces, oldest workspace first.
@@ -168,7 +164,5 @@ class UserService:
 
 
 def _live(session, workspace_id) -> bool:
-    found = session.scalar(
-        select(Workspace.id).where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
-    )
+    found = session.scalar(select(Workspace.id).where(Workspace.id == workspace_id))
     return found is not None

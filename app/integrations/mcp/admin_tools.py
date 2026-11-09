@@ -86,7 +86,7 @@ async def atom_configure(atom_id: uuid.UUID, body: ConfigureAtom, ctx: Context) 
 @_tool(
     name="atom_delete",
     annotations=DESTROYS,
-    description="Soft-delete an atom and stop it. Cannot be undone through this API.",
+    description="Delete an atom permanently. Refused while it has approval records (kill it instead). Cannot be undone through this API.",
 )
 async def atom_delete(atom_id: uuid.UUID, ctx: Context) -> dict:
     await _admin(ctx, "atom_delete", lambda s: s.delete(str(atom_id)))

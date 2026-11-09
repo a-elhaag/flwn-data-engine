@@ -63,10 +63,6 @@ class Stamps(Created):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
-class SoftDelete:
-    deleted_at: Mapped[datetime | None]
-
-
 def tenant_unique() -> UniqueConstraint:
     """Lets other tables reference (workspace_id, id)."""
     return UniqueConstraint("workspace_id", "id")

@@ -42,12 +42,7 @@ class ApprovalService(AtomService):
 
     def _human(self, session, member_id):
         member = self._row(session, Member, member_id)
-        if (
-            member.type != "HUMAN"
-            or member.status != "active"
-            or member.deleted_at
-            or member.role == "viewer"
-        ):
+        if member.type != "HUMAN" or member.status != "active" or member.role == "viewer":
             raise AtomPermissionError("active non-viewer human required")
         return member
 

@@ -291,9 +291,7 @@ class MeetingTests(MemoryHarness):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(self.sql("select count(*) as n from recordings")[0]["n"], 0)
         self.assertEqual(
-            self.sql(
-                "select count(*) as n from files where deleted_at is null and kind = 'recording'"
-            )[0]["n"],
+            self.sql("select count(*) as n from files where kind = 'recording'")[0]["n"],
             0,
         )
 

@@ -25,7 +25,6 @@ from app.db.base import (
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -36,7 +35,7 @@ from app.db.base import (
 )
 
 
-class Project(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Project(IdPk, Tenant, Stamps, Base):
     __tablename__ = "projects"
 
     team_id: Mapped[uuid.UUID | None]  # null = workspace-wide project
@@ -147,7 +146,7 @@ class Sprint(IdPk, Tenant, Stamps, Base):
     )
 
 
-class WorkItem(IdPk, Tenant, Stamps, SoftDelete, Base):
+class WorkItem(IdPk, Tenant, Stamps, Base):
     __tablename__ = "work_items"
 
     project_id: Mapped[uuid.UUID]  # denormalized; the FK to backlogs keeps it consistent
@@ -171,7 +170,7 @@ class WorkItem(IdPk, Tenant, Stamps, SoftDelete, Base):
     )
 
 
-class Task(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Task(IdPk, Tenant, Stamps, Base):
     __tablename__ = "tasks"
 
     project_id: Mapped[uuid.UUID]

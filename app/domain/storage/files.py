@@ -138,7 +138,6 @@ class FileService:
             select(File).where(
                 File.workspace_id == uuid.UUID(self.workspace_id),
                 File.id == uuid.UUID(str(file_id)),
-                File.deleted_at.is_(None),
             )
         ).one_or_none()
         if row is None:
@@ -255,7 +254,7 @@ class FileService:
     ) -> FilePage:
         query = (
             select(File)
-            .where(File.workspace_id == uuid.UUID(self.workspace_id), File.deleted_at.is_(None))
+            .where(File.workspace_id == uuid.UUID(self.workspace_id))
             .order_by(File.created_at.desc(), File.id)
             .limit(limit)
             .offset(offset)
@@ -286,16 +285,17 @@ class FileService:
 
     def delete(self, file_id: str) -> None:
         """Remove the bytes first, then hide the row. If storage fails the call fails and the
-        file stays visible, so a retry finishes the job; a deleted file never lingers in storage.
+        file stays, so a retry finishes the job; a deleted file never lingers in storage.
         Azure keeps deleted blobs for 7 days."""
         with session_for(self.workspace_id) as session:
             row = self._row(session, file_id)
             self.storage.delete(row.container, row.blob_path)
-            row.deleted_at = datetime.now(UTC)
+            row_id = row.id
             session.execute(
-                delete(Chunk).where(Chunk.source_type == "file", Chunk.source_id == row.id)
+                delete(Chunk).where(Chunk.source_type == "file", Chunk.source_id == row_id)
             )
-            self._log(session, row.id, "deleted")
+            self._log(session, row_id, "deleted")
+            session.delete(row)
 
     def reindex(self, file_id: str) -> FileRecord:
         """Queue a ready file for indexing again (after a failure, or a change in the extractors)."""

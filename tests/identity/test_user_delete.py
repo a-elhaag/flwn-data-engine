@@ -1,4 +1,4 @@
-"""Deleting a user: memberships with work are suspended, the rest removed; the last owner is kept."""
+"""Deleting a user removes the account and every membership; the last owner is kept."""
 
 import uuid
 
@@ -14,7 +14,7 @@ class UserDeleteTests(CrudHarness):
         self.assertEqual(response.status_code, 201, response.text)
         return response.json()
 
-    def test_memberships_with_work_are_suspended_and_the_rest_removed(self):
+    def test_the_account_and_every_membership_are_removed(self):
         email = f"{uuid.uuid4().hex[:10]}@example.com"
         with_work = self.human(self.team_a, email)
         without_work = self.human(self.team_b, email)
@@ -23,18 +23,11 @@ class UserDeleteTests(CrudHarness):
         team_a = self.client.post(
             f"/workspaces/{self.team_a}/teams", json={"key": "ENG", "name": "Eng"}
         ).json()
-        team_b = self.client.post(
-            f"/workspaces/{self.team_b}/teams", json={"key": "OPS", "name": "Ops"}
-        ).json()
         self.client.put(
             f"/workspaces/{self.team_a}/teams/{team_a['id']}/members",
             json={"member_ids": [with_work["id"]]},
         )
-        self.client.put(
-            f"/workspaces/{self.team_b}/teams/{team_b['id']}/members",
-            json={"member_ids": [without_work["id"]]},
-        )
-        # Work: a memory the first membership wrote.
+        # Work: a memory the membership wrote.
         memory_id = self.remember(self.team_a)
         self.sql(
             "update memories set created_by = :m where id = :i", m=with_work["id"], i=memory_id
@@ -42,26 +35,29 @@ class UserDeleteTests(CrudHarness):
 
         self.assertEqual(self.client.delete(f"/users/{user}").status_code, 204)
 
-        with_work_row = self.sql(
-            "select status, deleted_at from members where id = :m", m=with_work["id"]
-        )[0]
         self.assertEqual(
-            (with_work_row["status"], with_work_row["deleted_at"]), ("suspended", None)
+            self.sql(
+                "select count(*) as n from members where id in (:a, :b)",
+                a=with_work["id"],
+                b=without_work["id"],
+            )[0]["n"],
+            0,
         )
-        without_work_row = self.sql(
-            "select status, deleted_at from members where id = :m", m=without_work["id"]
-        )[0]
-        self.assertIsNotNone(without_work_row["deleted_at"])
-        # A suspended member keeps their team seats; a removed one loses them.
-        seats = self.sql(
-            "select member_id from team_members where member_id in (:a, :b)",
-            a=with_work["id"],
-            b=without_work["id"],
+        # Team seats go with the membership; the work keeps its row, with no author now.
+        self.assertEqual(
+            self.sql(
+                "select count(*) as n from team_members where member_id = :m", m=with_work["id"]
+            )[0]["n"],
+            0,
         )
-        self.assertEqual([str(s["member_id"]) for s in seats], [with_work["id"]])
-        # The past work still names who did it.
-        self.assertEqual(str(self.row(memory_id)["created_by"]), with_work["id"])
+        self.assertIsNone(self.row(memory_id)["created_by"])
         self.assertEqual(self.client.get(f"/users/{user}").status_code, 404)
+        # The audit log keeps who was removed, after the rows are gone.
+        event = self.sql(
+            "select changes from events where entity_type = 'member' and entity_id = :m and action = 'deleted'",
+            m=with_work["id"],
+        )[0]
+        self.assertEqual(event["changes"]["user"], "Ada")
 
     def test_the_last_owner_cannot_be_deleted(self):
         owner = self.human(self.team_a, f"{uuid.uuid4().hex[:10]}@example.com", role="owner")

@@ -61,7 +61,7 @@ class AtomSchemaTest(unittest.TestCase):
             with self.conn.begin_nested():
                 action()
 
-    def test_atom_defaults_and_soft_delete_retain_history(self):
+    def test_atom_defaults_and_killing_keeps_history(self):
         version = make_version(self.conn, self.atom)
         run = add(
             self.conn,
@@ -75,11 +75,8 @@ class AtomSchemaTest(unittest.TestCase):
         )
         row = self.conn.execute(select(T("atoms")).where(T("atoms").c.id == self.atom["id"])).one()
         self.assertEqual(row.status, "draft")
-        self.assertIsNone(row.deleted_at)
         self.conn.execute(
-            update(T("atoms"))
-            .where(T("atoms").c.id == self.atom["id"])
-            .values(status="killed", deleted_at=datetime.now(UTC))
+            update(T("atoms")).where(T("atoms").c.id == self.atom["id"]).values(status="killed")
         )
         self.assertEqual(
             self.conn.scalar(select(T("agent_runs").c.atom_id).where(T("agent_runs").c.id == run)),
@@ -133,11 +130,6 @@ class AtomSchemaTest(unittest.TestCase):
             self.assertEqual(
                 self.conn.scalar(select(atoms.c.active_version_id).where(where)), version
             )
-        self.rejects(
-            lambda: self.conn.execute(
-                update(atoms).where(where).values(deleted_at=datetime.now(UTC))
-            )
-        )
 
     def test_versions_are_append_only_except_status_and_eval(self):
         version = make_version(self.conn, self.atom)
@@ -165,7 +157,7 @@ class AtomSchemaTest(unittest.TestCase):
         self.rejects(lambda: make_version(self.conn, self.atom, version=0))
         self.rejects(lambda: make_version(self.conn, self.atom, version=2, tools={}))
 
-    def test_soft_deleted_skills_keep_attachments(self):
+    def test_deleted_skills_detach_from_atoms(self):
         for catalog in (False, True):
             with self.subTest(catalog=catalog):
                 skill = make_skill(self.conn, None if catalog else self.ws)
@@ -181,10 +173,8 @@ class AtomSchemaTest(unittest.TestCase):
                     added_by_member_id=self.ws["human"],
                 )
                 table = T("catalog_skills" if catalog else "skills")
-                self.conn.execute(
-                    update(table).where(table.c.id == skill).values(deleted_at=datetime.now(UTC))
-                )
-                self.assertIsNotNone(
+                self.conn.execute(delete(table).where(table.c.id == skill))
+                self.assertIsNone(
                     self.conn.scalar(
                         select(T("atom_skills").c.id).where(T("atom_skills").c.id == attachment)
                     )

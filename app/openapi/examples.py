@@ -459,7 +459,6 @@ _MESSAGE = {
     "metadata": {},
     "pinned_at": None,
     "edited_at": None,
-    "deleted_at": None,
     "created_at": STAMP,
 }
 

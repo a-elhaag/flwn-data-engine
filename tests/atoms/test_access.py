@@ -775,13 +775,11 @@ class SkillsAggregateTest(unittest.TestCase):
             owner_member_id=self.ws["agent"],
         )
         disabled = make_skill(self.conn, self.ws, name="disabled")
-        deleted = make_skill(self.conn, name="deleted-catalog", deleted_at=datetime.now(UTC))
         for skill_id, is_catalog, enabled in (
             (local, False, True),
             (catalog, True, True),
             (hidden, False, True),
             (disabled, False, False),
-            (deleted, True, True),
         ):
             add(
                 self.conn,
@@ -807,11 +805,7 @@ class SkillsAggregateTest(unittest.TestCase):
         self.assertEqual(by_id[str(catalog)]["instructions"], "Catalog instructions")
         self.assertTrue(all(row["version"] == 1 for row in result))
         self.assertTrue(all(not {"embedding", "tsv"}.intersection(row) for row in result))
-        self.conn.execute(
-            update(T("skills"))
-            .where(T("skills").c.id == local)
-            .values(deleted_at=datetime.now(UTC))
-        )
+        self.conn.execute(delete(T("skills")).where(T("skills").c.id == local))
         self.assertEqual(
             [row["id"] for row in self.service.attached(self.atom["id"])], [str(catalog)]
         )
@@ -980,7 +974,7 @@ class SkillsAggregateTest(unittest.TestCase):
         self.grant("connection", permitted)
         self.assertEqual(self.aggregate.read("connection"), {"count": 1})
 
-    def test_promote_delete_and_attachment_overrides_preserve_history(self):
+    def test_promote_delete_and_attachment_overrides(self):
         skill = self.service.write(
             "private", "Description", "When", "Instructions", scope="personal"
         )
@@ -1001,7 +995,8 @@ class SkillsAggregateTest(unittest.TestCase):
         self.service.set_attachment(attached["id"], enabled=True, atom_id=self.atom["id"])
         self.service.delete(skill["id"])
         self.assertEqual(self.service.list_attached(self.atom["id"]), [])
-        self.assertEqual(self.conn.scalar(select(T("atom_skills").c.id)), uuid.UUID(attached["id"]))
+        # deleting the skill takes its attachment with it
+        self.assertIsNone(self.conn.scalar(select(T("atom_skills").c.id)))
         with self.assertRaises(LookupError):
             self.service.set_attachment(attached["id"], enabled=True, atom_id=self.atom["id"])
 

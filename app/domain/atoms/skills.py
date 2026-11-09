@@ -2,7 +2,6 @@
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -106,7 +105,6 @@ class SkillService:
                 Member.workspace_id == self.workspace_id,
                 Member.id == self.actor,
                 Member.status == "active",
-                Member.deleted_at.is_(None),
             )
         )
         if member is None:
@@ -135,7 +133,6 @@ class SkillService:
             .where(
                 Atom.workspace_id == self.workspace_id,
                 Atom.id == target,
-                Atom.deleted_at.is_(None),
             )
             .with_for_update()
         )
@@ -152,7 +149,7 @@ class SkillService:
         return row, member
 
     def _visible(self, model):
-        conditions = [model.deleted_at.is_(None), model.status == "active"]
+        conditions = [model.status == "active"]
         if model is Skill:
             conditions += [
                 Skill.workspace_id == self.workspace_id,
@@ -299,9 +296,10 @@ class SkillService:
     def delete(self, skill_id):
         with self._session() as session:
             row = self._admin_skill(session, skill_id)
-            row.deleted_at = datetime.now(UTC)
+            skill = str(row.id)
+            session.delete(row)  # atoms that had it detach it (ON DELETE CASCADE)
             session.flush()
-            return {"id": str(row.id), "deleted": True}
+            return {"id": skill, "deleted": True}
 
     def set_attachment(self, attachment_id, *, enabled, atom_id=None):
         if type(enabled) is not bool:

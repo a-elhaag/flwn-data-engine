@@ -323,7 +323,6 @@ class MessageOut(BaseModel):
     metadata: dict = Field(validation_alias=AliasChoices("metadata_", "metadata"))
     pinned_at: datetime | None
     edited_at: datetime | None
-    deleted_at: datetime | None
     created_at: datetime
 
 
