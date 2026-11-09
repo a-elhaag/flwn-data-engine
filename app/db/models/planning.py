@@ -54,7 +54,7 @@ class Project(IdPk, Tenant, Stamps, Base):
     __table_args__ = (
         tenant_unique(),
         one_of("status", *PROJECT_STATUSES),
-        tfk("team_id", "teams", "set null"),
+        tfk("team_id", "teams", "restrict"),  # a team with projects cannot be deleted
         tfk("lead_id", "members", "set null"),
         tfk("created_by", "members", "set null"),
         Index("ix_projects_workspace_id_team_id", "workspace_id", "team_id"),

@@ -46,6 +46,13 @@ class DevSessionTests(CrudHarness):
             self.assertEqual(first[key]["member_id"], second[key]["member_id"])
         self.assertEqual(first["user_id"], second["user_id"])
 
+    def test_dev_workspaces_carry_the_marker_in_the_engine_section(self):
+        got = self.sign_in()
+        (row,) = self.sql(
+            "select settings from workspaces where id = :w", w=got["personal"]["workspace_id"]
+        )
+        self.assertEqual(row["settings"], {"engine": {"dev_session": True}})
+
     def test_people_share_one_workspace_but_not_the_personal_one(self):
         ada, bob = self.sign_in(), self.sign_in(f"{uuid.uuid4().hex[:8]}@example.com", "Bob")
         self.assertEqual(ada["shared"]["workspace_id"], bob["shared"]["workspace_id"])

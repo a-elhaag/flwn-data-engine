@@ -1,7 +1,7 @@
 """Hard delete: every delete removes the row, and each foreign key does what the schema decided.
 
 The decisions (issue #26): a workspace cascades to everything in it; a member is set null on the
-work it was assigned or led; a team is set null on its projects; a user cannot be removed while a
+work it was assigned or led; a team that owns projects cannot be deleted (issue #41); a user cannot be removed while a
 membership remains; an atom is its member's identity, so removing the identity removes the atom;
 a personal atom blocks its owner's removal; and no table keeps a deleted_at column.
 """
@@ -102,14 +102,26 @@ class DeleteActionTest(unittest.TestCase):
             )
         )
 
-    def test_team_delete_sets_null_on_its_projects(self):
+    def test_team_with_projects_cannot_be_deleted_at_the_database(self):
         a = make_workspace(self.conn, "alpha")
-        self.conn.execute(delete(T("teams")).where(T("teams").c.id == a["team"]))
-        self.assertIsNone(
+        self.refused(
+            lambda: self.conn.execute(delete(T("teams")).where(T("teams").c.id == a["team"]))
+        )
+        self.assertEqual(self.count("teams", id=a["team"]), 1)
+        self.assertEqual(
             self.conn.scalar(
                 select(T("projects").c.team_id).where(T("projects").c.id == a["project"])
-            )
+            ),
+            a["team"],
         )
+
+    def test_team_without_projects_can_be_deleted(self):
+        a = make_workspace(self.conn, "alpha")
+        self.conn.execute(
+            text("update projects set team_id = null where id = :p"), {"p": a["project"]}
+        )
+        self.conn.execute(delete(T("teams")).where(T("teams").c.id == a["team"]))
+        self.assertEqual(self.count("teams", id=a["team"]), 0)
 
     def test_a_user_with_a_membership_cannot_be_deleted(self):
         a = make_workspace(self.conn, "alpha")

@@ -119,6 +119,11 @@ def _user(email: str, name: str) -> str:
     return str(found)
 
 
+def _is_dev_workspace(settings: dict) -> bool:
+    """The marker lives in the engine's section of workspace settings (see schemas/identity.py)."""
+    return bool((settings.get("engine") or {}).get(MARKER))
+
+
 def _find_workspace(slug: str):
     with service_session() as session:
         return session.execute(
@@ -137,14 +142,19 @@ def _workspace(slug: str, name: str, owner_user_id: str) -> str:
         try:
             return str(
                 WorkspaceService()
-                .create(name=name, slug=slug, owner_user_id=owner_user_id, settings={MARKER: True})
+                .create(
+                    name=name,
+                    slug=slug,
+                    owner_user_id=owner_user_id,
+                    settings={"engine": {MARKER: True}},
+                )
                 .id
             )
         except LOST_RACE:
             found = _find_workspace(slug)
             if found is None:
                 raise
-    if not found.settings.get(MARKER):
+    if not _is_dev_workspace(found.settings):
         raise RealUser(
             f"a workspace called {slug} already exists and is not a dev workspace",
             code="dev_workspace_slug_taken",

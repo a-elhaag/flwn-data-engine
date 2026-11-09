@@ -16,6 +16,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from app.db.base import INVITATION_ROLES, MEMBER_ROLES, MEMBER_STATUSES, TEAM_ROLES
 from app.domain.identity.email import canonical_email
@@ -31,9 +32,11 @@ Email = Annotated[
     AfterValidator(canonical_email),
 ]
 
-# Workspace settings. The engine owns the keys below: each is type-checked on create and update,
-# and a wrong type or value is a 422. Any other key belongs to the product, is stored as given,
-# and is validated by the backend. Add an engine key here when the engine starts reading one.
+# Workspace settings are an object with two sub-objects. `engine` holds the keys the engine reads:
+# each is type-checked here on create and update. `product` belongs to the backend: stored as
+# given, validated by the backend. Any other top-level key is refused (invalid_setting_key).
+# Add an engine key here when the engine starts reading one.
+SETTINGS_SECTIONS = ("engine", "product")
 ENGINE_SETTINGS = {
     "recording_retention_days": (
         TypeAdapter(Annotated[StrictInt, Field(ge=1, le=3650)]),
@@ -44,12 +47,38 @@ ENGINE_SETTINGS = {
 
 
 def check_settings(settings: dict) -> dict:
+    unknown = sorted(set(settings) - set(SETTINGS_SECTIONS))
+    if unknown:
+        raise PydanticCustomError(
+            "invalid_setting_key",
+            "settings has unknown keys {keys}; use only engine and product",
+            {"keys": ", ".join(unknown)},
+        )
+    for section in SETTINGS_SECTIONS:
+        if section in settings and not isinstance(settings[section], dict):
+            raise PydanticCustomError(
+                "invalid_setting_value",
+                "settings.{section} must be an object",
+                {"section": section},
+            )
+    engine = settings.get("engine", {})
+    unknown = sorted(set(engine) - set(ENGINE_SETTINGS))
+    if unknown:
+        raise PydanticCustomError(
+            "invalid_setting_key",
+            "settings.engine has unknown keys {keys}",
+            {"keys": ", ".join(unknown)},
+        )
     for key, (adapter, expected) in ENGINE_SETTINGS.items():
-        if key in settings:
+        if key in engine:
             try:
-                adapter.validate_python(settings[key])
+                adapter.validate_python(engine[key])
             except ValidationError:
-                raise ValueError(f"{key} must be {expected}") from None
+                raise PydanticCustomError(
+                    "invalid_setting_value",
+                    "settings.engine.{key} must be {expected}",
+                    {"key": key, "expected": expected},
+                ) from None
     return settings
 
 

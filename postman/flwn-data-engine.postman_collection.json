@@ -9149,7 +9149,7 @@
             "url": "{{baseUrl}}/workspaces",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Acme\",\n  \"slug\": \"acme\",\n  \"description\": \"Acme product team\",\n  \"owner_user_id\": \"6a1e3c5b-7d92-4f08-a6b4-2c8e0d9f1b37\"\n}",
+              "raw": "{\n  \"name\": \"Acme\",\n  \"slug\": \"acme\",\n  \"description\": \"Acme product team\",\n  \"owner_user_id\": \"6a1e3c5b-7d92-4f08-a6b4-2c8e0d9f1b37\",\n  \"settings\": {\n    \"engine\": {\n      \"recording_retention_days\": 90\n    },\n    \"product\": {\n      \"theme\": \"dark\"\n    }\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -9241,7 +9241,7 @@
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"description\": \"Acme product and design\"\n}",
+              "raw": "{\n  \"description\": \"Acme product and design\",\n  \"settings\": {\n    \"engine\": {\n      \"recording_retention_days\": 180\n    }\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"

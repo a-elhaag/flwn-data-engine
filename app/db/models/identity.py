@@ -61,7 +61,7 @@ class Workspace(IdPk, Stamps, Base):
     name: Mapped[str]
     slug: Mapped[str]  # unique case-insensitively, see the index below
     description: Mapped[str | None]
-    # retention, defaults, feature flags: e.g. {"recording_retention_days": 90}
+    # {"engine": {"recording_retention_days": 90}, "product": {...}}: see api/schemas/identity.py
     settings: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
