@@ -62,6 +62,15 @@ bash run.sh migrate           # create the schema (Alembic; `run.sh install` doe
 bash run.sh                   # API on http://localhost:8002 (docs at /docs)
 ```
 
+Or run the whole stack in Docker, with no Python setup: fill in `.env` as above, then
+
+```sh
+docker compose up --build     # Postgres, the schema install, and the API on http://localhost:8002
+```
+
+The API there connects as `flwn_app`, a role without superuser or BYPASSRLS, which the workspace
+isolation needs. `docker compose` ignores `DATABASE_URL` in `.env` and uses its own database.
+
 Other commands: `bash run.sh test`, `bash run.sh lint`, `bash run.sh ready` (live dependency
 check), `bash run.sh postman` (rebuild the
 Postman collection). Tests are discovered with `-s tests -t tests`.
