@@ -52,6 +52,44 @@ class DevSessionTests(CrudHarness):
         self.assertNotEqual(ada["shared"]["member_id"], bob["shared"]["member_id"])
         self.assertNotEqual(ada["personal"]["workspace_id"], bob["personal"]["workspace_id"])
 
+    def test_the_shared_workspace_belongs_to_the_tool_not_the_first_person(self):
+        got = self.sign_in()
+        (member,) = self.sql("select role from members where id = :m", m=got["shared"]["member_id"])
+        self.assertEqual(member["role"], "admin")
+        owners = self.sql(
+            "select u.email from members m join users u on u.id = m.user_id "
+            "where m.workspace_id = :w and m.role = 'owner'",
+            w=got["shared"]["workspace_id"],
+        )
+        self.assertEqual([o["email"] for o in owners], [dev_session.SHARED_OWNER[0]])
+
+    def test_losing_a_simultaneous_first_sign_in_reads_the_winners_rows(self):
+        first = self.sign_in()
+        # Each lookup misses once, as when another sign-in commits between the lookup and the
+        # insert: the insert then conflicts and the existing row must be used, not an error.
+        real = {
+            name: getattr(dev_session, name)
+            for name in ("_find_user", "_find_workspace", "_find_member")
+        }
+
+        def miss_once(fn):
+            calls = []
+
+            def lookup(*args):
+                calls.append(args)
+                return None if len(calls) == 1 else fn(*args)
+
+            return lookup
+
+        for name, fn in real.items():
+            patcher = patch.object(dev_session, name, side_effect=miss_once(fn))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        again = dev_session.sign_in(self.email, "Dev")
+        self.assertEqual(again["user_id"], first["user_id"])
+        for key in ("personal", "shared"):
+            self.assertEqual(again[key]["workspace_id"], first[key]["workspace_id"])
+
     def test_it_is_off_unless_the_database_is_local(self):
         patch.stopall()  # the setUp patch of enabled() must not hide the real check
         for url, expected in (

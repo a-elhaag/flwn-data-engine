@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     DATA_API_KEY: str
+    # Rotation: during a key change both keys are accepted (docs: flwnBackend AUTH.md). Blank = off.
+    DATA_API_KEY_NEXT: str = ""
     AZURE_FOUNDRY_ENDPOINT: str
     AZURE_FOUNDRY_KEY: str
     MEMORY_CHAT_DEPLOYMENT: str = "gpt-6-luna"
@@ -63,6 +65,19 @@ class Settings(BaseSettings):
         if not value.strip():
             raise ValueError(f"{info.field_name} is required and cannot be blank")
         return value
+
+    @model_validator(mode="after")
+    def next_key_is_usable(self) -> "Settings":
+        """A rotation key must meet the same rule as DATA_API_KEY and differ from it."""
+        nxt = self.DATA_API_KEY_NEXT
+        if nxt:
+            if not nxt.strip() or nxt != nxt.strip():
+                raise ValueError("DATA_API_KEY_NEXT cannot be blank or have surrounding spaces")
+            if len(nxt) < len(self.DATA_API_KEY.strip()):
+                raise ValueError("DATA_API_KEY_NEXT cannot be shorter than DATA_API_KEY")
+            if nxt == self.DATA_API_KEY:
+                raise ValueError("DATA_API_KEY_NEXT must differ from DATA_API_KEY")
+        return self
 
 
 settings = Settings()

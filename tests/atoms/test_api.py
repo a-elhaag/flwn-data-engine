@@ -39,6 +39,11 @@ class AtomApiTests(MemoryHarness):
         self.owner = self.member(self.team_a)
         self.addCleanup(self.sql, "delete from workspaces where id=:id", id=self.team_a)
         self.sql("update members set role='owner' where id=:id", id=self.owner)
+        # A second owner, so tests may suspend the first (last-owner rule).
+        keeper = self.member(self.team_a)
+        self.sql("update members set role='owner' where id=:id", id=keeper)
+        # Delete the workspace (and its owners) before the members' own cleanups run.
+        self.addCleanup(self.sql, "delete from workspaces where id=:id", id=self.team_a)
         self.admin = self.token(member_id=self.owner, scopes=["atoms:admin"])
         self.base = f"/workspaces/{self.team_a}/atoms"
 

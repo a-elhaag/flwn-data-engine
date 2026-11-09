@@ -3,14 +3,14 @@
 The parent key becomes (workspace_id, project_id, parent_task_id). Parents that point into another
 project are cleared first, or the new key could not be created.
 
-Revision ID: 0005
-Revises: 0004
+Revision ID: 0006
+Revises: 0005
 """
 
 from alembic import op
 
-revision = "0005"
-down_revision = "0004"
+revision = "0006"
+down_revision = "0005"
 branch_labels = None
 depends_on = None
 

@@ -6,11 +6,15 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 
 from app.db import events
-from app.db.models.identity import Workspace
+from app.db.models.identity import Member, User, Workspace
 from app.db.session import service_session
 
 
 class WorkspaceNotFound(LookupError):
+    pass
+
+
+class OwnerNotFound(WorkspaceNotFound):
     pass
 
 
@@ -58,18 +62,32 @@ class WorkspaceService:
         with service_session() as session:
             return _workspace(session, workspace_id)
 
-    def create(self, *, name, slug, description=None, settings=None):
+    def create(self, *, name, slug, owner_user_id, description=None, settings=None):
+        """The workspace and its first owner (an active HUMAN member), in one transaction."""
+        owner = uuid.UUID(str(owner_user_id))
         with service_session() as session:
+            user = session.scalar(
+                select(User.id).where(User.id == owner, User.deleted_at.is_(None))
+            )
+            if user is None:
+                raise OwnerNotFound("owner user not found")
             _slug_available(session, slug)
             row = Workspace(
                 name=name.strip(),
                 slug=slug,
                 description=description,
                 settings=settings or {},
+                created_by=owner,
             )
             session.add(row)
             session.flush()
+            member = Member(
+                workspace_id=row.id, user_id=owner, type="HUMAN", role="owner", status="active"
+            )
+            session.add(member)
+            session.flush()
             events.record(session, str(row.id), None, "workspace", row.id, "created")
+            events.record(session, str(row.id), None, "member", member.id, "created")
             return row
 
     def update(self, workspace_id, **fields):

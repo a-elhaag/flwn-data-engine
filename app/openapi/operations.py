@@ -281,7 +281,7 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     "POST /workspaces": (
         "Create a workspace",
-        "Trusted backend only. `slug` is lowercase letters, digits and hyphens.",
+        "Trusted backend only. Creates the workspace and an active HUMAN `owner` member for `owner_user_id` in one transaction. 404 if that user is missing, 409 if the slug is taken.",
     ),
     "GET /workspaces": (
         "List workspaces",
@@ -305,13 +305,17 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Trusted backend only. Optional `email` finds one account, ignoring case. Paginated with `limit` and `offset`.",
     ),
     "GET /users/{user_id}": ("Get a user", "Trusted backend only."),
+    "GET /users/{user_id}/memberships": (
+        "List a user's memberships",
+        "Trusted backend only (service key, no acting member). Every membership of the user in a live workspace, with the workspace's name and slug; filter with `status` and `type`. Deleted members and workspaces are left out. An empty list is 200; 404 if the user is missing or deleted.",
+    ),
     "PATCH /users/{user_id}": (
         "Update a user",
         "Only the fields you send change. Trusted backend only.",
     ),
     "DELETE /users/{user_id}": (
         "Delete a user",
-        "Soft delete. Their memberships are not changed. Trusted backend only. Returns 204.",
+        "Soft delete. Their memberships are not changed. Trusted backend only. Returns 204, or 409 `last_owner` while they are the last active owner of a workspace.",
     ),
     f"POST {W}/members": (
         "Create a member",
@@ -321,9 +325,16 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"GET {W}/members/{{member_id}}": ("Get a member", "Returns one member."),
     f"PATCH {W}/members/{{member_id}}": (
         "Update a member",
-        "Change role, status or settings. An AI member's name and avatar can also change. A person's name, email and avatar belong to their user account, so sending them is 422.",
+        "Change role, status or settings. An AI member's name and avatar can also change; a person's name, email and avatar belong to their user account, so sending them is 422. 409 `last_owner` if the workspace would be left without an active human owner; AI members cannot be owners (422).",
     ),
-    f"DELETE {W}/members/{{member_id}}": ("Remove a member", "Returns 204."),
+    f"DELETE {W}/members/{{member_id}}": (
+        "Remove a member",
+        "Returns 204, or 409 `last_owner` if this is the workspace's last active owner.",
+    ),
+    f"POST {W}/ownership/transfer": (
+        "Transfer ownership",
+        "Makes `to_member_id` (an active HUMAN member) an owner in one transaction; `demote_self_to` also steps the acting owner down. The acting member (X-Acting-Member-Id) must be a current owner (403); an invalid target is 422; 409 `last_owner` if the result has no owner.",
+    ),
     f"POST {W}/teams": ("Create a team", "`key` is a short unique code such as `ENG`."),
     f"GET {W}/teams": ("List teams", "Paginated with `limit` and `offset`."),
     f"GET {W}/teams/{{team_id}}": ("Get a team", "Returns one team."),

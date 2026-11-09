@@ -14,14 +14,15 @@ class FullJourneyTest(CrudHarness):
         user = self.client.post("/users", json={"email": "flow@example.com", "name": "Flo"})
         self.assertEqual(user.status_code, 201, user.text)
         self.addCleanup(self.sql, "delete from users where id = :i", i=user.json()["id"])
-        workspace = self.client.post("/workspaces", json={"name": "Flow", "slug": "flow-journey"})
+        workspace = self.client.post(
+            "/workspaces",
+            json={"name": "Flow", "slug": "flow-journey", "owner_user_id": user.json()["id"]},
+        )
         self.assertEqual(workspace.status_code, 201, workspace.text)
         ws = workspace.json()["id"]
-        self.addCleanup(self.sql, "delete from workspaces where id = :i", i=ws)
-        self.addCleanup(self.sql, "delete from members where workspace_id = :i", i=ws)
+        self.addCleanup(self.sql, "delete from workspaces where id = :i", i=ws)  # and its members
         (owner,) = self.sql(
-            "insert into members (workspace_id, user_id, type, role) values (:w, :u, 'HUMAN', 'owner')"
-            " returning id",
+            "select id from members where workspace_id = :w and user_id = :u and role = 'owner'",
             w=ws,
             u=user.json()["id"],
         )

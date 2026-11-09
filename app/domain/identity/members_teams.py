@@ -3,11 +3,14 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, exists, false, func, or_, select, true
+from sqlalchemy import delete, exists, false, or_, select, true
 
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
 from app.db.session import session_for
+from app.domain.identity.email import canonical_email
+from app.domain.identity.owners import ensure_an_owner, lock_owners
+from app.domain.identity.users import email_matches
 from app.domain.identity.viewer import Viewer
 
 
@@ -16,6 +19,14 @@ class IdentityNotFound(LookupError):
 
 
 class IdentityConflict(ValueError):
+    pass
+
+
+class IdentityForbidden(PermissionError):
+    pass
+
+
+class InvalidTarget(ValueError):
     pass
 
 
@@ -113,14 +124,14 @@ class MemberService:
             return _member_view(session, _member(session, self.workspace_id, member_id))
 
     def create(self, *, type, role, status, name, email, agent_kind, avatar_url, settings):
+        if type != "HUMAN" and role == "owner":
+            raise ValueError("AI members cannot be owners")
+        normalized_email = canonical_email(email) if email else None
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             user_id = None
-            normalized_email = email.strip().lower() if email else None
             if type == "HUMAN":
-                user = session.scalar(
-                    select(User).where(func.lower(User.email) == normalized_email)
-                )
+                user = session.scalar(select(User).where(email_matches(normalized_email)))
                 if user is None:
                     user = User(email=normalized_email, name=name.strip())
                     session.add(user)
@@ -154,7 +165,12 @@ class MemberService:
     def update(self, member_id, **fields):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
+            guarded = "role" in fields or "status" in fields
+            if guarded:
+                owners = lock_owners(session, [self.workspace_id])  # first: see the latest
             row = _member(session, self.workspace_id, member_id)
+            if fields.get("role") == "owner" and row.type != "HUMAN":
+                raise ValueError("AI members cannot be owners")
             account = {"name", "email", "avatar_url"} & fields.keys()
             if row.type == "HUMAN" and account:
                 # These live on the person's user account, shared by every workspace they are in.
@@ -167,6 +183,8 @@ class MemberService:
                 fields["name"] = fields["name"].strip()
             for key, value in fields.items():
                 setattr(row, key, value)
+            if guarded:
+                ensure_an_owner(session, self.workspace_id, owners)
             session.flush()
             events.record(session, str(self.workspace_id), self.actor, "member", row.id, "updated")
             return _member_view(session, row)
@@ -174,10 +192,65 @@ class MemberService:
     def delete(self, member_id):
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
+            owners = lock_owners(session, [self.workspace_id])
             row = _member(session, self.workspace_id, member_id)
             row.deleted_at = datetime.now(UTC)
-            session.flush()
+            ensure_an_owner(session, self.workspace_id, owners)
             events.record(session, str(self.workspace_id), self.actor, "member", row.id, "deleted")
+
+    def transfer_ownership(self, to_member_id, demote_self_to=None):
+        """Make another active human member an owner; optionally step the acting owner down.
+
+        The acting member (self.actor) must be an active human owner, else IdentityForbidden.
+        """
+        with session_for(str(self.workspace_id)) as session:
+            _workspace(session, self.workspace_id)
+            owners = lock_owners(session, [self.workspace_id])
+            current = None
+            if self.actor:
+                current = session.scalar(
+                    select(Member).where(
+                        Member.workspace_id == self.workspace_id,
+                        Member.id == uuid.UUID(self.actor),
+                        Member.deleted_at.is_(None),
+                    )
+                )
+            if current is None or not (
+                current.role == "owner" and current.type == "HUMAN" and current.status == "active"
+            ):
+                raise IdentityForbidden("only a current owner can transfer ownership")
+            target = session.scalar(
+                select(Member)
+                .where(
+                    Member.workspace_id == self.workspace_id,
+                    Member.id == uuid.UUID(str(to_member_id)),
+                    Member.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if target is None or target.type != "HUMAN" or target.status != "active":
+                raise InvalidTarget("the new owner must be an active human member")
+            if target.id == current.id:
+                raise InvalidTarget("the new owner must be another member")
+            target.role = "owner"
+            if demote_self_to is not None:
+                current.role = demote_self_to
+            ensure_an_owner(session, self.workspace_id, owners)
+            for changed in (target, current):
+                events.record(
+                    session,
+                    str(self.workspace_id),
+                    self.actor,
+                    "member",
+                    changed.id,
+                    "ownership_transferred",
+                    {"role": changed.role},
+                )
+            return {
+                "workspace_id": self.workspace_id,
+                "from_member": _member_view(session, current),
+                "to_member": _member_view(session, target),
+            }
 
 
 class TeamService:

@@ -104,6 +104,7 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/members/{member_id}` | Get a member | scope `identity:read`, writes `identity:write` |
 | `PATCH /workspaces/{ws}/members/{member_id}` | Update a member | scope `identity:read`, writes `identity:write` |
 | `DELETE /workspaces/{ws}/members/{member_id}` | Remove a member | scope `identity:read`, writes `identity:write` |
+| `POST /workspaces/{ws}/ownership/transfer` | Transfer ownership | scope `identity:read`, writes `identity:write` |
 | `GET /workspaces/{ws}/teams` | List teams | scope `identity:read`, writes `identity:write` |
 | `POST /workspaces/{ws}/teams` | Create a team | scope `identity:read`, writes `identity:write` |
 | `GET /workspaces/{ws}/teams/{team_id}` | Get a team | scope `identity:read`, writes `identity:write` |
@@ -345,6 +346,7 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /users/{user_id}` | Get a user | service key only |
 | `PATCH /users/{user_id}` | Update a user | service key only |
 | `DELETE /users/{user_id}` | Delete a user | service key only |
+| `GET /users/{user_id}/memberships` | List a user's memberships | service key only |
 
 ## Workspaces
 

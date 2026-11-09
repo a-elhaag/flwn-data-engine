@@ -2832,6 +2832,49 @@
           ]
         },
         {
+          "name": "POST Transfer ownership",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/ownership/transfer",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"to_member_id\": \"0b9d6c52-8e1f-4a37-b2c4-5d7e9f1a3c68\",\n  \"demote_self_to\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "GET Get a team",
           "request": {
             "method": "GET",
@@ -9906,6 +9949,32 @@
               }
             }
           ]
+        },
+        {
+          "name": "GET List a user's memberships",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/users/{{userId}}/memberships"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -9929,7 +9998,7 @@
             "url": "{{baseUrl}}/workspaces",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Acme\",\n  \"slug\": \"acme\",\n  \"description\": \"Acme product team\"\n}",
+              "raw": "{\n  \"name\": \"Acme\",\n  \"slug\": \"acme\",\n  \"description\": \"Acme product team\",\n  \"owner_user_id\": \"6a1e3c5b-7d92-4f08-a6b4-2c8e0d9f1b37\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

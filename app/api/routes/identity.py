@@ -14,6 +14,8 @@ from app.api.schemas.identity import (
     MemberOut,
     MemberPage,
     MemberUpdate,
+    OwnershipTransfer,
+    OwnershipTransferOut,
     TeamCreate,
     TeamMembersUpdate,
     TeamOut,
@@ -22,10 +24,13 @@ from app.api.schemas.identity import (
 )
 from app.domain.identity.members_teams import (
     IdentityConflict,
+    IdentityForbidden,
     IdentityNotFound,
     MemberService,
     TeamService,
 )
+from app.domain.identity.owners import LAST_OWNER, LastOwner
+from app.domain.identity.users import EMAIL_TAKEN
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}",
@@ -33,6 +38,7 @@ router = APIRouter(
 )
 # Changing who belongs to the workspace or to a team is for administrators.
 ADMIN = allow(tokens.SCOPE_ADMIN)
+LAST_OWNER_409 = {409: {"description": "last_owner: the workspace would have no active owner"}}
 
 
 def _call(fn, *args, **kwargs):
@@ -42,7 +48,15 @@ def _call(fn, *args, **kwargs):
         raise HTTPException(404, str(exc)) from None
     except IdentityConflict as exc:
         raise HTTPException(409, str(exc)) from None
-    except IntegrityError:
+    except IdentityForbidden as exc:
+        raise HTTPException(403, str(exc)) from None
+    except LastOwner:
+        raise HTTPException(409, LAST_OWNER) from None
+    except IntegrityError as exc:
+        if LAST_OWNER in str(exc.orig):  # the database backstop (db/sql/70_identity.sql)
+            raise HTTPException(409, LAST_OWNER) from None
+        if "uq_users_email" in str(exc.orig):  # lost a race: another call created that user first
+            raise HTTPException(409, EMAIL_TAKEN) from None
         raise HTTPException(409, "resource conflicts with an existing record") from None
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from None
@@ -69,7 +83,9 @@ def get_member(workspace_id: WorkspaceId, member_id: UUID):
     return _call(MemberService(str(workspace_id)).get, str(member_id))
 
 
-@router.patch("/members/{member_id}", response_model=MemberOut, dependencies=[ADMIN])
+@router.patch(
+    "/members/{member_id}", response_model=MemberOut, dependencies=[ADMIN], responses=LAST_OWNER_409
+)
 def update_member(request: Request, workspace_id: WorkspaceId, member_id: UUID, body: MemberUpdate):
     return _call(
         MemberService(str(workspace_id), actor(request)).update,
@@ -78,10 +94,30 @@ def update_member(request: Request, workspace_id: WorkspaceId, member_id: UUID, 
     )
 
 
-@router.delete("/members/{member_id}", status_code=204, dependencies=[ADMIN])
+@router.delete(
+    "/members/{member_id}", status_code=204, dependencies=[ADMIN], responses=LAST_OWNER_409
+)
 def delete_member(request: Request, workspace_id: WorkspaceId, member_id: UUID):
     _call(MemberService(str(workspace_id), actor(request)).delete, str(member_id))
     return Response(status_code=204)
+
+
+@router.post(
+    "/ownership/transfer",
+    response_model=OwnershipTransferOut,
+    dependencies=[ADMIN],
+    responses={
+        403: {"description": "the acting member (X-Acting-Member-Id) is not a current owner"},
+        **LAST_OWNER_409,
+        422: {"description": "the target is not an active human member of this workspace"},
+    },
+)
+def transfer_ownership(request: Request, workspace_id: WorkspaceId, body: OwnershipTransfer):
+    return _call(
+        MemberService(str(workspace_id), actor(request)).transfer_ownership,
+        str(body.to_member_id),
+        body.demote_self_to,
+    )
 
 
 @router.post("/teams", status_code=201, response_model=TeamOut)
