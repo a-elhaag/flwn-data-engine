@@ -16,7 +16,7 @@ from app.db.atom_access import current_context
 from app.db.models.atoms import AtomConnection
 from app.db.models.collab import Notification
 from app.db.models.identity import Member
-from app.db.models.memory import AgentRun, Approval
+from app.db.models.memory import APPROVAL_KINDS, OUTCOME_STATUSES, AgentRun, Approval
 from app.db.session import workspace_session
 from app.domain.atoms.service import (
     AtomPermissionError,
@@ -75,7 +75,7 @@ class ApprovalService(AtomService):
         self, *, kind, title, payload, request_key=None, assigned_to=None, expires_at=None
     ):
         self._bound()
-        if kind not in ("plan", "pull_request", "deploy", "action", "atom_action"):
+        if kind not in APPROVAL_KINDS:
             raise Invalid("invalid approval kind", code="invalid")
         if not isinstance(title, str) or not title.strip() or len(title) > 300:
             raise Invalid("title must contain 1 to 300 characters", code="invalid")
@@ -286,7 +286,7 @@ class ApprovalService(AtomService):
 
     def outcome(self, approval_id, *, status, result=None):
         self._bound()
-        if status not in ("succeeded", "failed", "unknown"):
+        if status not in OUTCOME_STATUSES:
             raise Invalid("outcome must be succeeded, failed or unknown", code="invalid")
         if result is not None and not isinstance(result, dict):
             raise Invalid("result must be an object", code="invalid")

@@ -48,6 +48,10 @@ TSV = (
 )
 
 MEMORY_KINDS = ("episode", "fact", "decision", "procedure", "ownership", "constraint", "insight")
+RUN_FINISH_STATUSES = ("succeeded", "failed", "canceled")
+OUTCOME_STATUSES = ("succeeded", "failed", "unknown")
+APPROVAL_KINDS = ("plan", "pull_request", "deploy", "action", "atom_action")
+CONFLICT_RESOLUTIONS = ("accepted", "dismissed", "resolved")
 
 
 class Memory(IdPk, Tenant, Stamps, Base):
@@ -385,7 +389,7 @@ class Approval(IdPk, Tenant, Created, Base):
             "and (executed_at is null or execution_status is not null))",
             name="atom_execution",
         ),
-        one_of("execution_status", "succeeded", "failed", "unknown"),
+        one_of("execution_status", *OUTCOME_STATUSES),
         Index(
             "ix_approvals_atom_ready",
             "workspace_id",
@@ -395,7 +399,7 @@ class Approval(IdPk, Tenant, Created, Base):
                 "and execution_run_id is null and claimed_at is null"
             ),
         ),
-        one_of("kind", "plan", "pull_request", "deploy", "action", "atom_action"),
+        one_of("kind", *APPROVAL_KINDS),
         one_of("status", "pending", "approved", "rejected", "expired", "canceled"),
         tfk("run_id", "agent_runs", "set null"),
         tfk("report_id", "agent_reports", "set null"),
@@ -428,7 +432,7 @@ class DecisionConflict(IdPk, Tenant, Created, Base):
     resolution_note: Mapped[str | None]
 
     __table_args__ = (
-        one_of("status", "open", "accepted", "dismissed", "resolved"),
+        one_of("status", "open", *CONFLICT_RESOLUTIONS),
         ForeignKeyConstraint(
             ["workspace_id", "decision_id"],
             ["decisions.workspace_id", "decisions.memory_id"],

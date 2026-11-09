@@ -23,6 +23,7 @@ from app.db.base import (
     tfk,
 )
 
+FILE_SOURCES = ("workspace", "chat", "meeting", "agent", "import")
 FILE_KINDS = (
     "document",
     "pdf",
@@ -96,7 +97,7 @@ class File(IdPk, Tenant, Stamps, Base):
     __table_args__ = (
         tenant_unique(),
         one_of("kind", *FILE_KINDS),
-        one_of("source", "workspace", "chat", "meeting", "agent", "import"),
+        one_of("source", *FILE_SOURCES),
         one_of("status", "uploading", "scanning", "processing", "ready", "failed", "quarantined"),
         one_of("index_status", "none", "pending", "indexing", "done", "failed", "skipped"),
         # a file's blob must live under its own workspace's prefix

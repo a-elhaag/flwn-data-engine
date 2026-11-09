@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
     EMPTY_JSON,
+    MEETING_STATUSES,
     Base,
     Created,
     IdPk,
@@ -35,7 +36,7 @@ class Meeting(IdPk, Tenant, Stamps, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("status", "scheduled", "live", "ended", "canceled"),
+        one_of("status", *MEETING_STATUSES),
         tfk("team_id", "teams", "set null"),
         tfk("project_id", "projects", "set null"),
         tfk("channel_id", "channels", "set null"),

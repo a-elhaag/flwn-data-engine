@@ -7,10 +7,10 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from app.api.schemas.identity import NonBlank
-from app.db.base import CHANNEL_TYPES, MESSAGE_KINDS
+from app.db.base import CHANNEL_TYPES, COMMENT_TARGET_TYPES, MESSAGE_KINDS
 from app.db.models.collab import BLOCK_TYPES
 
-CommentTargetType = Literal["task", "work_item", "project", "project_update", "sprint", "doc"]
+CommentTargetType = Literal[COMMENT_TARGET_TYPES]
 
 
 class CommentCreate(BaseModel):

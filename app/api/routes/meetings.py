@@ -15,6 +15,7 @@ from app.api.schemas.common import (
     StartRecordingRequest,
     UpdateMeetingRequest,
 )
+from app.db.base import MEETING_STATUSES
 from app.domain.meetings.service import MeetingPage, MeetingView, RecordingStart, TranscriptView
 from app.domain.storage.transcripts import Segment
 
@@ -32,7 +33,7 @@ def create_meeting(
 @router.get("", dependencies=[MEETINGS_READ])
 def list_meetings(
     meetings: Meetings,
-    status: Annotated[str | None, Query(pattern="^(scheduled|live|ended|canceled)$")] = None,
+    status: Annotated[str | None, Query(pattern="^(" + "|".join(MEETING_STATUSES) + ")$")] = None,
     project_id: UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

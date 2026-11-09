@@ -17,7 +17,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.db.base import MEMBER_ROLES, MEMBER_STATUSES
+from app.db.base import INVITATION_ROLES, MEMBER_ROLES, MEMBER_STATUSES, TEAM_ROLES
 from app.domain.identity.email import canonical_email
 
 NonBlank = Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
@@ -311,11 +311,11 @@ class OwnershipTransferOut(BaseModel):
 
 class TeamMemberCreate(BaseModel):
     member_id: UUID
-    role: Literal["lead", "member"] = "member"
+    role: Literal[TEAM_ROLES] = "member"
 
 
 class TeamMemberUpdate(BaseModel):
-    role: Literal["lead", "member"]
+    role: Literal[TEAM_ROLES]
 
 
 class TeamMemberOut(BaseModel):
@@ -336,7 +336,7 @@ class TeamMemberPage(BaseModel):
 
 class InvitationCreate(BaseModel):
     email: Email
-    role: Literal["admin", "member", "viewer"] = "member"
+    role: Literal[INVITATION_ROLES] = "member"
 
 
 class InvitationAccept(BaseModel):

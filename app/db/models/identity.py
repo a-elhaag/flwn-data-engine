@@ -8,8 +8,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
     EMPTY_JSON,
+    INVITATION_ROLES,
     MEMBER_ROLES,
     MEMBER_STATUSES,
+    MEMBER_TYPES,
+    TEAM_ROLES,
     Base,
     Created,
     IdPk,
@@ -85,7 +88,7 @@ class Member(IdPk, Tenant, Stamps, Base):
     __table_args__ = (
         tenant_unique(),
         UniqueConstraint("workspace_id", "user_id"),
-        one_of("type", "HUMAN", "AI"),
+        one_of("type", *MEMBER_TYPES),
         one_of("role", *MEMBER_ROLES),
         one_of("status", *MEMBER_STATUSES),
         CheckConstraint(
@@ -114,7 +117,7 @@ class Invitation(IdPk, Tenant, Created, Base):
     accepted_at: Mapped[datetime | None]
 
     __table_args__ = (
-        one_of("role", "admin", "member", "viewer"),
+        one_of("role", *INVITATION_ROLES),
         one_of("status", "pending", "accepted", "revoked", "expired"),
         tfk("invited_by", "members", "set null"),
     )
@@ -154,7 +157,7 @@ class TeamMember(Tenant, Base):
     joined_at: Mapped[datetime] = mapped_column(server_default=text("now()"))
 
     __table_args__ = (
-        one_of("role", "lead", "member"),
+        one_of("role", *TEAM_ROLES),
         tfk("team_id", "teams", "cascade"),
         tfk("member_id", "members", "cascade"),
     )
