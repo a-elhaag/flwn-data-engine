@@ -5,8 +5,9 @@ import uuid
 from sqlalchemy import func, select
 
 from app.db import events
-from app.db.models.files import BlobPurge, File
+from app.db.models.files import BlobPurge, File, FileDerivative
 from app.db.models.identity import Member, User, Workspace
+from app.db.models.memory import AgentReport
 from app.db.session import service_session
 from app.domain.error_codes import DomainError, InvalidReference
 
@@ -96,11 +97,16 @@ class WorkspaceService:
             row = _workspace(session, workspace_id)
             # The bytes cannot be deleted inside this transaction: record each blob for a reaper
             # (blob_purges), in the same commit that removes the rows.
-            for container, blob_path in session.execute(
-                select(File.container, File.blob_path).where(File.workspace_id == row.id)
-            ).all():
-                session.add(
-                    BlobPurge(workspace_id=row.id, container=container, blob_path=blob_path)
-                )
+            for model in (File, FileDerivative, AgentReport):
+                for container, blob_path in session.execute(
+                    select(model.container, model.blob_path).where(
+                        model.workspace_id == row.id,
+                        model.container.is_not(None),
+                        model.blob_path.is_not(None),
+                    )
+                ).all():
+                    session.add(
+                        BlobPurge(workspace_id=row.id, container=container, blob_path=blob_path)
+                    )
             # Everything inside the workspace goes with it (ON DELETE CASCADE), its events too.
             session.delete(row)

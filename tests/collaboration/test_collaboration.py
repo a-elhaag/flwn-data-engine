@@ -102,6 +102,23 @@ class CollaborationApiTests(CrudHarness):
         self.assertEqual(blocked.json()["code"], "comment_has_replies")
         self.assertEqual(self.client.get(f"{base}/{reply['id']}").status_code, 200)
 
+        # a deeper reply by another member (reply to the reply) also blocks the delete
+        deep = self.client.post(
+            base,
+            json={
+                "target_type": "project",
+                "target_id": project["id"],
+                "parent_comment_id": reply["id"],
+                "body": "Deeper",
+            },
+            headers=author_headers,
+        ).json()
+        blocked_deep = self.client.delete(path, headers=author_headers)
+        self.assertEqual(blocked_deep.status_code, 409, blocked_deep.text)
+        self.assertEqual(blocked_deep.json()["code"], "comment_has_replies")
+        self.assertEqual(
+            self.client.delete(f"{base}/{deep['id']}", headers=author_headers).status_code, 204
+        )
         # the other member may delete their own reply; then the author can delete the comment
         self.assertEqual(
             self.client.delete(f"{base}/{reply['id']}", headers=other_headers).status_code, 204

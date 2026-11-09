@@ -322,14 +322,24 @@ class CommentService:
             _workspace(session, self.workspace_id)
             row = self._get_comment(session, comment_id)
             self._require_author(row)
-            other_replies = session.scalar(
-                select(Comment.id).where(
-                    Comment.workspace_id == self.workspace_id,
-                    Comment.parent_comment_id == row.id,
-                    Comment.author_id.is_distinct_from(row.author_id),
-                )
-            )
-            if other_replies is not None:
+            # Every reply at any depth, not only direct ones: a deeper reply by someone else
+            # would otherwise go with the comment.
+            frontier, seen, others = [row.id], {row.id}, False
+            while frontier and not others:
+                replies = session.execute(
+                    select(Comment.id, Comment.author_id).where(
+                        Comment.workspace_id == self.workspace_id,
+                        Comment.parent_comment_id.in_(frontier),
+                    )
+                ).all()
+                frontier = []
+                for reply_id, author_id in replies:
+                    if reply_id in seen:
+                        continue
+                    seen.add(reply_id)
+                    frontier.append(reply_id)
+                    others = others or author_id != row.author_id
+            if others:
                 raise CollaborationConflict(
                     "the comment has replies from other members", code="comment_has_replies"
                 )
