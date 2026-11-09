@@ -211,17 +211,9 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/attachments` | List attachments | service key only |
 | `GET /workspaces/{ws}/attachments/{id}` | Get one attachment | service key only |
 | `GET /workspaces/{ws}/backlogs` | List backlogs | scope `planning:read` |
-| `POST /workspaces/{ws}/backlogs` | Create backlogs | scope `planning:write` |
 | `GET /workspaces/{ws}/backlogs/{id}` | Get one backlog | scope `planning:read` |
-| `PATCH /workspaces/{ws}/backlogs/{id}` | Update backlogs | scope `planning:write` |
-| `DELETE /workspaces/{ws}/backlogs/{id}` | Delete backlogs | scope `planning:write` |
 | `GET /workspaces/{ws}/catalog-skills` | List catalog skills | scope `skills:read` |
 | `GET /workspaces/{ws}/catalog-skills/{id}` | Get one catalog skill | scope `skills:read` |
-| `GET /workspaces/{ws}/channel-members` | List channel members | service key only |
-| `POST /workspaces/{ws}/channel-members` | Create channel members | service key only |
-| `GET /workspaces/{ws}/channel-members/{channel_id}/{member_id}` | Get one channel member | service key only |
-| `PATCH /workspaces/{ws}/channel-members/{channel_id}/{member_id}` | Update channel members | service key only |
-| `DELETE /workspaces/{ws}/channel-members/{channel_id}/{member_id}` | Delete channel members | service key only |
 | `GET /workspaces/{ws}/chunks` | List chunks | service key only |
 | `GET /workspaces/{ws}/chunks/{id}` | Get one chunk | service key only |
 | `GET /workspaces/{ws}/collections` | List collections | scope `collab:read` |
@@ -231,11 +223,6 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `DELETE /workspaces/{ws}/collections/{id}` | Delete collections | scope `collab:write` |
 | `GET /workspaces/{ws}/decisions` | List decisions | service key only |
 | `GET /workspaces/{ws}/decisions/{memory_id}` | Get one decision | service key only |
-| `GET /workspaces/{ws}/doc-blocks` | List doc blocks | service key only |
-| `POST /workspaces/{ws}/doc-blocks` | Create doc blocks | service key only |
-| `GET /workspaces/{ws}/doc-blocks/{id}` | Get one doc block | service key only |
-| `PATCH /workspaces/{ws}/doc-blocks/{id}` | Update doc blocks | service key only |
-| `DELETE /workspaces/{ws}/doc-blocks/{id}` | Delete doc blocks | service key only |
 | `GET /workspaces/{ws}/doc-versions` | List doc versions | service key only |
 | `POST /workspaces/{ws}/doc-versions` | Create doc versions | service key only |
 | `GET /workspaces/{ws}/doc-versions/{id}` | Get one doc version | service key only |
@@ -270,25 +257,16 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/llm-usage` | List llm usage | service key only |
 | `GET /workspaces/{ws}/llm-usage/{id}` | Get one llm usage | service key only |
 | `GET /workspaces/{ws}/meeting-participants` | List meeting participants | service key only |
-| `POST /workspaces/{ws}/meeting-participants` | Create meeting participants | service key only |
 | `GET /workspaces/{ws}/meeting-participants/{meeting_id}/{member_id}` | Get one meeting participant | service key only |
-| `PATCH /workspaces/{ws}/meeting-participants/{meeting_id}/{member_id}` | Update meeting participants | service key only |
-| `DELETE /workspaces/{ws}/meeting-participants/{meeting_id}/{member_id}` | Delete meeting participants | service key only |
 | `GET /workspaces/{ws}/memory-links` | List memory links | service key only |
-| `POST /workspaces/{ws}/memory-links` | Create memory links | service key only |
 | `GET /workspaces/{ws}/memory-links/{from_memory_id}/{to_memory_id}/{type}` | Get one memory link | service key only |
-| `PATCH /workspaces/{ws}/memory-links/{from_memory_id}/{to_memory_id}/{type}` | Update memory links | service key only |
-| `DELETE /workspaces/{ws}/memory-links/{from_memory_id}/{to_memory_id}/{type}` | Delete memory links | service key only |
 | `GET /workspaces/{ws}/milestones` | List milestones | scope `planning:read` |
 | `POST /workspaces/{ws}/milestones` | Create milestones | scope `planning:write` |
 | `GET /workspaces/{ws}/milestones/{id}` | Get one milestone | scope `planning:read` |
 | `PATCH /workspaces/{ws}/milestones/{id}` | Update milestones | scope `planning:write` |
 | `DELETE /workspaces/{ws}/milestones/{id}` | Delete milestones | scope `planning:write` |
 | `GET /workspaces/{ws}/notifications` | List notifications | service key only |
-| `POST /workspaces/{ws}/notifications` | Create notifications | service key only |
 | `GET /workspaces/{ws}/notifications/{id}` | Get one notification | service key only |
-| `PATCH /workspaces/{ws}/notifications/{id}` | Update notifications | service key only |
-| `DELETE /workspaces/{ws}/notifications/{id}` | Delete notifications | service key only |
 | `GET /workspaces/{ws}/project-updates` | List project updates | scope `planning:read` |
 | `POST /workspaces/{ws}/project-updates` | Create project updates | scope `planning:write` |
 | `GET /workspaces/{ws}/project-updates/{id}` | Get one project update | scope `planning:read` |
@@ -319,18 +297,10 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/task-relations/{task_id}/{related_task_id}/{type}` | Get one task relation | scope `planning:read` |
 | `PATCH /workspaces/{ws}/task-relations/{task_id}/{related_task_id}/{type}` | Update task relations | scope `planning:write` |
 | `DELETE /workspaces/{ws}/task-relations/{task_id}/{related_task_id}/{type}` | Delete task relations | scope `planning:write` |
-| `GET /workspaces/{ws}/team-members` | List team members | service key only |
-| `POST /workspaces/{ws}/team-members` | Create team members | service key only |
-| `GET /workspaces/{ws}/team-members/{team_id}/{member_id}` | Get one team member | service key only |
-| `PATCH /workspaces/{ws}/team-members/{team_id}/{member_id}` | Update team members | service key only |
-| `DELETE /workspaces/{ws}/team-members/{team_id}/{member_id}` | Delete team members | service key only |
 | `GET /workspaces/{ws}/transcript-segments` | List transcript segments | service key only |
 | `GET /workspaces/{ws}/transcript-segments/{id}` | Get one transcript segment | service key only |
 | `GET /workspaces/{ws}/transcripts` | List transcripts | service key only |
-| `POST /workspaces/{ws}/transcripts` | Create transcripts | service key only |
 | `GET /workspaces/{ws}/transcripts/{id}` | Get one transcript | service key only |
-| `PATCH /workspaces/{ws}/transcripts/{id}` | Update transcripts | service key only |
-| `DELETE /workspaces/{ws}/transcripts/{id}` | Delete transcripts | service key only |
 | `GET /workspaces/{ws}/work-item-labels` | List work item labels | scope `planning:read` |
 | `POST /workspaces/{ws}/work-item-labels` | Create work item labels | scope `planning:write` |
 | `GET /workspaces/{ws}/work-item-labels/{work_item_id}/{label_id}` | Get one work item label | scope `planning:read` |
