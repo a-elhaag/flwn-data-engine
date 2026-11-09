@@ -75,7 +75,6 @@ def _attach_task_counts(session, workspace_id, work_items):
             .where(
                 Task.workspace_id == workspace_id,
                 Task.work_item_id.in_(list(counts)),
-                Task.deleted_at.is_(None),
             )
             .group_by(Task.work_item_id, Task.status)
         )
