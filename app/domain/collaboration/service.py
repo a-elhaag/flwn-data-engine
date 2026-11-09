@@ -196,9 +196,18 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
 
 
 class CommentService:
-    def __init__(self, workspace_id, actor=None):
+    def __init__(self, workspace_id, actor=None, viewer: Viewer | None = None):
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.actor = str(actor) if actor else None  # who is acting, for the audit log
+        self.viewer = viewer or Viewer(None, False)
+
+    def _require_author(self, comment):
+        mine = self.viewer.member_id
+        if not self.viewer.admin and (mine is None or comment.author_id != mine):
+            raise CollaborationForbidden(
+                "only the author or an administrator can delete a comment",
+                code="comment_delete_forbidden",
+            )
 
     def list(self, target_type, target_id, limit=50, offset=0):
         model = COMMENT_TARGETS[target_type]
@@ -306,11 +315,26 @@ class CommentService:
             return row
 
     def delete(self, comment_id):
+        """Delete a comment: its author or an administrator only. Its own replies and reactions
+        go with it (ON DELETE CASCADE). Refused (409 comment_has_replies) while other members
+        have replied: deleting would silently remove their words."""
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = self._get_comment(session, comment_id)
+            self._require_author(row)
+            other_replies = session.scalar(
+                select(Comment.id).where(
+                    Comment.workspace_id == self.workspace_id,
+                    Comment.parent_comment_id == row.id,
+                    Comment.author_id.is_distinct_from(row.author_id),
+                )
+            )
+            if other_replies is not None:
+                raise CollaborationConflict(
+                    "the comment has replies from other members", code="comment_has_replies"
+                )
             comment_id = row.id
-            session.delete(row)  # its replies and reactions go with it (ON DELETE CASCADE)
+            session.delete(row)  # its own replies and reactions go with it (ON DELETE CASCADE)
             session.flush()
             events.record(
                 session, str(self.workspace_id), self.actor, "comment", comment_id, "deleted"

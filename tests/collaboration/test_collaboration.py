@@ -1,5 +1,7 @@
 from harness import CrudHarness
 
+from app.api import tokens
+
 
 class CollaborationApiTests(CrudHarness):
     def project(self, key):
@@ -52,6 +54,59 @@ class CollaborationApiTests(CrudHarness):
         self.assertIsNotNone(updated.json()["resolved_at"])
         self.assertEqual(self.client.delete(f"{base}/{comment['id']}").status_code, 204)
         self.assertEqual(self.client.get(f"{base}/{comment['id']}").status_code, 404)
+
+    def test_only_the_author_deletes_a_comment_and_not_over_other_members_replies(self):
+        project = self.project("CMT")
+        base = f"/workspaces/{self.team_a}/comments"
+        author = self.member(self.team_a)
+        other = self.member(self.team_a)
+        # not an administrator: AGENT_SCOPES includes the admin scope, so name the scopes
+        member_scopes = (
+            tokens.SCOPE_READ,
+            tokens.SCOPE_WRITE,
+            tokens.SCOPE_DELETE,
+            tokens.SCOPE_COLLAB_READ,
+            tokens.SCOPE_COLLAB_WRITE,
+        )
+        author_headers = self.token_headers(self.team_a, *member_scopes, member=author)
+        other_headers = self.token_headers(self.team_a, *member_scopes, member=other)
+        created = self.client.post(
+            base,
+            json={
+                "target_type": "project",
+                "target_id": project["id"],
+                "body": "Note",
+            },
+            headers=author_headers,
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        comment = created.json()
+        path = f"{base}/{comment['id']}"
+
+        denied = self.client.delete(path, headers=other_headers)
+        self.assertEqual(denied.status_code, 403, denied.text)
+        self.assertEqual(denied.json()["code"], "comment_delete_forbidden")
+
+        reply = self.client.post(
+            base,
+            json={
+                "target_type": "project",
+                "target_id": project["id"],
+                "parent_comment_id": comment["id"],
+                "body": "Reply",
+            },
+            headers=other_headers,
+        ).json()
+        blocked = self.client.delete(path, headers=author_headers)
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        self.assertEqual(blocked.json()["code"], "comment_has_replies")
+        self.assertEqual(self.client.get(f"{base}/{reply['id']}").status_code, 200)
+
+        # the other member may delete their own reply; then the author can delete the comment
+        self.assertEqual(
+            self.client.delete(f"{base}/{reply['id']}", headers=other_headers).status_code, 204
+        )
+        self.assertEqual(self.client.delete(path, headers=author_headers).status_code, 204)
 
     def test_docs_blocks_prevent_cycles_and_delete_child_pages(self):
         project = self.project("DOCS")

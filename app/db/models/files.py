@@ -123,6 +123,20 @@ class File(IdPk, Tenant, Stamps, Base):
     )
 
 
+class BlobPurge(IdPk, Created, Base):
+    """Blobs to delete from storage, written in the transaction that removed their rows.
+
+    A workspace delete cannot call Azure inside the request, so it records each file's blob here
+    and a reaper deletes the bytes later. No foreign key on purpose: the workspace is gone.
+    """
+
+    __tablename__ = "blob_purges"
+
+    workspace_id: Mapped[uuid.UUID]
+    container: Mapped[str]
+    blob_path: Mapped[str]
+
+
 class FileDerivative(IdPk, Tenant, Created, Base):
     """Computed from a file: thumbnails, OCR text, image captions, parsed document text."""
 

@@ -35,6 +35,8 @@ CODES = (
     "collaboration_conflict",
     "collaboration_forbidden",
     "collaboration_not_found",
+    "comment_delete_forbidden",
+    "comment_has_replies",
     "comment_not_found",
     "confirmation_mismatch",
     "conflict_already_resolved",

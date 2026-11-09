@@ -386,6 +386,33 @@ class WorkspacesApiTests(CrudHarness):
         # the workspace's events are part of it, so they go too
         self.assertEqual(self.events(workspace_id), [])
 
+    def test_workspace_delete_records_its_blobs_for_the_reaper(self):
+        owner = self.owner()
+        workspace_id = self.client.post(
+            "/workspaces",
+            json={"name": "Blobs", "slug": f"blobs-{uuid.uuid4().hex[:8]}", "owner_user_id": owner},
+        ).json()["id"]
+        blob = f"{workspace_id}/docs/a.txt"
+        self.sql(
+            "insert into files (workspace_id, kind, name, container, blob_path)"
+            " values (:w, 'document', 'a.txt', 'workspace-files', :p)",
+            w=workspace_id,
+            p=blob,
+        )
+        self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
+        purged = self.sql(
+            "select container, blob_path from blob_purges where workspace_id = :w", w=workspace_id
+        )
+        self.assertEqual(
+            [(r["container"], r["blob_path"]) for r in purged], [("workspace-files", blob)]
+        )
+        self.assertEqual(
+            self.sql("select count(*) as n from files where workspace_id = :w", w=workspace_id)[0][
+                "n"
+            ],
+            0,
+        )
+
     def test_workspace_slug_is_case_insensitively_unique(self):
         owner = self.owner()
         first = self.client.post(
