@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, Workspace
@@ -72,6 +72,26 @@ def _task(session, workspace_id, project_id, task_id):
     if row is None:
         raise PlanningNotFound("task not found", code="task_not_found")
     return row
+
+
+def _attach_task_counts(session, workspace_id, work_items):
+    """Set `task_counts` ({status: n}, non-deleted tasks) on each work item, in one query."""
+    counts = {row.id: {} for row in work_items}
+    if counts:
+        grouped = session.execute(
+            select(Task.work_item_id, Task.status, func.count())
+            .where(
+                Task.workspace_id == workspace_id,
+                Task.work_item_id.in_(list(counts)),
+                Task.deleted_at.is_(None),
+            )
+            .group_by(Task.work_item_id, Task.status)
+        )
+        for work_item_id, status, n in grouped:
+            counts[work_item_id][status] = n
+    for row in work_items:
+        row.task_counts = counts[row.id]
+    return work_items
 
 
 def _check_project_refs(session, workspace_id, fields):
@@ -270,7 +290,7 @@ class WorkItemService:
     def list(self, project_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
-            return list(
+            items = list(
                 session.scalars(
                     select(WorkItem)
                     .where(
@@ -283,11 +303,13 @@ class WorkItemService:
                     .offset(offset)
                 )
             )
+            return _attach_task_counts(session, self.workspace_id, items)
 
     def get(self, project_id, work_item_id):
         with session_for(str(self.workspace_id)) as session:
             project = _project(session, self.workspace_id, project_id)
-            return _work_item(session, self.workspace_id, project.id, work_item_id)
+            row = _work_item(session, self.workspace_id, project.id, work_item_id)
+            return _attach_task_counts(session, self.workspace_id, [row])[0]
 
     def create(self, project_id, **fields):
         with session_for(str(self.workspace_id)) as session:
@@ -328,7 +350,7 @@ class WorkItemService:
             events.record(
                 session, str(self.workspace_id), self.actor, "work_item", row.id, "updated", fields
             )
-            return row
+            return _attach_task_counts(session, self.workspace_id, [row])[0]
 
     def delete(self, project_id, work_item_id):
         with session_for(str(self.workspace_id)) as session:

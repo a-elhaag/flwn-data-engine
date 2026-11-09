@@ -403,11 +403,11 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     ),
     f"GET {W}/projects/{{project_id}}/work-items": (
         "List work items",
-        "Paginated with `limit` and `offset`.",
+        'Paginated with `limit` and `offset`. Each item has `task_counts`: its non-deleted tasks per status, for example `{"todo": 3, "done": 5}`, computed in one query per page.',
     ),
     f"GET {W}/projects/{{project_id}}/work-items/{{work_item_id}}": (
         "Get a work item",
-        "Returns one work item.",
+        "Returns one work item with its `task_counts`.",
     ),
     f"PATCH {W}/projects/{{project_id}}/work-items/{{work_item_id}}": (
         "Update a work item",

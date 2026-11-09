@@ -492,6 +492,7 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "type": "`FEATURE`, `STORY` or `BUG`.",
         "priority": "`none`, `low`, `medium`, `high` or `urgent`.",
         "status": "`backlog`, `todo`, `in_progress`, `in_review`, `done` or `canceled`.",
+        "task_counts": 'Number of non-deleted tasks per task status, for example `{"todo": 3, "done": 5}`. Only statuses with tasks appear; `{}` when the work item has none.',
         "created_at": "When the work item was created.",
         "updated_at": "When the work item was last changed.",
     },
