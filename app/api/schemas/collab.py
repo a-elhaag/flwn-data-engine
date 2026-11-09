@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from app.api.schemas.identity import NonBlank
+from app.db.base import CHANNEL_TYPES, MESSAGE_KINDS
 from app.db.models.collab import BLOCK_TYPES
 
 CommentTargetType = Literal["task", "work_item", "project", "project_update", "sprint", "doc"]
@@ -225,7 +226,7 @@ class ChannelCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_channel(self):
-        if self.type not in {"team", "project", "group", "dm", "agent"}:
+        if self.type not in CHANNEL_TYPES:
             raise ValueError("invalid channel type")
         if self.type == "team" and self.team_id is None:
             raise ValueError("team channels require team_id")
@@ -287,7 +288,7 @@ class MessageCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_message(self):
-        if self.kind not in {"text", "voice_note", "image", "file", "system", "agent_report"}:
+        if self.kind not in MESSAGE_KINDS:
             raise ValueError("invalid message kind")
         if self.body is None and self.body_json is None:
             raise ValueError("body or body_json is required")

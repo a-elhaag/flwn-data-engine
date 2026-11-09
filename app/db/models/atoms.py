@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
+    ATOM_STATUSES,
     EMPTY_JSON,
     EMPTY_LIST,
     Base,
@@ -69,7 +70,7 @@ class Atom(IdPk, Tenant, Stamps, SoftDelete, Base):
         tenant_unique(),
         UniqueConstraint("member_id"),
         one_of("kind", "workspace", "personal"),
-        one_of("status", "draft", "active", "paused", "killed"),
+        one_of("status", *ATOM_STATUSES),
         one_of("model_tier", "small", "medium"),
         CheckConstraint(
             "(kind = 'personal' and owner_member_id is not null)"

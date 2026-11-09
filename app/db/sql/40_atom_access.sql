@@ -78,14 +78,9 @@ begin
     channel := (row_data->>'channel_id')::uuid;
     if project is not null then
         if not exists(select 1 from public.projects where id = project and workspace_id = ws and deleted_at is null) then return false; end if;
-        if exists(select 1 from public.projects p join public.teams t on t.id = p.team_id
-            and t.workspace_id = ws where p.id = project and p.workspace_id = ws
-            and t.visibility = 'private' and not exists(select 1 from public.team_members tm
-                where tm.workspace_id = ws and tm.team_id = t.id and tm.member_id = owner_id)) then return false; end if;
     end if;
     if team is not null and not exists(select 1 from public.teams t where t.id = team and t.workspace_id = ws
-        and t.deleted_at is null and (t.visibility = 'workspace' or exists(select 1 from public.team_members tm
-            where tm.workspace_id = ws and tm.team_id = t.id and tm.member_id = owner_id))) then return false; end if;
+        and t.deleted_at is null) then return false; end if;
     if channel is not null and not exists(select 1 from public.channels ch where ch.id = channel and ch.workspace_id = ws
         and ((not ch.is_private and ch.type not in ('dm','group','agent')) or exists(select 1 from public.channel_members cm
             where cm.workspace_id = ws and cm.channel_id = ch.id and cm.member_id = owner_id))) then return false; end if;
@@ -238,7 +233,7 @@ begin
         if resource in ('project','team','channel') then data := data || jsonb_build_object(resource || '_id', resource_id); end if;
         allowed := public.atom_grant_matches(resource,resource_id,data,required_level);
     end if;
-    -- Intersect every personal grant with owner visibility, including inherited private teams.
+    -- Intersect every personal grant with owner visibility.
     if data->>'project_id' is not null then
         select team_id into inherited_team from public.projects where id = (data->>'project_id')::uuid and workspace_id = ws;
         if inherited_team is not null and data->>'team_id' is null then data := data || jsonb_build_object('team_id',inherited_team); end if;

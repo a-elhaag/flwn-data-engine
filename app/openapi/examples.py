@@ -142,7 +142,7 @@ EXAMPLES: dict[str, dict] = {
         "email": "sara@acme.com",
     },
     "MemberUpdate": {"role": "admin"},
-    "TeamCreate": {"key": "ENG", "name": "Engineering", "visibility": "workspace"},
+    "TeamCreate": {"key": "ENG", "name": "Engineering"},
     "TeamUpdate": {"name": "Platform Engineering"},
     "TeamMembersUpdate": {"member_ids": [MEMBER]},
     "ProjectCreate": {
@@ -313,7 +313,6 @@ _TEAM = {
     "description": None,
     "icon": None,
     "color": None,
-    "visibility": "workspace",
     "created_at": STAMP,
     "updated_at": STAMP,
 }

@@ -246,30 +246,13 @@ class AtomAccessTest(unittest.TestCase):
         self.assertIn(connection, self.ids("atom_connections"))
         self.assertIn(catalog, self.ids("catalog_skills"))
 
-    def test_personal_owner_must_be_active_and_private_team_membership_is_live(self):
+    def test_personal_owner_must_be_active(self):
         self.conn.execute(
             update(T("atoms"))
             .where(T("atoms").c.id == self.atom["id"])
             .values(kind="personal", owner_member_id=self.ws["human"])
         )
-        self.conn.execute(
-            update(T("teams"))
-            .where(T("teams").c.id == self.ws["team"])
-            .values(visibility="private")
-        )
         self.grant(resource="memory")
-        self.restrict()
-        self.assertEqual(self.ids("memories"), set())
-        self.admin()
-        self.conn.execute(
-            T("team_members")
-            .insert()
-            .values(
-                workspace_id=self.ws["workspace_id"],
-                team_id=self.ws["team"],
-                member_id=self.ws["human"],
-            )
-        )
         self.restrict()
         self.assertEqual(self.ids("memories"), {self.a, self.b})
         self.admin()
@@ -996,31 +979,6 @@ class SkillsAggregateTest(unittest.TestCase):
         make_connection(self.conn, self.atom, self.ws["human"], toolkit="slack")
         self.grant("connection", permitted)
         self.assertEqual(self.aggregate.read("connection"), {"count": 1})
-
-    def test_personal_aggregate_intersects_owner_private_team_membership(self):
-        self.task()
-        self.grant()
-        self.conn.execute(
-            update(T("atoms"))
-            .where(T("atoms").c.id == self.atom["id"])
-            .values(kind="personal", owner_member_id=self.ws["human"])
-        )
-        self.conn.execute(
-            update(T("teams"))
-            .where(T("teams").c.id == self.ws["team"])
-            .values(visibility="private")
-        )
-        self.assertEqual(self.aggregate.read("project"), {"count": 0})
-        self.conn.execute(
-            T("team_members")
-            .insert()
-            .values(
-                workspace_id=self.ws["workspace_id"],
-                team_id=self.ws["team"],
-                member_id=self.ws["human"],
-            )
-        )
-        self.assertEqual(self.aggregate.read("project"), {"count": 1})
 
     def test_promote_delete_and_attachment_overrides_preserve_history(self):
         skill = self.service.write(

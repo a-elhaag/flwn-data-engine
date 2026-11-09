@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, inspect, or_, select, union
 
+from app.db.base import ATOM_STATUSES
 from app.db.models.atoms import (
     PERMISSION_CEILINGS,
     RESOURCE_TYPES,
@@ -383,7 +384,7 @@ class AtomService:
             return self._configuration(session, self._atom(session, target))
 
     def list(self, *, status=None, enabled=None):
-        if status not in (None, "draft", "active", "paused", "killed"):
+        if status not in (None, *ATOM_STATUSES):
             raise AtomError("invalid atom status")
         if enabled is not None and not isinstance(enabled, bool):
             raise AtomError("enabled must be a boolean")

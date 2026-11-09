@@ -200,28 +200,7 @@ class VisibilityTests(CrudHarness):
         )
         self.assertEqual(self.client.put(url, json=body, headers=self.admin()).status_code, 200)
 
-    def test_private_team_is_visible_to_its_members_and_admins_only(self):
-        writer = self.as_(self.eve, *IDENTITY)
-        team = self.client.post(
-            f"{self.root}/teams",
-            json={"key": "SEC", "name": "Security", "visibility": "private"},
-            headers=writer,
-        ).json()["id"]
-        self.assertEqual(
-            self.client.put(
-                f"{self.root}/teams/{team}/members",
-                json={"member_ids": [self.ada]},
-                headers=self.admin(),
-            ).status_code,
-            200,
-        )
-        listing = f"{self.root}/teams"
-        self.assertIn(team, self.ids(listing, self.as_(self.ada, *IDENTITY)))
-        self.assertNotIn(team, self.ids(listing, writer))
-        self.assertEqual(self.client.get(f"{listing}/{team}", headers=writer).status_code, 404)
-        self.assertIn(team, self.ids(listing, self.admin()))
-
-    def test_team_members_and_visibility_need_admin(self):
+    def test_team_members_need_admin(self):
         writer = self.as_(self.eve, *IDENTITY)
         team = self.client.post(
             f"{self.root}/teams", json={"key": "OPS", "name": "Ops"}, headers=writer
@@ -229,16 +208,8 @@ class VisibilityTests(CrudHarness):
         one = f"{self.root}/teams/{team}"
         join = self.client.put(f"{one}/members", json={"member_ids": [self.eve]}, headers=writer)
         self.assertEqual(join.status_code, 403, join.text)
-        flip = self.client.patch(one, json={"visibility": "private"}, headers=writer)
-        self.assertEqual(flip.status_code, 403, flip.text)
         rename = self.client.patch(one, json={"name": "Operations"}, headers=writer)
         self.assertEqual(rename.status_code, 200, rename.text)
-        self.assertEqual(
-            self.client.patch(
-                one, json={"visibility": "private"}, headers=self.admin()
-            ).status_code,
-            200,
-        )
 
     def test_deleting_a_team_needs_admin(self):
         writer = self.as_(self.eve, *IDENTITY)

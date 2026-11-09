@@ -8,6 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
     EMPTY_JSON,
+    MEMBER_ROLES,
+    MEMBER_STATUSES,
     Base,
     Created,
     IdPk,
@@ -41,6 +43,11 @@ class User(IdPk, Stamps, SoftDelete, Base):
     name: Mapped[str]
     avatar_url: Mapped[str | None]
     settings: Mapped[dict] = mapped_column(server_default=EMPTY_JSON)
+
+    __table_args__ = (
+        CheckConstraint(r"name ~ '\S'", name="name_not_blank"),
+        CheckConstraint(r"email ~ '^[^\s]+@[^\s@]+\.[^\s@]+$'", name="email_shape"),
+    )
 
 
 Index("uq_users_email", func.lower(User.email), unique=True)
@@ -80,10 +87,8 @@ class Member(IdPk, Tenant, Stamps, SoftDelete, Base):
         tenant_unique(),
         UniqueConstraint("workspace_id", "user_id"),
         one_of("type", "HUMAN", "AI"),
-        one_of("role", "owner", "admin", "member", "viewer"),
-        one_of(
-            "status", "active", "suspended"
-        ),  # a pending invite is a row in invitations, not a member
+        one_of("role", *MEMBER_ROLES),
+        one_of("status", *MEMBER_STATUSES),
         CheckConstraint(
             "agent_kind is null or agent_kind in ("
             + ", ".join(f"'{kind}'" for kind in AGENT_KINDS)
@@ -124,13 +129,8 @@ class Team(IdPk, Tenant, Stamps, SoftDelete, Base):
     description: Mapped[str | None]
     icon: Mapped[str | None]
     color: Mapped[str | None]
-    # stored now, enforced later: private teams hide their projects, tasks and memories
-    visibility: Mapped[str] = mapped_column(server_default="workspace")
 
-    __table_args__ = (
-        tenant_unique(),
-        one_of("visibility", "workspace", "private"),
-    )
+    __table_args__ = (tenant_unique(),)
 
 
 Index("uq_teams_workspace_id_key", Team.workspace_id, func.lower(Team.key), unique=True)

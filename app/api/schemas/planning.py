@@ -7,7 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.api.schemas.identity import NonBlank
-from app.db.base import PRIORITIES, WORK_STATUSES
+from app.db.base import PRIORITIES, PROJECT_STATUSES, WORK_ITEM_TYPES, WORK_STATUSES
 
 
 def _reject_null(model: BaseModel, required: set[str]) -> None:
@@ -34,14 +34,7 @@ class ProjectCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_project(self):
-        if self.status not in {
-            "backlog",
-            "planned",
-            "in_progress",
-            "paused",
-            "completed",
-            "canceled",
-        }:
+        if self.status not in PROJECT_STATUSES:
             raise ValueError("invalid project status")
         if self.start_date and self.target_date and self.target_date < self.start_date:
             raise ValueError("target_date cannot be before start_date")
@@ -115,7 +108,7 @@ class WorkItemCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_work_item(self):
-        if self.type not in {"FEATURE", "STORY", "BUG"}:
+        if self.type not in WORK_ITEM_TYPES:
             raise ValueError("invalid work item type")
         if self.priority not in PRIORITIES:
             raise ValueError("invalid priority")
@@ -136,7 +129,7 @@ class WorkItemUpdate(BaseModel):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
         _reject_null(self, {"title", "type", "priority", "status"})
-        if self.type is not None and self.type not in {"FEATURE", "STORY", "BUG"}:
+        if self.type is not None and self.type not in WORK_ITEM_TYPES:
             raise ValueError("invalid work item type")
         if self.priority is not None and self.priority not in PRIORITIES:
             raise ValueError("invalid priority")

@@ -235,11 +235,10 @@ class IdentityApiTests(CrudHarness):
         member_id = self.member(self.team_a)
         response = self.client.post(
             f"/workspaces/{self.team_a}/teams",
-            json={"key": "ENG", "name": "Engineering", "visibility": "private"},
+            json={"key": "ENG", "name": "Engineering"},
         )
         self.assertEqual(response.status_code, 201, response.text)
         team_id = response.json()["id"]
-        self.assertEqual(response.json()["visibility"], "private")
 
         assigned = self.client.put(
             f"/workspaces/{self.team_a}/teams/{team_id}/members",

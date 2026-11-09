@@ -325,7 +325,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "description": "What the team does.",
         "icon": "Icon name or emoji.",
         "color": "Color for the team, for example a hex code.",
-        "visibility": "`workspace` (everyone can see it) or `private` (only members and admins).",
     },
     "TeamUpdate": {
         "key": "New short code.",
@@ -333,7 +332,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "description": "New description.",
         "icon": "New icon.",
         "color": "New color.",
-        "visibility": "`workspace` or `private`. Only an administrator may change it.",
     },
     "TeamOut": {
         "id": "Id of the team.",
@@ -343,7 +341,6 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "description": "What the team does. Null if none.",
         "icon": "Icon name or emoji. Null if none.",
         "color": "Color for the team. Null if none.",
-        "visibility": "`workspace` or `private`.",
         "created_at": "When the team was created.",
         "updated_at": "When the team was last changed.",
     },
