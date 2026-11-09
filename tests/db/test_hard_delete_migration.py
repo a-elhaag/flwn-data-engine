@@ -168,7 +168,7 @@ class HardDeleteMigrationTest(unittest.TestCase):
                 ),
                 0,
             )
-            self.assertEqual(conn.scalar(text("select version_num from alembic_version")), "0013")
+            self.assertEqual(conn.scalar(text("select version_num from alembic_version")), "0015")
 
     def test_refuses_when_a_workspace_would_lose_its_only_owner(self):
         cfg, engine = self.fresh()

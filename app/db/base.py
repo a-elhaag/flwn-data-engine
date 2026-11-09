@@ -74,8 +74,13 @@ def project_unique() -> UniqueConstraint:
 
 
 def tfk(col: str, target: str, ondelete: str | None = None) -> ForeignKeyConstraint:
-    """(workspace_id, col) -> target(workspace_id, id). ondelete: 'cascade' | 'set null'."""
-    action = {"cascade": "CASCADE", "set null": f"SET NULL ({col})", None: None}[ondelete]
+    """(workspace_id, col) -> target(workspace_id, id). ondelete: cascade, set null or restrict."""
+    action = {
+        "cascade": "CASCADE",
+        "set null": f"SET NULL ({col})",
+        "restrict": "RESTRICT",
+        None: None,
+    }[ondelete]
     return ForeignKeyConstraint(
         ["workspace_id", col],
         [f"{target}.workspace_id", f"{target}.id"],

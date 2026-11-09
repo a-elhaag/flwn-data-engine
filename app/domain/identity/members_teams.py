@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
+from app.db.models.planning import Project
 from app.db.session import session_for
 from app.domain.error_codes import DomainError, Invalid, InvalidReference
 from app.domain.identity.email import canonical_email
@@ -328,7 +329,12 @@ class TeamService:
             _workspace(session, self.workspace_id)
             row = _team(session, self.workspace_id, team_id)
             name, team_id = row.name, row.id
-            session.delete(row)  # its projects keep existing, with no team (ON DELETE SET NULL)
+            if session.scalar(select(Project.id).where(Project.team_id == team_id).limit(1)):
+                # The database refuses it too (projects.team_id is ON DELETE RESTRICT).
+                raise IdentityConflict(
+                    "team still owns projects; move them first", code="team_has_projects"
+                )
+            session.delete(row)
             session.flush()
             events.record(
                 session,
