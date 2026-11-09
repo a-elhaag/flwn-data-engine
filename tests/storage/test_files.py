@@ -220,7 +220,7 @@ class FilesApiTests(MemoryHarness):
         with self.assertRaises(RuntimeError):
             self.client.delete(base)
         self.assertEqual(self.client.get(base).status_code, 200)  # still there, not half-deleted
-        self.assertIsNone(self.row(ticket["file_id"])["deleted_at"])
+        self.assertIsNotNone(self.row(ticket["file_id"]))  # the row stays until the blob is gone
 
         self.blobs.fail_deletes = False
         self.assertEqual(self.client.delete(base).status_code, 204)

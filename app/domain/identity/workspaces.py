@@ -1,22 +1,18 @@
 """Trusted workspace CRUD operations."""
 
 import uuid
-from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
 from app.db import events
+from app.db.models.files import BlobPurge, File
 from app.db.models.identity import Member, User, Workspace
 from app.db.session import service_session
-from app.domain.error_codes import DomainError
+from app.domain.error_codes import DomainError, InvalidReference
 
 
 class WorkspaceNotFound(DomainError, LookupError):
     code = "workspace_not_found"
-
-
-class OwnerNotFound(WorkspaceNotFound):
-    code = "owner_user_not_found"
 
 
 class WorkspaceConflict(DomainError, ValueError):
@@ -24,20 +20,14 @@ class WorkspaceConflict(DomainError, ValueError):
 
 
 def _workspace(session, workspace_id):
-    row = session.scalar(
-        select(Workspace).where(
-            Workspace.id == uuid.UUID(str(workspace_id)), Workspace.deleted_at.is_(None)
-        )
-    )
+    row = session.scalar(select(Workspace).where(Workspace.id == uuid.UUID(str(workspace_id))))
     if row is None:
         raise WorkspaceNotFound("workspace not found", code="workspace_not_found")
     return row
 
 
 def _slug_available(session, slug, *, exclude_id=None):
-    query = select(Workspace.id).where(
-        func.lower(Workspace.slug) == slug.lower(), Workspace.deleted_at.is_(None)
-    )
+    query = select(Workspace.id).where(func.lower(Workspace.slug) == slug.lower())
     if exclude_id is not None:
         query = query.where(Workspace.id != exclude_id)
     if session.scalar(query) is not None:
@@ -52,7 +42,6 @@ class WorkspaceService:
         with service_session() as session:
             rows = session.scalars(
                 select(Workspace)
-                .where(Workspace.deleted_at.is_(None))
                 .order_by(Workspace.created_at, Workspace.id)
                 .limit(limit)
                 .offset(offset)
@@ -67,11 +56,9 @@ class WorkspaceService:
         """The workspace and its first owner (an active HUMAN member), in one transaction."""
         owner = uuid.UUID(str(owner_user_id))
         with service_session() as session:
-            user = session.scalar(
-                select(User.id).where(User.id == owner, User.deleted_at.is_(None))
-            )
+            user = session.scalar(select(User.id).where(User.id == owner))
             if user is None:
-                raise OwnerNotFound("owner user not found")
+                raise InvalidReference("owner_user")
             _slug_available(session, slug)
             row = Workspace(
                 name=name.strip(),
@@ -107,6 +94,13 @@ class WorkspaceService:
     def delete(self, workspace_id):
         with service_session() as session:
             row = _workspace(session, workspace_id)
-            row.deleted_at = datetime.now(UTC)
-            session.flush()
-            events.record(session, str(row.id), self.actor, "workspace", row.id, "deleted")
+            # The bytes cannot be deleted inside this transaction: record each blob for a reaper
+            # (blob_purges), in the same commit that removes the rows.
+            for container, blob_path in session.execute(
+                select(File.container, File.blob_path).where(File.workspace_id == row.id)
+            ).all():
+                session.add(
+                    BlobPurge(workspace_id=row.id, container=container, blob_path=blob_path)
+                )
+            # Everything inside the workspace goes with it (ON DELETE CASCADE), its events too.
+            session.delete(row)

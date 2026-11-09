@@ -70,9 +70,7 @@ def atom_kind(workspace_id: str, atom_id: str, bind=None) -> str | None:
 
     with workspace_session(bind if bind is not None else engine(), workspace_id) as session:
         return session.scalar(
-            text(
-                "select kind from atoms where workspace_id = :ws and id = :atom and deleted_at is null"
-            ),
+            text("select kind from atoms where workspace_id = :ws and id = :atom"),
             {"ws": workspace_id, "atom": atom_id},
         )
 

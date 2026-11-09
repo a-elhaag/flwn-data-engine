@@ -86,6 +86,61 @@ class ErrorContractTests(MemoryHarness):
         )
         self.assertIn("not active", body["detail"])
 
+    def test_a_body_id_that_does_not_exist_is_422_not_404(self):
+        """An id in the request body is a bad field (422), never a missing resource (404)."""
+        base = f"/workspaces/{self.team_a}"
+        project = self.client.post(
+            f"{base}/projects", json={"key": "BODY", "name": "Body ids"}
+        ).json()
+        work_item = self.client.post(
+            f"{base}/projects/{project['id']}/work-items", json={"title": "Item"}
+        ).json()
+        team = self.client.post(f"{base}/teams", json={"key": "BID", "name": "Body ids"}).json()
+        cases = [
+            (
+                f"{base}/projects",
+                {"key": "NOPE", "name": "Nope", "team_id": self.nobody},
+                "invalid_team_id",
+            ),
+            (
+                f"{base}/projects",
+                {"key": "NOPE", "name": "Nope", "lead_id": self.nobody},
+                "invalid_lead_id",
+            ),
+            (
+                f"{base}/projects/{project['id']}/tasks",
+                {"work_item_id": work_item["id"], "title": "T", "assignee_id": self.nobody},
+                "invalid_assignee_id",
+            ),
+            (
+                f"{base}/projects/{project['id']}/tasks",
+                {"work_item_id": work_item["id"], "title": "T", "parent_task_id": self.nobody},
+                "invalid_parent_task_id",
+            ),
+            (f"{base}/teams/{team['id']}/members", {"member_id": self.nobody}, "invalid_member_id"),
+            (
+                f"{base}/channels",
+                {"type": "team", "name": "c", "team_id": self.nobody},
+                "invalid_team_id",
+            ),
+            (
+                f"{base}/comments",
+                {"target_type": "doc", "target_id": self.nobody, "body": "x"},
+                "invalid_target_id",
+            ),
+            (f"{base}/docs", {"title": "D", "parent_doc_id": self.nobody}, "invalid_parent_doc_id"),
+            (
+                "/workspaces",
+                {"name": "W", "slug": f"w-{uuid.uuid4().hex[:8]}", "owner_user_id": self.nobody},
+                "invalid_owner_user_id",
+            ),
+        ]
+        for url, body, code in cases:
+            with self.subTest(code=code):
+                response = self.client.post(url, json=body)
+                self.assertContract(response, 422, code)
+                self.assertIn(code, CODES)
+
     def test_403_when_the_token_lacks_the_scope(self):
         token, _ = signing.mint(self.team_a, frozenset(), "agent", 600, None)
         response = self.client.get(

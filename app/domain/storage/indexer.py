@@ -73,7 +73,7 @@ def claim_next() -> Claim | None:
     with workspace_session(db.engine(), "", service=True) as session:  # spans workspaces
         row = session.scalars(
             select(File)
-            .where(waiting, File.deleted_at.is_(None), File.status == "ready")
+            .where(waiting, File.status == "ready")
             .order_by(File.created_at)
             .limit(1)
             .with_for_update(skip_locked=True)
@@ -104,7 +104,7 @@ def _finish(
                 File.workspace_id == uuid.UUID(claim.workspace_id), File.id == claim.file_id
             )
         ).one_or_none()
-        if row is None or row.deleted_at is not None:
+        if row is None:
             return  # deleted while it was being read: write nothing
         session.execute(
             delete(Chunk).where(Chunk.source_type == "file", Chunk.source_id == claim.file_id)

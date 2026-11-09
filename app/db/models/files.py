@@ -16,7 +16,6 @@ from app.db.base import (
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -37,7 +36,7 @@ FILE_KINDS = (
 )
 
 
-class Folder(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Folder(IdPk, Tenant, Stamps, Base):
     __tablename__ = "folders"
 
     team_id: Mapped[uuid.UUID | None]
@@ -61,11 +60,10 @@ Index(
     func.coalesce(Folder.parent_folder_id, text(f"'{ZERO_UUID}'::uuid")),
     func.lower(Folder.name),
     unique=True,
-    postgresql_where=text("deleted_at is null"),
 )
 
 
-class File(IdPk, Tenant, Stamps, SoftDelete, Base):
+class File(IdPk, Tenant, Stamps, Base):
     __tablename__ = "files"
 
     folder_id: Mapped[uuid.UUID | None]
@@ -123,6 +121,20 @@ class File(IdPk, Tenant, Stamps, SoftDelete, Base):
             "ix_files_sha256", "workspace_id", "sha256", postgresql_where=text("sha256 is not null")
         ),
     )
+
+
+class BlobPurge(IdPk, Created, Base):
+    """Blobs to delete from storage, written in the transaction that removed their rows.
+
+    A workspace delete cannot call Azure inside the request, so it records each file's blob here
+    and a reaper deletes the bytes later. No foreign key on purpose: the workspace is gone.
+    """
+
+    __tablename__ = "blob_purges"
+
+    workspace_id: Mapped[uuid.UUID]
+    container: Mapped[str]
+    blob_path: Mapped[str]
 
 
 class FileDerivative(IdPk, Tenant, Created, Base):

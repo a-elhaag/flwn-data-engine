@@ -13,7 +13,6 @@ from app.db.base import (
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -34,7 +33,7 @@ AGENT_KINDS = (
 )
 
 
-class User(IdPk, Stamps, SoftDelete, Base):
+class User(IdPk, Stamps, Base):
     """Global identity of a human. One user can be a member of many workspaces."""
 
     __tablename__ = "users"
@@ -53,7 +52,7 @@ class User(IdPk, Stamps, SoftDelete, Base):
 Index("uq_users_email", func.lower(User.email), unique=True)
 
 
-class Workspace(IdPk, Stamps, SoftDelete, Base):
+class Workspace(IdPk, Stamps, Base):
     __tablename__ = "workspaces"
 
     name: Mapped[str]
@@ -69,7 +68,7 @@ class Workspace(IdPk, Stamps, SoftDelete, Base):
 Index("uq_workspaces_slug", func.lower(Workspace.slug), unique=True)
 
 
-class Member(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Member(IdPk, Tenant, Stamps, Base):
     """A human (user_id set) or an AI agent (agent_kind set) inside ONE workspace."""
 
     __tablename__ = "members"
@@ -131,7 +130,7 @@ Index(
 )
 
 
-class Team(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Team(IdPk, Tenant, Stamps, Base):
     __tablename__ = "teams"
 
     key: Mapped[str]  # short prefix such as ENG, unique per workspace case-insensitively

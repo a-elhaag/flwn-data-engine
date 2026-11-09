@@ -1,4 +1,4 @@
-"""Human-only local skill promotion and soft deletion."""
+"""Human-only local skill promotion and deletion."""
 
 from typing import Annotated
 from uuid import UUID

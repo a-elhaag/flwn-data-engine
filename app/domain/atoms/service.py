@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, inspect, or_, select, union
+from sqlalchemy.exc import IntegrityError
 
 from app.db.base import ATOM_STATUSES
 from app.db.models.atoms import (
@@ -53,6 +54,10 @@ class AtomNotDue(AtomStateError):
 
 class AtomBusy(AtomStateError):
     code = "busy"
+
+
+class AtomInUse(AtomStateError):
+    code = "atom_in_use"
 
 
 def _uuid(value):
@@ -188,7 +193,6 @@ class AtomService:
                     Member.workspace_id == self.workspace,
                     Member.id == self.actor,
                     Member.status == "active",
-                    Member.deleted_at.is_(None),
                 )
             )
             if scheduler and self.trusted and self.actor is None and context is None:
@@ -219,7 +223,7 @@ class AtomService:
                     raise AtomPermissionError("run is not running")
                 if atom.owner_member_id:
                     owner = self._row(session, Member, atom.owner_member_id)
-                    if owner.type != "HUMAN" or owner.status != "active" or owner.deleted_at:
+                    if owner.type != "HUMAN" or owner.status != "active":
                         raise AtomPermissionError("personal owner must remain active")
             yield session
 
@@ -233,7 +237,6 @@ class AtomService:
             select(Atom).where(
                 Atom.workspace_id == self.workspace,
                 Atom.id == _uuid(own),
-                Atom.deleted_at.is_(None),
                 Atom.kind == "personal",
                 Atom.owner_member_id == member.id,
             )
@@ -253,8 +256,6 @@ class AtomService:
 
     def _atom(self, session, atom_id, *, lock=False):
         atom = self._row(session, Atom, atom_id, lock=lock)
-        if atom.deleted_at is not None:
-            raise AtomNotFound("atom not found")
         if self.actor == atom.member_id and atom.status not in ("active", "paused"):
             raise AtomPermissionError("atom is not available")
         return atom
@@ -290,7 +291,7 @@ class AtomService:
                 max_runs_per_day, max_cost_per_day, max_actions_per_day = 10, "1", 100
             if owner_member_id:
                 owner = self._row(session, Member, owner_member_id)
-                if owner.type != "HUMAN" or owner.status != "active" or owner.deleted_at:
+                if owner.type != "HUMAN" or owner.status != "active":
                     raise AtomError("personal owner must be an active human")
             member = Member(workspace_id=self.workspace, type="AI", agent_kind="atom", name=name)
             session.add(member)
@@ -390,9 +391,7 @@ class AtomService:
         if enabled is not None and not isinstance(enabled, bool):
             raise AtomError("enabled must be a boolean")
         with self._session(admin=True, scheduler=True, own=True) as session:
-            query = select(Atom).where(
-                Atom.workspace_id == self.workspace, Atom.deleted_at.is_(None)
-            )
+            query = select(Atom).where(Atom.workspace_id == self.workspace)
             if not session.info.get("human_admin", True):
                 query = query.where(Atom.kind == "personal", Atom.owner_member_id == self.actor)
             if status is not None:
@@ -506,16 +505,31 @@ class AtomService:
         return self._state(atom_id, "killed")
 
     def delete(self, atom_id):
-        return self._state(atom_id, "killed", deleted=True)
+        """Hard delete: the atom (its versions, grants, schedules, connections and skill
+        attachments go with it, ON DELETE CASCADE), then its member identity, which is removed
+        with its runs. Refused (AtomInUse) while it has approval records: those are durable, so
+        kill it instead."""
+        with self._session(admin=True, own=atom_id) as session:
+            atom = self._atom(session, atom_id, lock=True)
+            atom_key = str(atom.id)
+            identity = session.get(Member, atom.member_id)
+            try:
+                session.delete(atom)
+                session.flush()
+                session.delete(identity)
+                session.flush()
+            except IntegrityError as exc:
+                raise AtomInUse(
+                    "the atom has approval records; kill it instead", code="atom_in_use"
+                ) from exc
+            return {"id": atom_key, "deleted": True}
 
-    def _state(self, atom_id, status, *, deleted=False):
+    def _state(self, atom_id, status):
         with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
             if atom.status == "killed" and status != "killed":
                 raise AtomStateError("killed atoms cannot be resumed")
             atom.status = status
-            if deleted:
-                atom.deleted_at = datetime.now(UTC)
             if status == "killed":
                 for schedule in session.scalars(
                     select(AtomSchedule).where(
@@ -595,8 +609,6 @@ class AtomService:
                 exists = select(table.c.id).where(
                     table.c.workspace_id == self.workspace, table.c.id == _uuid(resource_id)
                 )
-                if "deleted_at" in table.c:
-                    exists = exists.where(table.c.deleted_at.is_(None))
                 if resource_type == "connection":
                     exists = exists.where(table.c.atom_id == atom.id)
                 if session.scalar(exists) is None:
@@ -1005,7 +1017,7 @@ def scheduler_workspaces() -> list[str]:
     scheduled = (
         select(Atom.workspace_id)
         .join(AtomSchedule, AtomSchedule.atom_id == Atom.id)
-        .where(Atom.status == "active", Atom.deleted_at.is_(None), AtomSchedule.enabled.is_(True))
+        .where(Atom.status == "active", AtomSchedule.enabled.is_(True))
     )
     approved = select(Approval.workspace_id).where(
         Approval.atom_id.is_not(None),
@@ -1018,7 +1030,7 @@ def scheduler_workspaces() -> list[str]:
     with service_session() as session:
         rows = session.scalars(
             select(Workspace.id)
-            .where(Workspace.deleted_at.is_(None), Workspace.id.in_(union(scheduled, approved)))
+            .where(Workspace.id.in_(union(scheduled, approved)))
             .order_by(Workspace.id)
         )
         return [str(row) for row in rows]

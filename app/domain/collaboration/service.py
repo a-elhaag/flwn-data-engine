@@ -19,7 +19,7 @@ from app.db.models.files import File
 from app.db.models.identity import Member, Team, Workspace
 from app.db.models.planning import Project, ProjectUpdate, Sprint, Task, WorkItem
 from app.db.session import session_for
-from app.domain.error_codes import DomainError
+from app.domain.error_codes import DomainError, Invalid, InvalidReference
 from app.domain.identity.viewer import Viewer
 
 COMMENT_TARGETS = {
@@ -49,7 +49,6 @@ def _workspace(session, workspace_id):
         session.scalar(
             select(Workspace.id).where(
                 Workspace.id == workspace_id,
-                Workspace.deleted_at.is_(None),
             )
         )
         is None
@@ -66,13 +65,12 @@ def _active_member(session, workspace_id, member_id):
             select(Member.id).where(
                 Member.workspace_id == workspace_id,
                 Member.id == member_id,
-                Member.deleted_at.is_(None),
                 Member.status == "active",
             )
         )
         is None
     ):
-        raise CollaborationNotFound("active member not found", code="member_not_found")
+        raise InvalidReference("author")
     return member_id
 
 
@@ -81,7 +79,6 @@ def _doc(session, workspace_id, doc_id):
         select(Doc).where(
             Doc.workspace_id == workspace_id,
             Doc.id == uuid.UUID(str(doc_id)),
-            Doc.deleted_at.is_(None),
             Doc.archived_at.is_(None),
         )
     )
@@ -148,7 +145,6 @@ def _message(session, workspace_id, channel_id, message_id):
             Message.workspace_id == workspace_id,
             Message.channel_id == channel_id,
             Message.id == uuid.UUID(str(message_id)),
-            Message.deleted_at.is_(None),
         )
     )
     if row is None:
@@ -166,13 +162,8 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
         if fields.get(key) is not None:
             value = uuid.UUID(str(fields[key]))
             filters = [model.workspace_id == workspace_id, model.id == value]
-            if hasattr(model, "deleted_at"):
-                filters.append(model.deleted_at.is_(None))
             if session.scalar(select(model.id).where(*filters)) is None:
-                raise CollaborationNotFound(
-                    f"{key.removesuffix('_id')} not found",
-                    code=f"{key.removesuffix('_id')}_not_found",
-                )
+                raise InvalidReference(key.removesuffix("_id"))
             fields[key] = value
     if fields.get("parent_doc_id") is not None:
         value = uuid.UUID(str(fields["parent_doc_id"]))
@@ -182,20 +173,18 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
                 select(Doc.id).where(
                     Doc.workspace_id == workspace_id,
                     Doc.id == value,
-                    Doc.deleted_at.is_(None),
                     Doc.archived_at.is_(None),
                 )
             )
             is None
         ):
-            raise CollaborationNotFound("parent doc not found", code="parent_doc_not_found")
+            raise InvalidReference("parent_doc")
         parent_id = value
         while parent_id is not None:
             parent_id = session.scalar(
                 select(Doc.parent_doc_id).where(
                     Doc.workspace_id == workspace_id,
                     Doc.id == parent_id,
-                    Doc.deleted_at.is_(None),
                     Doc.archived_at.is_(None),
                 )
             )
@@ -207,9 +196,18 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
 
 
 class CommentService:
-    def __init__(self, workspace_id, actor=None):
+    def __init__(self, workspace_id, actor=None, viewer: Viewer | None = None):
         self.workspace_id = uuid.UUID(str(workspace_id))
         self.actor = str(actor) if actor else None  # who is acting, for the audit log
+        self.viewer = viewer or Viewer(None, False)
+
+    def _require_author(self, comment):
+        mine = self.viewer.member_id
+        if not self.viewer.admin and (mine is None or comment.author_id != mine):
+            raise CollaborationForbidden(
+                "only the author or an administrator can delete a comment",
+                code="comment_delete_forbidden",
+            )
 
     def list(self, target_type, target_id, limit=50, offset=0):
         model = COMMENT_TARGETS[target_type]
@@ -217,8 +215,6 @@ class CommentService:
             _workspace(session, self.workspace_id)
             target_id = uuid.UUID(str(target_id))
             filters = [model.workspace_id == self.workspace_id, model.id == target_id]
-            if hasattr(model, "deleted_at"):
-                filters.append(model.deleted_at.is_(None))
             if session.scalar(select(model.id).where(*filters)) is None:
                 raise CollaborationNotFound(
                     f"{target_type} not found", code=f"{target_type}_not_found"
@@ -228,7 +224,6 @@ class CommentService:
                 .where(
                     Comment.workspace_id == self.workspace_id,
                     getattr(Comment, f"{target_type}_id") == target_id,
-                    Comment.deleted_at.is_(None),
                 )
                 .order_by(Comment.created_at, Comment.id)
                 .limit(limit)
@@ -243,7 +238,6 @@ class CommentService:
                 select(Comment).where(
                     Comment.workspace_id == self.workspace_id,
                     Comment.id == uuid.UUID(str(comment_id)),
-                    Comment.deleted_at.is_(None),
                 )
             )
             if row is None:
@@ -258,14 +252,10 @@ class CommentService:
             _workspace(session, self.workspace_id)
             target_id = uuid.UUID(str(target_id))
             filters = [model.workspace_id == self.workspace_id, model.id == target_id]
-            if hasattr(model, "deleted_at"):
-                filters.append(model.deleted_at.is_(None))
             if hasattr(model, "archived_at"):
                 filters.append(model.archived_at.is_(None))
             if session.scalar(select(model.id).where(*filters)) is None:
-                raise CollaborationNotFound(
-                    f"{target_type} not found", code=f"{target_type}_not_found"
-                )
+                raise InvalidReference("target")
             values = {f"{target_type}_id": target_id}
             if block_id is not None:
                 block_id = uuid.UUID(str(block_id))
@@ -279,7 +269,7 @@ class CommentService:
                     )
                     is None
                 ):
-                    raise CollaborationNotFound("doc block not found", code="doc_block_not_found")
+                    raise InvalidReference("block")
                 values["block_id"] = block_id
             if parent_comment_id is not None:
                 parent = self._get_comment(session, parent_comment_id)
@@ -325,19 +315,36 @@ class CommentService:
             return row
 
     def delete(self, comment_id):
+        """Delete a comment: its author or an administrator only. Its own replies and reactions
+        go with it (ON DELETE CASCADE). Refused (409 comment_has_replies) while other members
+        have replied: deleting would silently remove their words."""
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = self._get_comment(session, comment_id)
-            row.deleted_at = datetime.now(UTC)
+            self._require_author(row)
+            other_replies = session.scalar(
+                select(Comment.id).where(
+                    Comment.workspace_id == self.workspace_id,
+                    Comment.parent_comment_id == row.id,
+                    Comment.author_id.is_distinct_from(row.author_id),
+                )
+            )
+            if other_replies is not None:
+                raise CollaborationConflict(
+                    "the comment has replies from other members", code="comment_has_replies"
+                )
+            comment_id = row.id
+            session.delete(row)  # its own replies and reactions go with it (ON DELETE CASCADE)
             session.flush()
-            events.record(session, str(self.workspace_id), self.actor, "comment", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "comment", comment_id, "deleted"
+            )
 
     def _get_comment(self, session, comment_id):
         row = session.scalar(
             select(Comment).where(
                 Comment.workspace_id == self.workspace_id,
                 Comment.id == uuid.UUID(str(comment_id)),
-                Comment.deleted_at.is_(None),
             )
         )
         if row is None:
@@ -355,7 +362,6 @@ class DocService:
             _workspace(session, self.workspace_id)
             query = select(Doc).where(
                 Doc.workspace_id == self.workspace_id,
-                Doc.deleted_at.is_(None),
                 Doc.archived_at.is_(None),
             )
             if project_id is not None:
@@ -408,16 +414,14 @@ class DocService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = _doc(session, self.workspace_id, doc_id)
-            now = datetime.now(UTC)
-            frontier = [row.id]
-            seen = {row.id}
+            # Sub-pages go with it (ON DELETE CASCADE). Each one is still logged, with its title.
+            frontier, seen, descendants = [row.id], {row.id}, []
             while frontier:
                 children = list(
                     session.scalars(
                         select(Doc).where(
                             Doc.workspace_id == self.workspace_id,
                             Doc.parent_doc_id.in_(frontier),
-                            Doc.deleted_at.is_(None),
                         )
                     )
                 )
@@ -425,14 +429,16 @@ class DocService:
                 for child in children:
                     if child.id not in seen:
                         seen.add(child.id)
-                        child.deleted_at = now
+                        descendants.append(child)
                         frontier.append(child.id)
-                        events.record(
-                            session, str(self.workspace_id), self.actor, "doc", child.id, "deleted"
-                        )
-            row.deleted_at = now
+            snapshots = [(d.id, {"title": d.title, "parent": str(row.id)}) for d in descendants]
+            snapshots.append((row.id, {"title": row.title}))
+            session.delete(row)
             session.flush()
-            events.record(session, str(self.workspace_id), self.actor, "doc", row.id, "deleted")
+            for doc_id_, changes in snapshots:
+                events.record(
+                    session, str(self.workspace_id), self.actor, "doc", doc_id_, "deleted", changes
+                )
 
     def blocks(self, doc_id, limit=100, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -463,9 +469,7 @@ class DocService:
                     )
                     is None
                 ):
-                    raise CollaborationNotFound(
-                        "parent block not found", code="parent_block_not_found"
-                    )
+                    raise InvalidReference("parent_block")
                 fields["parent_block_id"] = parent_id
             row = DocBlock(workspace_id=self.workspace_id, doc_id=doc.id, **fields)
             session.add(row)
@@ -493,9 +497,7 @@ class DocService:
                     )
                     is None
                 ):
-                    raise CollaborationNotFound(
-                        "parent block not found", code="parent_block_not_found"
-                    )
+                    raise InvalidReference("parent_block")
                 ancestor_id = parent_id
                 while ancestor_id is not None:
                     ancestor_id = session.scalar(
@@ -582,13 +584,8 @@ class ChannelService:
                 if fields.get(key) is not None:
                     value = uuid.UUID(str(fields[key]))
                     filters = [model.workspace_id == self.workspace_id, model.id == value]
-                    if hasattr(model, "deleted_at"):
-                        filters.append(model.deleted_at.is_(None))
                     if session.scalar(select(model.id).where(*filters)) is None:
-                        raise CollaborationNotFound(
-                            f"{key.removesuffix('_id')} not found",
-                            code=f"{key.removesuffix('_id')}_not_found",
-                        )
+                        raise InvalidReference(key.removesuffix("_id"))
                     fields[key] = value
             member_ids = {uuid.UUID(str(item)) for item in (member_ids or [])}
             creator = self.viewer.member_id
@@ -682,13 +679,12 @@ class ChannelService:
                 select(Member.id).where(
                     Member.workspace_id == self.workspace_id,
                     Member.id.in_(member_ids),
-                    Member.deleted_at.is_(None),
                     Member.status == "active",
                 )
             )
         )
         if active != member_ids:
-            raise CollaborationNotFound(
+            raise Invalid(
                 "all channel members must be active members of this workspace",
                 code="channel_member_inactive",
             )
@@ -709,7 +705,6 @@ class MessageService:
                     .where(
                         Message.workspace_id == self.workspace_id,
                         Message.channel_id == channel.id,
-                        Message.deleted_at.is_(None),
                     )
                     .order_by(Message.created_at, Message.id)
                     .limit(limit)
@@ -730,7 +725,15 @@ class MessageService:
             )
             parent_id = fields.get("parent_message_id")
             if parent_id is not None:
-                parent = self._get(session, channel.id, parent_id)
+                parent = session.scalar(
+                    select(Message).where(
+                        Message.workspace_id == self.workspace_id,
+                        Message.channel_id == channel.id,
+                        Message.id == uuid.UUID(str(parent_id)),
+                    )
+                )
+                if parent is None:
+                    raise InvalidReference("parent_message")
                 fields["parent_message_id"] = parent.id
             row = Message(workspace_id=self.workspace_id, channel_id=channel.id, **fields)
             session.add(row)
@@ -767,9 +770,12 @@ class MessageService:
             channel = _channel(session, self.workspace_id, channel_id, self.viewer)
             row = self._get(session, channel.id, message_id)
             self._require_author(row)
-            row.deleted_at = datetime.now(UTC)
+            message_id = row.id
+            session.delete(row)  # replies stay, unthreaded (ON DELETE SET NULL)
             session.flush()
-            events.record(session, str(self.workspace_id), self.actor, "message", row.id, "deleted")
+            events.record(
+                session, str(self.workspace_id), self.actor, "message", message_id, "deleted"
+            )
 
     def _get(self, session, channel_id, message_id):
         return _message(session, self.workspace_id, channel_id, message_id)

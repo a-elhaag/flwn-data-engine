@@ -110,7 +110,8 @@ def update_comment(
 
 @router.delete("/comments/{comment_id}", status_code=204)
 def delete_comment(request: Request, workspace_id: WorkspaceId, comment_id: UUID):
-    _call(CommentService(str(workspace_id), actor(request)).delete, str(comment_id))
+    service = CommentService(str(workspace_id), actor(request), viewer(request))
+    _call(service.delete, str(comment_id))
     return Response(status_code=204)
 
 

@@ -83,7 +83,7 @@ class IdentityTests(MemoryHarness):
     def test_a_removed_member_stops_working_too(self):
         ghost = self.member(self.team_a, kind="AI")
         headers = self.agent(ghost)
-        self.sql("update members set deleted_at = now() where id = :i", i=ghost)
+        self.sql("delete from members where id = :i", i=ghost)
         self.assertEqual(self.remember(headers).status_code, 403)
 
     def test_every_memory_change_leaves_an_event_with_its_actor(self):
@@ -185,21 +185,21 @@ class IdentityApiTests(CrudHarness):
             self.client.get(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 404
         )
 
-    def test_a_deleted_account_cannot_be_linked_by_email(self):
+    def test_a_deleted_account_frees_its_email(self):
         base = f"/workspaces/{self.team_a}/members"
         first = self.client.post(
             base, json={"type": "HUMAN", "name": "Gone", "email": "gone@example.com"}
         ).json()
         self.assertEqual(self.client.delete(f"{base}/{first['id']}").status_code, 204)
-        # the user account is still there (soft-deleted via the users route)
+        # the user account is deleted too, so the address is free for a new account
         user_id = first["user_id"]
         self.assertEqual(self.client.delete(f"/users/{user_id}").status_code, 204)
         again = self.client.post(
             base,
             json={"type": "HUMAN", "name": "Back", "email": "gone@example.com"},
         )
-        self.assertEqual(again.status_code, 409, again.text)
-        self.assertEqual(again.json()["detail"], "email cannot be used")
+        self.assertEqual(again.status_code, 201, again.text)
+        self.assertNotEqual(again.json()["user_id"], user_id)
 
     def test_member_update_cannot_change_the_user_account(self):
         base = f"/workspaces/{self.team_a}/members"
@@ -295,7 +295,7 @@ class UsersApiTests(CrudHarness):
         self.addCleanup(self.sql, "delete from users where id = :i", i=response.json()["id"])
         return response.json()
 
-    def test_user_crud_and_soft_delete(self):
+    def test_user_crud_and_delete(self):
         user = self.make(settings={"theme": "dark"})
         self.assertEqual(user["settings"], {"theme": "dark"})
         updated = self.client.patch(f"/users/{user['id']}", json={"name": "Ada Byron"})
@@ -335,7 +335,7 @@ class WorkspacesApiTests(CrudHarness):
         self.addCleanup(self.sql, "delete from workspaces where created_by = :i", i=user["id"])
         return str(user["id"])
 
-    def test_workspace_crud_and_soft_delete(self):
+    def test_workspace_crud_and_delete(self):
         owner = self.owner()
         created = self.client.post(
             "/workspaces",
@@ -377,14 +377,40 @@ class WorkspacesApiTests(CrudHarness):
         self.assertIsNone(updated.json()["description"])
 
         self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
-        self.assertEqual(self.client.get(f"/workspaces/{workspace_id}").status_code, 404)
+        # the workspace and its memberships are gone, so the credential no longer reaches it
+        self.assertEqual(self.client.get(f"/workspaces/{workspace_id}").status_code, 403)
         self.assertNotIn(
             workspace_id,
             [item["id"] for item in self.client.get("/workspaces").json()["items"]],
         )
+        # the workspace's events are part of it, so they go too
+        self.assertEqual(self.events(workspace_id), [])
+
+    def test_workspace_delete_records_its_blobs_for_the_reaper(self):
+        owner = self.owner()
+        workspace_id = self.client.post(
+            "/workspaces",
+            json={"name": "Blobs", "slug": f"blobs-{uuid.uuid4().hex[:8]}", "owner_user_id": owner},
+        ).json()["id"]
+        blob = f"{workspace_id}/docs/a.txt"
+        self.sql(
+            "insert into files (workspace_id, kind, name, container, blob_path)"
+            " values (:w, 'document', 'a.txt', 'workspace-files', :p)",
+            w=workspace_id,
+            p=blob,
+        )
+        self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
+        purged = self.sql(
+            "select container, blob_path from blob_purges where workspace_id = :w", w=workspace_id
+        )
         self.assertEqual(
-            [event["action"] for event in self.events(workspace_id, "workspace")],
-            ["created", "updated", "deleted"],
+            [(r["container"], r["blob_path"]) for r in purged], [("workspace-files", blob)]
+        )
+        self.assertEqual(
+            self.sql("select count(*) as n from files where workspace_id = :w", w=workspace_id)[0][
+                "n"
+            ],
+            0,
         )
 
     def test_workspace_slug_is_case_insensitively_unique(self):

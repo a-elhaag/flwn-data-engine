@@ -112,19 +112,17 @@ class TeamMembersApiTests(CrudHarness):
         teams = self.client.get(f"/workspaces/{self.team_a}/members/{ana}/teams").json()["items"]
         self.assertEqual({team["id"] for team in teams}, {mine, other})
 
-    def test_a_team_with_projects_cannot_be_deleted_until_they_move(self):
+    def test_deleting_a_team_leaves_its_projects_without_one(self):
         base = f"/workspaces/{self.team_a}"
         team = self.team(self.team_a)
         project = self.client.post(
             f"{base}/projects", json={"key": "DATA", "name": "Data", "team_id": team}
         )
         self.assertEqual(project.status_code, 201, project.text)
-        blocked = self.client.delete(f"{base}/teams/{team}")
-        self.assertEqual(blocked.status_code, 409, blocked.text)
-        self.assertEqual(self.client.get(f"{base}/teams/{team}").status_code, 200)
-
-        self.client.delete(f"{base}/projects/{project.json()['id']}")
         self.assertEqual(self.client.delete(f"{base}/teams/{team}").status_code, 204)
+        self.assertEqual(self.client.get(f"{base}/teams/{team}").status_code, 404)
+        survivor = self.client.get(f"{base}/projects/{project.json()['id']}")
+        self.assertEqual((survivor.status_code, survivor.json()["team_id"]), (200, None))
 
     def test_changing_members_needs_an_administrator(self):
         base = f"/workspaces/{self.team_a}/teams"

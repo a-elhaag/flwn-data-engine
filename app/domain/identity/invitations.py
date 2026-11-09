@@ -21,7 +21,7 @@ from app.domain.identity.members_teams import (
     _member_view,
     _workspace,
 )
-from app.domain.identity.users import EMAIL_TAKEN, email_matches
+from app.domain.identity.users import email_matches
 
 TTL = timedelta(days=7)
 
@@ -78,7 +78,6 @@ class InvitationService:
                     Member.workspace_id == self.workspace_id,
                     email_matches(email),
                     Member.status == "active",
-                    Member.deleted_at.is_(None),
                 )
             )
             if active is not None:
@@ -155,14 +154,8 @@ class InvitationService:
                 raise IdentityConflict(f"invitation is {row.status}", code="invitation_not_pending")
             if row.expires_at <= now:
                 raise IdentityConflict("invitation has expired", code="invitation_expired")
-            # Only live accounts count. A soft-deleted account keeps its email in the unique
-            # index, so an address held only by one cannot be joined: refuse, do not reuse it.
-            user = session.scalar(
-                select(User).where(email_matches(row.email), User.deleted_at.is_(None))
-            )
+            user = session.scalar(select(User).where(email_matches(row.email)))
             if user is None:
-                if session.scalar(select(User.id).where(email_matches(row.email))) is not None:
-                    raise IdentityConflict(EMAIL_TAKEN, code="email_taken")
                 if not name or not name.strip():
                     raise Invalid(
                         "name is required to create the account", code="account_name_required"
@@ -170,7 +163,7 @@ class InvitationService:
                 user = User(email=row.email, name=name.strip())
                 session.add(user)
                 session.flush()
-            # A person who was suspended or removed before gets their old membership row back.
+            # A suspended person gets their old membership row back. A removed one has none.
             member = session.scalar(
                 select(Member).where(
                     Member.workspace_id == self.workspace_id, Member.user_id == user.id
@@ -185,7 +178,7 @@ class InvitationService:
                     status="active",
                 )
                 session.add(member)
-            elif member.status == "active" and member.deleted_at is None:
+            elif member.status == "active":
                 raise IdentityConflict(
                     "user is already an active member of this workspace",
                     code="already_active_member",
@@ -193,7 +186,6 @@ class InvitationService:
             else:
                 member.status = "active"
                 member.role = row.role
-                member.deleted_at = None
             row.status = "accepted"
             row.accepted_at = now
             session.flush()

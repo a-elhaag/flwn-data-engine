@@ -77,7 +77,7 @@ READ_TABLES = {
 }
 # Never sent by clients or returned in full: the database or search machinery owns them.
 HIDDEN = {"tsv", "embedding"}
-SERVER_SET = {"id", "workspace_id", "created_at", "updated_at", "deleted_at"}
+SERVER_SET = {"id", "workspace_id", "created_at", "updated_at"}
 # Set from the caller's token, never from the body: a client cannot claim to be someone else.
 AUTHOR = {"created_by", "last_edited_by"}
 
@@ -224,7 +224,6 @@ def _register(table, models: dict) -> dict:
     key_path = "/".join("{" + name + "}" for name in key_names)
     base = _path(table.name)
     scoped = "workspace_id" in table.columns  # catalog_skills is shared: no workspace column
-    has_deleted = "deleted_at" in table.columns
     has_created = "created_at" in table.columns
     has_actor = "created_by" in table.columns
     has_editor = "last_edited_by" in table.columns
@@ -255,8 +254,6 @@ def _register(table, models: dict) -> dict:
             query = query.where(model.workspace_id == workspace_id)
         for name, value in keys.items():
             query = query.where(getattr(model, name) == value)
-        if has_deleted:
-            query = query.where(model.deleted_at.is_(None))
         row = session.scalar(query)
         if row is None:
             raise api_error(404, f"{one}_not_found", f"{label} not found")
@@ -267,8 +264,6 @@ def _register(table, models: dict) -> dict:
             query = select(model)
             if scoped:
                 query = query.where(model.workspace_id == workspace_id)
-            if has_deleted:
-                query = query.where(model.deleted_at.is_(None))
             order = (
                 [model.created_at, *[getattr(model, n) for n in key_names]]
                 if has_created
@@ -407,10 +402,7 @@ def _register(table, models: dict) -> dict:
     def delete_row(workspace_id, request, **keys):
         with session_for(str(workspace_id)) as session:
             row = lookup(session, workspace_id, keys)
-            if has_deleted:
-                row.deleted_at = datetime.now().astimezone()
-            else:
-                session.delete(row)
+            session.delete(row)
             session.flush()
         return Response(status_code=204)
 
@@ -426,7 +418,7 @@ def _register(table, models: dict) -> dict:
     )
     summaries[f"DELETE /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Delete {label}",
-        "Soft delete: the row is kept and hidden." if has_deleted else "Hard delete. Returns 204.",
+        "Hard delete. Returns 204.",
     )
     return summaries
 

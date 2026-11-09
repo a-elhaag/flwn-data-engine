@@ -57,7 +57,7 @@ def get_user(user_id: UUID):
 @router.get(
     "/{user_id}/memberships",
     response_model=MembershipList,
-    responses={404: {"description": "User not found or deleted"}},
+    responses={404: {"description": "User not found"}},
 )
 def list_user_memberships(
     user_id: UUID,

@@ -14,7 +14,6 @@ from app.db.base import (
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -23,7 +22,7 @@ from app.db.base import (
 )
 
 
-class Collection(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Collection(IdPk, Tenant, Stamps, Base):
     """A Notion database: a schema of properties. Each row is a doc."""
 
     __tablename__ = "collections"
@@ -45,7 +44,7 @@ class Collection(IdPk, Tenant, Stamps, SoftDelete, Base):
     )
 
 
-class Doc(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Doc(IdPk, Tenant, Stamps, Base):
     __tablename__ = "docs"
 
     team_id: Mapped[uuid.UUID | None]
@@ -223,7 +222,6 @@ class Message(IdPk, Tenant, Created, Base):
     metadata_: Mapped[dict] = mapped_column("metadata", server_default=EMPTY_JSON)
     pinned_at: Mapped[datetime | None]
     edited_at: Mapped[datetime | None]
-    deleted_at: Mapped[datetime | None]
 
     __table_args__ = (
         tenant_unique(),
@@ -260,7 +258,6 @@ class Comment(IdPk, Tenant, Stamps, Base):
     resolved_at: Mapped[datetime | None]
     resolved_by: Mapped[uuid.UUID | None]
     edited_at: Mapped[datetime | None]
-    deleted_at: Mapped[datetime | None]
 
     __table_args__ = (
         tenant_unique(),

@@ -364,6 +364,7 @@ class Approval(IdPk, Tenant, Created, Base):
         tenant_unique(),
         UniqueConstraint("workspace_id", "run_id", "request_key"),
         UniqueConstraint("workspace_id", "execution_run_id"),
+        # No action: atom approvals are durable records; the atom delete refuses (atom_in_use).
         tfk("atom_id", "atoms"),
         tfk("execution_run_id", "agent_runs"),
         CheckConstraint(

@@ -34,9 +34,7 @@ def lock_owners(session, workspace_ids) -> dict:
     if ids:
         session.execute(
             select(Member.id)
-            .where(
-                Member.workspace_id.in_(ids), Member.role == "owner", Member.deleted_at.is_(None)
-            )
+            .where(Member.workspace_id.in_(ids), Member.role == "owner")
             .order_by(Member.workspace_id, Member.id)
             .with_for_update()
         ).all()
@@ -54,8 +52,6 @@ def active_owners(session, workspace_id, *, excluding_user=None) -> int:
             Member.role == "owner",
             Member.type == "HUMAN",
             Member.status == "active",
-            Member.deleted_at.is_(None),
-            User.deleted_at.is_(None),
         )
     )
     if excluding_user is not None:
@@ -71,9 +67,7 @@ def ensure_an_owner(session, workspace_id, before: dict) -> None:
     """
     workspace_id = uuid.UUID(str(workspace_id))
     session.flush()
-    live = session.scalar(
-        select(Workspace.id).where(Workspace.id == workspace_id, Workspace.deleted_at.is_(None))
-    )
+    live = session.scalar(select(Workspace.id).where(Workspace.id == workspace_id))
     if (
         live is not None
         and before.get(workspace_id, 0) > 0

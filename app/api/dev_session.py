@@ -122,9 +122,7 @@ def _user(email: str, name: str) -> str:
 def _find_workspace(slug: str):
     with service_session() as session:
         return session.execute(
-            select(Workspace.id, Workspace.settings).where(
-                func.lower(Workspace.slug) == slug, Workspace.deleted_at.is_(None)
-            )
+            select(Workspace.id, Workspace.settings).where(func.lower(Workspace.slug) == slug)
         ).first()
 
 
@@ -162,7 +160,6 @@ def _find_member(workspace_id: str, email: str):
             .where(
                 Member.workspace_id == workspace_id,
                 email_matches(email),
-                Member.deleted_at.is_(None),
             )
         ).first()
 

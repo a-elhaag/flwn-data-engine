@@ -1,7 +1,7 @@
 """Atom configuration, immutable prompt versions, skill stores and explicit grants.
 
-An atom's member is its identity; deleting an atom or skill is a soft delete so historical
-runs and pinned skill versions remain meaningful. Connections contain references, not tokens.
+An atom's member is its identity. Deleting an atom removes it with its versions; an atom with
+approval records is killed instead. Connections contain references, not tokens.
 """
 
 import uuid
@@ -28,7 +28,6 @@ from app.db.base import (
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -51,7 +50,7 @@ PERMISSION_CEILINGS = ("read", "draft", "write", "destructive")
 SKILL_TSV = "to_tsvector('simple', coalesce(description, '') || ' ' || coalesce(when_to_use, ''))"
 
 
-class Atom(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Atom(IdPk, Tenant, Stamps, Base):
     __tablename__ = "atoms"
 
     member_id: Mapped[uuid.UUID]
@@ -83,9 +82,11 @@ class Atom(IdPk, Tenant, Stamps, SoftDelete, Base):
             name="nonnegative_caps",
         ),
         CheckConstraint(
-            "status <> 'active' or (active_version_id is not null and deleted_at is null)",
+            "status <> 'active' or active_version_id is not null",
             name="active_version_required",
         ),
+        # The atom's member is its identity. Delete the atom (which takes its versions), then its
+        # member; deleting the member first is refused (no action), like a personal owner.
         tfk("member_id", "members"),
         tfk("owner_member_id", "members"),
         # The version must belong to this atom, not just to the same workspace.
@@ -147,7 +148,7 @@ def _skill_constraints():
     )
 
 
-class Skill(IdPk, Tenant, Stamps, SoftDelete, SkillContent, Base):
+class Skill(IdPk, Tenant, Stamps, SkillContent, Base):
     __tablename__ = "skills"
 
     scope: Mapped[str]
@@ -168,7 +169,7 @@ class Skill(IdPk, Tenant, Stamps, SoftDelete, SkillContent, Base):
     )
 
 
-class CatalogSkill(IdPk, Stamps, SoftDelete, SkillContent, Base):
+class CatalogSkill(IdPk, Stamps, SkillContent, Base):
     __tablename__ = "catalog_skills"
 
     __table_args__ = (
@@ -211,9 +212,12 @@ class AtomSkill(IdPk, Tenant, Created, Base):
         ForeignKeyConstraint(
             ["workspace_id", "skill_id", "skill_version"],
             ["skills.workspace_id", "skills.id", "skills.version"],
+            ondelete="CASCADE",  # a deleted skill detaches from the atoms that used it
         ),
         ForeignKeyConstraint(
-            ["catalog_skill_id", "skill_version"], ["catalog_skills.id", "catalog_skills.version"]
+            ["catalog_skill_id", "skill_version"],
+            ["catalog_skills.id", "catalog_skills.version"],
+            ondelete="CASCADE",
         ),
     )
 

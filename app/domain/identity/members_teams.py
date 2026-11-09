@@ -1,15 +1,14 @@
 """Trusted workspace member and team management."""
 
 import uuid
-from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
-from app.db.models.planning import Project
 from app.db.session import session_for
-from app.domain.error_codes import DomainError, Invalid
+from app.domain.error_codes import DomainError, Invalid, InvalidReference
 from app.domain.identity.email import canonical_email
 from app.domain.identity.owners import ensure_an_owner, lock_owners
 from app.domain.identity.users import email_matches
@@ -33,11 +32,7 @@ class InvalidTarget(DomainError, ValueError):
 
 
 def _workspace(session, workspace_id):
-    row = session.scalar(
-        select(Workspace).where(
-            Workspace.id == uuid.UUID(str(workspace_id)), Workspace.deleted_at.is_(None)
-        )
-    )
+    row = session.scalar(select(Workspace).where(Workspace.id == uuid.UUID(str(workspace_id))))
     if row is None:
         raise IdentityNotFound("workspace not found", code="workspace_not_found")
 
@@ -47,7 +42,6 @@ def _member(session, workspace_id, member_id):
         select(Member).where(
             Member.workspace_id == uuid.UUID(str(workspace_id)),
             Member.id == uuid.UUID(str(member_id)),
-            Member.deleted_at.is_(None),
         )
     )
     if row is None:
@@ -61,7 +55,6 @@ def _team(session, workspace_id, team_id):
         select(Team).where(
             Team.workspace_id == uuid.UUID(str(workspace_id)),
             Team.id == uuid.UUID(str(team_id)),
-            Team.deleted_at.is_(None),
         )
     )
     if row is None:
@@ -118,7 +111,7 @@ class MemberService:
             _workspace(session, self.workspace_id)
             rows = session.scalars(
                 select(Member)
-                .where(Member.workspace_id == self.workspace_id, Member.deleted_at.is_(None))
+                .where(Member.workspace_id == self.workspace_id)
                 .order_by(Member.created_at, Member.id)
                 .limit(limit)
                 .offset(offset)
@@ -139,9 +132,6 @@ class MemberService:
             user_id = None
             if type == "HUMAN":
                 user = session.scalar(select(User).where(email_matches(normalized_email)))
-                if user is not None and user.deleted_at is not None:
-                    # never link a new membership to a deleted account (see users.delete)
-                    raise IdentityConflict("email cannot be used", code="email_unavailable")
                 if user is None:
                     user = User(email=normalized_email, name=name.strip())
                     session.add(user)
@@ -151,7 +141,6 @@ class MemberService:
                     select(Member.id).where(
                         Member.workspace_id == self.workspace_id,
                         Member.user_id == user_id,
-                        Member.deleted_at.is_(None),
                     )
                 )
                 if duplicate:
@@ -207,9 +196,26 @@ class MemberService:
             _workspace(session, self.workspace_id)
             owners = lock_owners(session, [self.workspace_id])
             row = _member(session, self.workspace_id, member_id)
-            row.deleted_at = datetime.now(UTC)
-            ensure_an_owner(session, self.workspace_id, owners)
-            events.record(session, str(self.workspace_id), self.actor, "member", row.id, "deleted")
+            snapshot = _member_view(session, row)
+            member_id = row.id
+            session.delete(row)
+            try:
+                ensure_an_owner(session, self.workspace_id, owners)  # flushes the delete
+            except IntegrityError as exc:
+                # Atoms and skills the member owns, or what they created, must go first.
+                raise IdentityConflict(
+                    "member still owns atoms, skills or versions; transfer or delete them first",
+                    code="member_in_use",
+                ) from exc
+            events.record(
+                session,
+                str(self.workspace_id),
+                self.actor,
+                "member",
+                member_id,
+                "deleted",
+                {"name": snapshot["name"], "type": snapshot["type"]},
+            )
 
     def transfer_ownership(self, to_member_id, demote_self_to=None):
         """Make another active human member an owner; optionally step the acting owner down.
@@ -225,7 +231,6 @@ class MemberService:
                     select(Member).where(
                         Member.workspace_id == self.workspace_id,
                         Member.id == uuid.UUID(self.actor),
-                        Member.deleted_at.is_(None),
                     )
                 )
             if current is None or not (
@@ -239,7 +244,6 @@ class MemberService:
                 .where(
                     Member.workspace_id == self.workspace_id,
                     Member.id == uuid.UUID(str(to_member_id)),
-                    Member.deleted_at.is_(None),
                 )
                 .with_for_update()
             )
@@ -286,7 +290,6 @@ class TeamService:
                     select(Team)
                     .where(
                         Team.workspace_id == self.workspace_id,
-                        Team.deleted_at.is_(None),
                     )
                     .order_by(Team.created_at, Team.id)
                     .limit(limit)
@@ -324,21 +327,18 @@ class TeamService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = _team(session, self.workspace_id, team_id)
-            owns = session.scalar(
-                select(Project.id).where(
-                    Project.workspace_id == self.workspace_id,
-                    Project.team_id == row.id,
-                    Project.deleted_at.is_(None),
-                )
-            )
-            if owns is not None:
-                raise IdentityConflict(
-                    "team still owns projects; move them to another team first",
-                    code="team_has_projects",
-                )
-            row.deleted_at = datetime.now(UTC)
+            name, team_id = row.name, row.id
+            session.delete(row)  # its projects keep existing, with no team (ON DELETE SET NULL)
             session.flush()
-            events.record(session, str(self.workspace_id), self.actor, "team", row.id, "deleted")
+            events.record(
+                session,
+                str(self.workspace_id),
+                self.actor,
+                "team",
+                team_id,
+                "deleted",
+                {"name": name},
+            )
 
     def members(self, team_id, limit=50, offset=0):
         with session_for(str(self.workspace_id)) as session:
@@ -350,7 +350,6 @@ class TeamService:
                 .where(
                     TeamMember.workspace_id == self.workspace_id,
                     TeamMember.team_id == team.id,
-                    Member.deleted_at.is_(None),
                 )
                 .order_by(TeamMember.joined_at, Member.id)
                 .limit(limit)
@@ -368,7 +367,6 @@ class TeamService:
                     select(Team)
                     .where(
                         Team.workspace_id == self.workspace_id,
-                        Team.deleted_at.is_(None),
                         Team.id.in_(
                             select(TeamMember.team_id).where(
                                 TeamMember.workspace_id == self.workspace_id,
@@ -386,7 +384,14 @@ class TeamService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             team = _team(session, self.workspace_id, team_id)
-            member = _member(session, self.workspace_id, member_id)
+            member = session.scalar(  # the id is in the body: a miss is a 422, not a 404
+                select(Member).where(
+                    Member.workspace_id == self.workspace_id,
+                    Member.id == uuid.UUID(str(member_id)),
+                )
+            )
+            if member is None:
+                raise InvalidReference("member")
             if member.status != "active":
                 raise Invalid(
                     "team members must be active members of this workspace",
@@ -469,7 +474,6 @@ class TeamService:
                     select(Member.id).where(
                         Member.workspace_id == self.workspace_id,
                         Member.id.in_(added) if added else False,
-                        Member.deleted_at.is_(None),
                         Member.status == "active",
                     )
                 )

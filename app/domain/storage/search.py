@@ -49,7 +49,6 @@ def search_files(
         ).where(
             Chunk.workspace_id == workspace,
             Chunk.source_type == "file",
-            File.deleted_at.is_(None),
             File.status == "ready",
             File.index_status == "done",
         )

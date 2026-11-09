@@ -397,7 +397,7 @@ class IndexingTests(IndexingBase):
         original = self.blobs.download
 
         def delete_then_read(container, path, max_bytes):
-            self.sql("update files set deleted_at = now() where id = :i", i=record["id"])
+            self.sql("delete from files where id = :i", i=record["id"])
             return original(container, path, max_bytes)
 
         self.blobs.download = delete_then_read

@@ -103,22 +103,14 @@ class InvitationsApiTests(CrudHarness):
         self.assertEqual(accepted.json()["id"], member["id"])
         self.assertEqual((accepted.json()["status"], accepted.json()["role"]), ("active", "viewer"))
 
-    def test_an_email_held_only_by_a_deleted_account_is_refused(self):
+    def test_an_email_of_a_deleted_account_can_be_invited_again(self):
         email = self.email()
         user = self.client.post("/users", json={"email": email, "name": "Gone"}).json()
         self.assertEqual(self.client.delete(f"/users/{user['id']}").status_code, 204)
         invitation = self.invite(self.team_a, email)
         response = self.accept(self.team_a, invitation["token"], name="Back")
-        self.assertEqual(response.status_code, 409, response.text)
-        self.assertIn("email_taken", response.text)
-        self.assertEqual(
-            self.sql(
-                "select count(*) as n from members where workspace_id = :w and deleted_at is null and user_id = :u",
-                w=self.team_a,
-                u=user["id"],
-            )[0]["n"],
-            0,
-        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertNotEqual(response.json()["user_id"], user["id"])
 
     def test_invitations_are_not_a_generic_table(self):
         from app.api import generic_crud

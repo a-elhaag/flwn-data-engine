@@ -16,7 +16,7 @@ The workspace comes from the token; no tool takes a workspace argument.
 | `atom_connection_report` | no | Report an expired, revoked or unknown own connection. Three distinct failed runs pause the atom; retries are deduplicated. Cannot activate a connection or change permissions. |
 | `atom_connection_set` | no | Attach a Composio connection (pinned toolkit version, permission ceiling, allowed tool slugs), or replace one by passing connection_id. |
 | `atom_create` | no | Create a draft atom. Owners and admins set the daily caps; a plain member may create only their own personal atom, at default caps. Then add a version, grants, connections and a schedule, and activate. |
-| `atom_delete` | no | Soft-delete an atom and stop it. Cannot be undone through this API. |
+| `atom_delete` | no | Delete an atom permanently. Refused while it has approval records (kill it instead). Cannot be undone through this API. |
 | `atom_get` | yes | One atom with its active version, grants, schedules and connections. |
 | `atom_grant_remove` | no | Revoke one grant from an atom. |
 | `atom_grant_set` | no | Give the atom access to a resource at a level (summary, read, write). Repeating it replaces the level. |

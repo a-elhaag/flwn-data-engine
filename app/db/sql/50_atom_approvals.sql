@@ -60,7 +60,7 @@ begin
         if new.decided_at is null or not exists (
             select 1 from members m join atoms a on a.workspace_id = m.workspace_id
             where m.workspace_id = new.workspace_id and m.id = new.decided_by and a.id = new.atom_id
-              and m.type = 'HUMAN' and m.status = 'active' and m.deleted_at is null and m.role <> 'viewer'
+              and m.type = 'HUMAN' and m.status = 'active' and m.role <> 'viewer'
               and (new.assigned_to = m.id or (new.assigned_to is null
                 and (m.role in ('owner','admin') or a.owner_member_id = m.id)))
         ) then
@@ -82,7 +82,7 @@ begin
         end if;
         if not exists (select 1 from agent_runs r join atoms a on a.workspace_id = r.workspace_id
             and a.id = r.atom_id where r.workspace_id = new.workspace_id and r.id = new.execution_run_id
-            and r.status = 'running' and a.status = 'active' and a.deleted_at is null) then
+            and r.status = 'running' and a.status = 'active') then
             raise exception 'approval requires an active execution run' using errcode = '23514';
         end if;
     end if;
