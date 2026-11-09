@@ -6,9 +6,12 @@ Emails are stored in canonical form only (app/identity/email.py).
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 
-from app.db.models.identity import Member, User, Workspace
+import app.db.models  # noqa: F401  (registers every model on Base.metadata)
+from app.db import events
+from app.db.base import Base
+from app.db.models.identity import Member, TeamMember, User, Workspace
 from app.db.session import service_session, session_for
 from app.domain.identity.email import canonical_email, canonical_or_none
 from app.domain.identity.owners import LastOwner, active_owners, lock_owners
@@ -31,6 +34,18 @@ def _user(session, user_id):
     if row is None:
         raise UserNotFound("user not found")
     return row
+
+
+def _has_work(session, member_id) -> bool:
+    """True if any row still points at the member, other than their team seats."""
+    for table in Base.metadata.sorted_tables:
+        if table.name in ("members", "team_members"):
+            continue
+        for column in table.columns:
+            if any(fk.column.table.name == "members" for fk in column.foreign_keys):
+                if session.scalar(select(column).where(column == member_id).limit(1)) is not None:
+                    return True
+    return False
 
 
 def email_matches(email: str):
@@ -97,9 +112,11 @@ class UserService:
             return row
 
     def delete(self, user_id):
-        """Soft delete. Refused (LastOwner) while they are the last active owner of a workspace.
+        """Soft delete the account and its memberships, in one transaction.
 
-        Their memberships are untouched; remove or suspend those separately.
+        A membership the person has done work in is suspended, so the work still shows who did it.
+        One with no work is removed (its team seats go too). Refused (LastOwner) while they are
+        the last active owner of a workspace: make someone else owner first.
         """
         with service_session() as session:
             row = _user(session, user_id)
@@ -116,7 +133,20 @@ class UserService:
                     and not active_owners(session, workspace_id, excluding_user=row.id)
                 ):
                     raise LastOwner()
-            row.deleted_at = datetime.now(UTC)
+            now = datetime.now(UTC)
+            memberships = session.scalars(
+                select(Member).where(Member.user_id == row.id, Member.deleted_at.is_(None))
+            ).all()
+            for member in memberships:
+                if _has_work(session, member.id):
+                    member.status = "suspended"
+                    action = "suspended"
+                else:
+                    session.execute(delete(TeamMember).where(TeamMember.member_id == member.id))
+                    member.deleted_at = now
+                    action = "deleted"
+                events.record(session, str(member.workspace_id), None, "member", member.id, action)
+            row.deleted_at = now
 
     def memberships(self, user_id, *, status=None, type=None):
         """The user's memberships in live workspaces, oldest workspace first.

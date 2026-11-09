@@ -70,8 +70,14 @@ def list_projects(
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    team_id: UUID | None = None,
 ):
-    items = _call(ProjectService(str(workspace_id), actor(request)).list, limit + 1, offset)
+    items = _call(
+        ProjectService(str(workspace_id), actor(request)).list,
+        limit + 1,
+        offset,
+        team_id=team_id,
+    )
     items, has_more = split_page(items, limit)
     return ProjectPage(items=items, limit=limit, offset=offset, has_more=has_more)
 

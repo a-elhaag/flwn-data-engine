@@ -65,7 +65,6 @@ READ_TABLES = {
     "atom_schedules",
     "atom_connections",
     "atom_skills",
-    "invitations",
     "decisions",
     "catalog_skills",
     # Read-only because a domain route or service owns their writes (issue #18).

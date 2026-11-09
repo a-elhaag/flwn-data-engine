@@ -145,6 +145,13 @@ EXAMPLES: dict[str, dict] = {
     "TeamCreate": {"key": "ENG", "name": "Engineering"},
     "TeamUpdate": {"name": "Platform Engineering"},
     "TeamMembersUpdate": {"member_ids": [MEMBER]},
+    "TeamMemberCreate": {"member_id": MEMBER, "role": "lead"},
+    "TeamMemberUpdate": {"role": "member"},
+    "InvitationCreate": {"email": "sara@acme.com", "role": "member"},
+    "InvitationAccept": {
+        "token": "w3Yk2qVb8RkT1mZpX0sJ9cLh4aNf6uGdE7oQ5iBtPyU",
+        "name": "Sara Ali",
+    },
     "ProjectCreate": {
         "key": "DATA",
         "name": "Data Engine",

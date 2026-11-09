@@ -99,18 +99,27 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 
 | Route | What | Auth |
 | --- | --- | --- |
+| `GET /workspaces/{ws}/invitations` | List invitations | scope `identity:read`, writes `identity:write` |
+| `POST /workspaces/{ws}/invitations` | Invite a person | scope `identity:read`, writes `identity:write` |
+| `POST /workspaces/{ws}/invitations/accept` | Accept an invitation | scope `identity:read`, writes `identity:write` |
+| `POST /workspaces/{ws}/invitations/{invitation_id}/revoke` | Revoke an invitation | scope `identity:read`, writes `identity:write` |
 | `GET /workspaces/{ws}/members` | List members | scope `identity:read`, writes `identity:write` |
 | `POST /workspaces/{ws}/members` | Create a member | scope `identity:read`, writes `identity:write` |
 | `GET /workspaces/{ws}/members/{member_id}` | Get a member | scope `identity:read`, writes `identity:write` |
 | `PATCH /workspaces/{ws}/members/{member_id}` | Update a member | scope `identity:read`, writes `identity:write` |
 | `DELETE /workspaces/{ws}/members/{member_id}` | Remove a member | scope `identity:read`, writes `identity:write` |
+| `GET /workspaces/{ws}/members/{member_id}/teams` | List a member's teams | scope `identity:read`, writes `identity:write` |
 | `POST /workspaces/{ws}/ownership/transfer` | Transfer ownership | scope `identity:read`, writes `identity:write` |
 | `GET /workspaces/{ws}/teams` | List teams | scope `identity:read`, writes `identity:write` |
 | `POST /workspaces/{ws}/teams` | Create a team | scope `identity:read`, writes `identity:write` |
 | `GET /workspaces/{ws}/teams/{team_id}` | Get a team | scope `identity:read`, writes `identity:write` |
 | `PATCH /workspaces/{ws}/teams/{team_id}` | Update a team | scope `identity:read`, writes `identity:write` |
 | `DELETE /workspaces/{ws}/teams/{team_id}` | Delete a team | scope `identity:read`, writes `identity:write` |
+| `GET /workspaces/{ws}/teams/{team_id}/members` | List team members | scope `identity:read`, writes `identity:write` |
+| `POST /workspaces/{ws}/teams/{team_id}/members` | Add a team member | scope `identity:read`, writes `identity:write` |
 | `PUT /workspaces/{ws}/teams/{team_id}/members` | Replace team members | scope `identity:read`, writes `identity:write` |
+| `PATCH /workspaces/{ws}/teams/{team_id}/members/{member_id}` | Change a team member's role | scope `identity:read`, writes `identity:write` |
+| `DELETE /workspaces/{ws}/teams/{team_id}/members/{member_id}` | Remove a team member | scope `identity:read`, writes `identity:write` |
 
 ## Meetings
 
@@ -242,8 +251,6 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/folders/{id}` | Get one folder | scope `files:read` |
 | `PATCH /workspaces/{ws}/folders/{id}` | Update folders | scope `files:write` |
 | `DELETE /workspaces/{ws}/folders/{id}` | Delete folders | scope `files:write` |
-| `GET /workspaces/{ws}/invitations` | List invitations | service key only |
-| `GET /workspaces/{ws}/invitations/{id}` | Get one invitation | service key only |
 | `GET /workspaces/{ws}/labels` | List labels | scope `planning:read` |
 | `POST /workspaces/{ws}/labels` | Create labels | scope `planning:write` |
 | `GET /workspaces/{ws}/labels/{id}` | Get one label | scope `planning:read` |

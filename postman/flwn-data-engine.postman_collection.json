@@ -2581,6 +2581,79 @@
       "name": "Identity",
       "item": [
         {
+          "name": "POST Invite a person",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/invitations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sara@acme.com\",\n  \"role\": \"member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([201, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List invitations",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/invitations"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "POST Create a member",
           "request": {
             "method": "POST",
@@ -2713,6 +2786,49 @@
               }
             ],
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/teams"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Accept an invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/invitations/accept",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"w3Yk2qVb8RkT1mZpX0sJ9cLh4aNf6uGdE7oQ5iBtPyU\",\n  \"name\": \"Sara Ali\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -2978,6 +3094,140 @@
           ]
         },
         {
+          "name": "POST Revoke an invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/invitations/{{invitationId}}/revoke"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List a member's teams",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/members/{{memberId}}/teams"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Add a team member",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/teams/{{teamId}}/members",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"member_id\": \"0b9d6c52-8e1f-4a37-b2c4-5d7e9f1a3c68\",\n  \"role\": \"lead\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([201, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });",
+                  "pm.test(\"remember memberId\", () => pm.environment.set(\"memberId\", pm.response.json().id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET List team members",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/teams/{{teamId}}/members"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "PUT Replace team members",
           "request": {
             "method": "PUT",
@@ -3013,6 +3263,79 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH Change a team member's role",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/teams/{{teamId}}/members/{{memberId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "DELETE Remove a team member",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/teams/{{teamId}}/members/{{memberId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]
@@ -5659,36 +5982,6 @@
           ]
         },
         {
-          "name": "GET List invitations",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/invitations"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "POST Create labels",
           "request": {
             "method": "POST",
@@ -7429,36 +7722,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Get one invitation",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/invitations/{{id}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]

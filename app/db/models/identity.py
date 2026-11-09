@@ -121,6 +121,16 @@ class Invitation(IdPk, Tenant, Created, Base):
     )
 
 
+# One live invitation per person: a re-invite replaces the pending row instead of adding one.
+Index(
+    "uq_invitations_pending_email",
+    Invitation.workspace_id,
+    func.lower(Invitation.email),
+    unique=True,
+    postgresql_where=text("status = 'pending'"),
+)
+
+
 class Team(IdPk, Tenant, Stamps, SoftDelete, Base):
     __tablename__ = "teams"
 

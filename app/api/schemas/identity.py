@@ -4,7 +4,18 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.db.base import MEMBER_ROLES, MEMBER_STATUSES
 from app.domain.identity.email import canonical_email
@@ -20,6 +31,27 @@ Email = Annotated[
     AfterValidator(canonical_email),
 ]
 
+# Workspace settings. The engine owns the keys below: each is type-checked on create and update,
+# and a wrong type or value is a 422. Any other key belongs to the product, is stored as given,
+# and is validated by the backend. Add an engine key here when the engine starts reading one.
+ENGINE_SETTINGS = {
+    "recording_retention_days": (
+        TypeAdapter(Annotated[StrictInt, Field(ge=1, le=3650)]),
+        "a whole number of days from 1 to 3650",
+    ),
+    "dev_session": (TypeAdapter(StrictBool), "true or false"),  # marks a dev sign-in workspace
+}
+
+
+def check_settings(settings: dict) -> dict:
+    for key, (adapter, expected) in ENGINE_SETTINGS.items():
+        if key in settings:
+            try:
+                adapter.validate_python(settings[key])
+            except ValidationError:
+                raise ValueError(f"{key} must be {expected}") from None
+    return settings
+
 
 class WorkspaceCreate(BaseModel):
     name: NonBlank
@@ -28,12 +60,22 @@ class WorkspaceCreate(BaseModel):
     description: Annotated[str, Field(max_length=2000)] | None = None
     settings: dict = Field(default_factory=dict)
 
+    @field_validator("settings")
+    @classmethod
+    def engine_settings(cls, value: dict) -> dict:
+        return check_settings(value)
+
 
 class WorkspaceUpdate(BaseModel):
     name: NonBlank | None = None
     slug: Slug | None = None
     description: Annotated[str, Field(max_length=2000)] | None = None
     settings: dict | None = None
+
+    @field_validator("settings")
+    @classmethod
+    def engine_settings(cls, value: dict | None) -> dict | None:
+        return None if value is None else check_settings(value)
 
     @model_validator(mode="after")
     def has_updates(self):
@@ -265,3 +307,61 @@ class OwnershipTransferOut(BaseModel):
     workspace_id: UUID
     from_member: MemberOut
     to_member: MemberOut
+
+
+class TeamMemberCreate(BaseModel):
+    member_id: UUID
+    role: Literal["lead", "member"] = "member"
+
+
+class TeamMemberUpdate(BaseModel):
+    role: Literal["lead", "member"]
+
+
+class TeamMemberOut(BaseModel):
+    member_id: UUID
+    name: str | None
+    type: str
+    status: str
+    role: str
+    joined_at: datetime
+
+
+class TeamMemberPage(BaseModel):
+    items: list[TeamMemberOut]
+    limit: int
+    offset: int
+    has_more: bool = False
+
+
+class InvitationCreate(BaseModel):
+    email: Email
+    role: Literal["admin", "member", "viewer"] = "member"
+
+
+class InvitationAccept(BaseModel):
+    token: NonBlank
+    name: NonBlank | None = None  # needed only when the person has no account yet
+
+
+class InvitationOut(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    email: str
+    role: str
+    status: str
+    invited_by: UUID | None
+    expires_at: datetime
+    accepted_at: datetime | None
+    created_at: datetime
+
+
+class InvitationCreated(InvitationOut):
+    token: str  # shown once; only its hash is stored
+
+
+class InvitationPage(BaseModel):
+    items: list[InvitationOut]
+    limit: int
+    offset: int
+    has_more: bool = False
