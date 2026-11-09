@@ -84,7 +84,7 @@ def ingest_transcript(
 
 
 @router.get("/{meeting_id}/transcript", dependencies=[MEETINGS_READ])
-def get_transcript(
+def get_meeting_transcript(
     meeting_id: str,
     meetings: Meetings,
     limit: Annotated[int, Query(ge=0, le=2000)] = 500,

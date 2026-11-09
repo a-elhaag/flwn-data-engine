@@ -236,6 +236,7 @@ def _register(table, models: dict) -> dict:
         for name in key_names
     ]
     label = table.name.replace("_", " ")
+    one = table.name[:-1] if table.name.endswith("s") else table.name  # operation ids
     read_scope, write_scope = ACCESS.get(table.name, (None, None))
     read_guard = auth.allow(read_scope)
     write_guard = auth.allow(write_scope)  # no write scope: the service key only, never a token
@@ -290,6 +291,7 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         base,
         list_rows,
+        name=f"list_{table.name}",
         methods=["GET"],
         response_model=models["page"],
         dependencies=[read_guard],
@@ -309,6 +311,7 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         f"{base}/{key_path}",
         get_row,
+        name=f"get_{one}",
         methods=["GET"],
         response_model=models["out"],
         dependencies=[read_guard],
@@ -345,6 +348,7 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         base,
         create_row,
+        name=f"create_{one}",
         methods=["POST"],
         status_code=201,
         response_model=models["out"],
@@ -381,6 +385,7 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         f"{base}/{key_path}",
         update_row,
+        name=f"update_{one}",
         methods=["PATCH"],
         response_model=models["out"],
         dependencies=[write_guard],
@@ -405,6 +410,7 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         f"{base}/{key_path}",
         delete_row,
+        name=f"delete_{one}",
         methods=["DELETE"],
         status_code=204,
         dependencies=[write_guard],

@@ -177,3 +177,23 @@ class ExplorerRouteTests(MemoryHarness):
         for row in explorer.operations(spec, names):
             if row["table"] is not None:
                 self.assertIn(row["table"], names)
+
+
+class OperationIdTests(unittest.TestCase):
+    """Operation ids are short, snake_case and unique: clients name their functions from them."""
+
+    def test_operation_ids_are_short_snake_case_and_unique(self):
+        import re
+        from collections import Counter
+
+        from app.main import create_app
+
+        ids = [
+            operation["operationId"]
+            for methods in create_app().openapi()["paths"].values()
+            for operation in methods.values()
+            if isinstance(operation, dict) and "operationId" in operation
+        ]
+        self.assertEqual({i: n for i, n in Counter(ids).items() if n > 1}, {})
+        self.assertEqual([i for i in ids if not re.fullmatch(r"[a-z][a-z0-9_]*", i)], [])
+        self.assertEqual([i for i in ids if len(i) > 40], [])

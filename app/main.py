@@ -118,6 +118,10 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="flwn-data-engine",
+        # Short, stable operation ids in Python style (create_task, list_member_tasks): the route's
+        # function name. Clients such as the Go one name their functions from these ids; they do
+        # not have to match Go style, they only have to stay short and unique.
+        generate_unique_id_function=lambda route: route.name,
         lifespan=lifespan,
         description=DESCRIPTION,
         openapi_tags=TAGS,
