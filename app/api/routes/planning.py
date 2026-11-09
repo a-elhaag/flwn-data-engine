@@ -275,6 +275,7 @@ def update_sprint(
     )
 
 
+BACKLOG = SprintComplete()  # the default when the request has no body
 SPRINT_409 = {409: {"description": "invalid_sprint_transition, sprint_already_active, ..."}}
 
 
@@ -299,7 +300,7 @@ def complete_sprint(
     workspace_id: WorkspaceId,
     project_id: UUID,
     sprint_id: UUID,
-    body: SprintComplete = SprintComplete(),
+    body: SprintComplete = BACKLOG,
 ):
     target = body.move_open_tasks_to
     return _call(
