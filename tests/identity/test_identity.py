@@ -386,6 +386,50 @@ class WorkspacesApiTests(CrudHarness):
         # the workspace's events are part of it, so they go too
         self.assertEqual(self.events(workspace_id), [])
 
+    def test_workspace_delete_records_derivative_and_report_blobs_too(self):
+        owner = self.owner()
+        workspace_id = self.client.post(
+            "/workspaces",
+            json={
+                "name": "Derived",
+                "slug": f"derived-{uuid.uuid4().hex[:8]}",
+                "owner_user_id": owner,
+            },
+        ).json()["id"]
+        file_id = self.sql(
+            "insert into files (workspace_id, kind, name, container, blob_path)"
+            " values (:w, 'document', 'b.pdf', 'workspace-files', :p) returning id",
+            w=workspace_id,
+            p=f"{workspace_id}/docs/b.pdf",
+        )[0]["id"]
+        self.sql(
+            "insert into file_derivatives (workspace_id, file_id, kind, container, blob_path)"
+            " values (:w, :f, 'thumbnail', 'workspace-files', :p)",
+            w=workspace_id,
+            f=file_id,
+            p=f"{workspace_id}/thumbs/b.png",
+        )
+        self.sql(
+            "insert into agent_reports (workspace_id, kind, title, container, blob_path)"
+            " values (:w, 'plan', 'R', 'workspace-files', :p)",
+            w=workspace_id,
+            p=f"{workspace_id}/reports/r.md",
+        )
+        self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
+        purged = self.sql(
+            "select blob_path from blob_purges where workspace_id = :w", w=workspace_id
+        )
+        self.assertEqual(
+            sorted(r["blob_path"] for r in purged),
+            sorted(
+                [
+                    f"{workspace_id}/docs/b.pdf",
+                    f"{workspace_id}/thumbs/b.png",
+                    f"{workspace_id}/reports/r.md",
+                ]
+            ),
+        )
+
     def test_workspace_delete_records_its_blobs_for_the_reaper(self):
         owner = self.owner()
         workspace_id = self.client.post(
