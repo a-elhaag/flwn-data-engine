@@ -43,7 +43,8 @@ class FullJourneyTest(CrudHarness):
             "post", "/projects", 201, json={"key": "FLWN", "name": "Flwn", "team_id": team["id"]}
         )
         pid = f"/projects/{project['id']}"
-        sprint = call("post", f"{pid}/sprints", 201, json={"name": "Sprint 1", "status": "active"})
+        sprint = call("post", f"{pid}/sprints", 201, json={"name": "Sprint 1"})
+        call("post", f"{pid}/sprints/{sprint['id']}/start", 200)
         item = call("post", f"{pid}/work-items", 201, json={"title": "Login", "type": "FEATURE"})
         tasks = [
             call(

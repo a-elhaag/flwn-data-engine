@@ -1,7 +1,7 @@
 """Request and response schemas for projects, work items, and tasks."""
 
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -258,16 +258,16 @@ SPRINT_STATUSES = {"planned", "active", "completed"}
 
 
 class SprintCreate(BaseModel):
+    # A sprint always starts `planned`; `status` is refused. Use .../start and .../complete.
+    model_config = ConfigDict(extra="forbid")
+
     name: NonBlank
     goal: Annotated[str, Field(max_length=10000)] | None = None
-    status: str = "planned"
     start_date: date | None = None
     end_date: date | None = None
 
     @model_validator(mode="after")
     def validate_sprint(self):
-        if self.status not in SPRINT_STATUSES:
-            raise ValueError("invalid sprint status")
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValueError("end_date cannot be before start_date")
         return self
@@ -303,8 +303,16 @@ class SprintOut(BaseModel):
     status: str
     start_date: date | None
     end_date: date | None
+    started_at: datetime | None
+    completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class SprintComplete(BaseModel):
+    """Where the unfinished tasks go: the backlog, or a planned sprint of the same project."""
+
+    move_open_tasks_to: Literal["backlog"] | UUID = "backlog"
 
 
 class SprintPage(BaseModel):

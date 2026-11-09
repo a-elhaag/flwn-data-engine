@@ -123,6 +123,8 @@ class Sprint(IdPk, Tenant, Stamps, Base):
     status: Mapped[str] = mapped_column(server_default="planned")
     start_date: Mapped[date | None]
     end_date: Mapped[date | None]
+    started_at: Mapped[datetime | None]  # set by the engine when the sprint becomes active
+    completed_at: Mapped[datetime | None]  # set by the engine when it becomes completed
 
     __table_args__ = (
         tenant_unique(),
@@ -133,6 +135,13 @@ class Sprint(IdPk, Tenant, Stamps, Base):
         ),
         tfk("project_id", "projects", "cascade"),
         Index("ix_sprints_project_id_status", "project_id", "status"),
+        # At most one active sprint per project.
+        Index(
+            "uq_sprints_one_active",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
 
