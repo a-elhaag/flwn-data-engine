@@ -185,6 +185,22 @@ class IdentityApiTests(CrudHarness):
             self.client.get(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 404
         )
 
+    def test_a_deleted_account_cannot_be_linked_by_email(self):
+        base = f"/workspaces/{self.team_a}/members"
+        first = self.client.post(
+            base, json={"type": "HUMAN", "name": "Gone", "email": "gone@example.com"}
+        ).json()
+        self.assertEqual(self.client.delete(f"{base}/{first['id']}").status_code, 204)
+        # the user account is still there (soft-deleted via the users route)
+        user_id = first["user_id"]
+        self.assertEqual(self.client.delete(f"/users/{user_id}").status_code, 204)
+        again = self.client.post(
+            base,
+            json={"type": "HUMAN", "name": "Back", "email": "gone@example.com"},
+        )
+        self.assertEqual(again.status_code, 409, again.text)
+        self.assertEqual(again.json()["detail"], "email belongs to a deleted account")
+
     def test_member_update_cannot_change_the_user_account(self):
         base = f"/workspaces/{self.team_a}/members"
         person = self.client.post(
