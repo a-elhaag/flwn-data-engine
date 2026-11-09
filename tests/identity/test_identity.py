@@ -199,7 +199,7 @@ class IdentityApiTests(CrudHarness):
             json={"type": "HUMAN", "name": "Back", "email": "gone@example.com"},
         )
         self.assertEqual(again.status_code, 409, again.text)
-        self.assertEqual(again.json()["detail"], "email belongs to a deleted account")
+        self.assertEqual(again.json()["detail"], "email cannot be used")
 
     def test_member_update_cannot_change_the_user_account(self):
         base = f"/workspaces/{self.team_a}/members"
