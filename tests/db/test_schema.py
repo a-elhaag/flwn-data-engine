@@ -610,6 +610,32 @@ class EmailMigrationTest(unittest.TestCase):
         )
         self.assertEqual(version, "0005")
 
+    def test_private_teams_stop_the_visibility_migration(self):
+        cfg, engine = self.fresh(revision="0009")
+        with engine.begin() as conn:
+            ws = conn.execute(
+                text("insert into workspaces (name, slug) values ('W', 'w') returning id")
+            ).scalar_one()
+            team = conn.execute(
+                text(
+                    "insert into teams (workspace_id, key, name, visibility) "
+                    "values (:w, 'ENG', 'Eng', 'private') returning id"
+                ),
+                {"w": ws},
+            ).scalar_one()
+        with self.assertRaises(RuntimeError) as raised:
+            command.upgrade(cfg, "0010")
+        self.assertIn(str(team), str(raised.exception))
+        with engine.connect() as conn:
+            self.assertIsNotNone(
+                conn.scalar(
+                    text(
+                        "select column_name from information_schema.columns "
+                        "where table_name = 'teams' and column_name = 'visibility'"
+                    )
+                )
+            )
+
     def test_collisions_and_invalid_addresses_stop_the_migration(self):
         for emails in (
             ("x@B\u00fccher.example", "x@xn--bcher-kva.example"),  # one canonical address
