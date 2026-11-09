@@ -7,8 +7,10 @@ from sqlalchemy import Boolean, CheckConstraint, Float, Index, UniqueConstraint,
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
+    CHANNEL_TYPES,
     EMPTY_JSON,
     EMPTY_LIST,
+    MESSAGE_KINDS,
     Base,
     Created,
     IdPk,
@@ -184,7 +186,7 @@ class Channel(IdPk, Tenant, Stamps, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("type", "team", "project", "group", "dm", "agent"),
+        one_of("type", *CHANNEL_TYPES),
         tfk("team_id", "teams", "cascade"),
         tfk("project_id", "projects", "cascade"),
         tfk("created_by", "members", "set null"),
@@ -225,7 +227,7 @@ class Message(IdPk, Tenant, Created, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("kind", "text", "voice_note", "image", "file", "system", "agent_report"),
+        one_of("kind", *MESSAGE_KINDS),
         tfk("channel_id", "channels", "cascade"),
         tfk("author_id", "members", "set null"),
         tfk("parent_message_id", "messages", "set null"),

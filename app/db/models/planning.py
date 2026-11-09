@@ -18,6 +18,8 @@ from app.db.base import (
     EMPTY_JSON,
     EMPTY_LIST,
     PRIORITIES,
+    PROJECT_STATUSES,
+    WORK_ITEM_TYPES,
     WORK_STATUSES,
     ZERO_UUID,
     Base,
@@ -52,7 +54,7 @@ class Project(IdPk, Tenant, Stamps, SoftDelete, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("status", "backlog", "planned", "in_progress", "paused", "completed", "canceled"),
+        one_of("status", *PROJECT_STATUSES),
         tfk("team_id", "teams", "set null"),
         tfk("lead_id", "members", "set null"),
         tfk("created_by", "members", "set null"),
@@ -160,7 +162,7 @@ class WorkItem(IdPk, Tenant, Stamps, SoftDelete, Base):
     __table_args__ = (
         tenant_unique(),
         project_unique(),
-        one_of("type", "FEATURE", "STORY", "BUG"),
+        one_of("type", *WORK_ITEM_TYPES),
         one_of("priority", *PRIORITIES),
         one_of("status", *WORK_STATUSES),
         pfk("backlog_id", "backlogs", "cascade"),

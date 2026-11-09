@@ -403,6 +403,17 @@ class SchemaTest(unittest.TestCase):
             )
         )
 
+    def test_user_name_and_email_rules_hold_outside_the_api(self):
+        for values in (
+            {"email": "blank@example.com", "name": "   "},
+            {"email": "no-at-sign.example.com", "name": "Ada"},
+            {"email": "no-dot@example", "name": "Ada"},
+            {"email": "spaced @example.com", "name": "Ada"},
+        ):
+            with self.subTest(values=values):
+                self.raises_integrity(lambda values=values: add(self.conn, "users", **values))
+        add(self.conn, "users", email="ok@example.com", name="Ada")
+
     def test_task_times_follow_the_status(self):
         a = make_workspace(self.conn, "alpha")
         task = add(
@@ -564,7 +575,7 @@ class MigrationBaselineTest(unittest.TestCase):
 class EmailMigrationTest(unittest.TestCase):
     """0005 rewrites users.email canonically and stops on addresses it cannot merge or read."""
 
-    def fresh(self):
+    def fresh(self, revision="0004"):
         db_support.engine()
         admin = db_support._state["admin"]
         name = f"flwn_mail_{uuid.uuid4().hex[:8]}"
@@ -577,7 +588,7 @@ class EmailMigrationTest(unittest.TestCase):
         env = patch.dict(os.environ, {"DATABASE_ADMIN_URL": url, "DATABASE_URL": url})
         env.start()
         self.addCleanup(env.stop)
-        command.upgrade(cfg, "0004")  # the revision before ours
+        command.upgrade(cfg, revision)  # the revision before ours
         engine = create_engine(url)
         self.addCleanup(engine.dispose)
         return cfg, engine
@@ -616,3 +627,14 @@ class EmailMigrationTest(unittest.TestCase):
                     self.assertEqual(
                         conn.scalar(text("select version_num from alembic_version")), "0004"
                     )
+
+    def test_user_rules_stop_the_migration_and_name_the_users(self):
+        cfg, engine = self.fresh("0008")
+        self.emails(engine, "fine@example.com")
+        with engine.begin() as conn:
+            conn.execute(text("insert into users (email, name) values ('bad@example.com', ' ')"))
+            bad = conn.scalar(text("select id from users where name = ' '"))
+        with self.assertRaisesRegex(RuntimeError, str(bad)):
+            command.upgrade(cfg, "0009")
+        with engine.connect() as conn:
+            self.assertEqual(conn.scalar(text("select version_num from alembic_version")), "0008")

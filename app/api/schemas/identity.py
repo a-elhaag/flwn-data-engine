@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
+from app.db.base import MEMBER_ROLES, MEMBER_STATUSES
 from app.domain.identity.email import canonical_email
 
 NonBlank = Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
@@ -90,9 +91,9 @@ class MemberCreate(BaseModel):
                 raise ValueError("AI members cannot be owners")
         else:
             raise ValueError("type must be HUMAN or AI")
-        if self.role not in {"owner", "admin", "member", "viewer"}:
+        if self.role not in MEMBER_ROLES:
             raise ValueError("invalid member role")
-        if self.status not in {"active", "suspended"}:
+        if self.status not in MEMBER_STATUSES:
             raise ValueError("invalid member status")
         return self
 
@@ -112,9 +113,9 @@ class MemberUpdate(BaseModel):
         for field in self.model_fields_set - {"avatar_url"}:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
-        if self.role is not None and self.role not in {"owner", "admin", "member", "viewer"}:
+        if self.role is not None and self.role not in MEMBER_ROLES:
             raise ValueError("invalid member role")
-        if self.status is not None and self.status not in {"active", "suspended"}:
+        if self.status is not None and self.status not in MEMBER_STATUSES:
             raise ValueError("invalid member status")
         return self
 
@@ -141,13 +142,6 @@ class TeamCreate(BaseModel):
     description: Annotated[str, Field(max_length=2000)] | None = None
     icon: Annotated[str, Field(max_length=100)] | None = None
     color: Annotated[str, Field(max_length=30)] | None = None
-    visibility: str = "workspace"
-
-    @model_validator(mode="after")
-    def validate_visibility(self):
-        if self.visibility not in {"workspace", "private"}:
-            raise ValueError("visibility must be workspace or private")
-        return self
 
 
 class TeamUpdate(BaseModel):
@@ -159,7 +153,6 @@ class TeamUpdate(BaseModel):
     description: Annotated[str, Field(max_length=2000)] | None = None
     icon: Annotated[str, Field(max_length=100)] | None = None
     color: Annotated[str, Field(max_length=30)] | None = None
-    visibility: str | None = None
 
     @model_validator(mode="after")
     def validate_update(self):
@@ -168,8 +161,6 @@ class TeamUpdate(BaseModel):
         for field in self.model_fields_set - {"description", "icon", "color"}:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
-        if self.visibility is not None and self.visibility not in {"workspace", "private"}:
-            raise ValueError("visibility must be workspace or private")
         return self
 
 
@@ -183,7 +174,6 @@ class TeamOut(BaseModel):
     description: str | None
     icon: str | None
     color: str | None
-    visibility: str
     created_at: datetime
     updated_at: datetime
 

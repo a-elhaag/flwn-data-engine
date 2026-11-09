@@ -82,3 +82,11 @@ end $$;
 drop trigger if exists members_owner_is_human on members;
 create trigger members_owner_is_human before insert or update of role, type on members
     for each row execute function members_owner_is_human();
+
+-- A name must not be blank and an email must look like an address, whichever path writes them.
+-- The API checks the same rules first (app/api/schemas/identity.py) and answers 422.
+alter table users drop constraint if exists ck_users_name_not_blank;
+alter table users add constraint ck_users_name_not_blank check (name ~ '\S');
+alter table users drop constraint if exists ck_users_email_shape;
+alter table users add constraint ck_users_email_shape
+    check (email ~ '^[^\s]+@[^\s@]+\.[^\s@]+$');

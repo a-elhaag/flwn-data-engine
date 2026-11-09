@@ -144,8 +144,6 @@ def get_team(request: Request, workspace_id: WorkspaceId, team_id: UUID):
 
 @router.patch("/teams/{team_id}", response_model=TeamOut)
 def update_team(request: Request, workspace_id: WorkspaceId, team_id: UUID, body: TeamUpdate):
-    if "visibility" in body.model_fields_set and not viewer(request).admin:
-        raise HTTPException(403, "only an administrator can change a team's visibility")
     return _call(
         TeamService(str(workspace_id), viewer(request)).update,
         str(team_id),

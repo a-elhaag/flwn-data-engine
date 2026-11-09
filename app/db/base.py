@@ -105,3 +105,10 @@ def one_of(col: str, *values: str) -> CheckConstraint:
 
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
 WORK_STATUSES = ("backlog", "todo", "in_progress", "in_review", "done", "canceled")
+PROJECT_STATUSES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled")
+WORK_ITEM_TYPES = ("FEATURE", "STORY", "BUG")
+MEMBER_ROLES = ("owner", "admin", "member", "viewer")
+MEMBER_STATUSES = ("active", "suspended")
+CHANNEL_TYPES = ("team", "project", "group", "dm", "agent")
+MESSAGE_KINDS = ("text", "voice_note", "image", "file", "system", "agent_report")
+ATOM_STATUSES = ("draft", "active", "paused", "killed")

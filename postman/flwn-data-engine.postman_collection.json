@@ -2675,7 +2675,7 @@
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/teams",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"key\": \"ENG\",\n  \"name\": \"Engineering\",\n  \"visibility\": \"workspace\"\n}",
+              "raw": "{\n  \"key\": \"ENG\",\n  \"name\": \"Engineering\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
