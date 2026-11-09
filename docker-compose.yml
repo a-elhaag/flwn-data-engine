@@ -1,4 +1,6 @@
-# Local dev database: Postgres with pgvector. Tests can use it too (TEST_DATABASE_URL).
+# Whole stack with one command: `cp .env.example .env`, fill in the keys, then `docker compose up`.
+# `./run.sh postgres` still starts only the database, for running the API on your machine.
+# Tests can use the database too (TEST_DATABASE_URL).
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -10,6 +12,42 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flwn -d flwn"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Installs the schema, then creates flwn_app, the role the API connects as. It has no superuser
+  # or BYPASSRLS, which row-level workspace isolation needs. Safe to run again.
+  install:
+    build: .
+    image: flwn-data-engine:local
+    command: ["python", "-m", "app.db.install", "--app-role", "flwn_app"]
+    environment:
+      DATABASE_ADMIN_URL: postgresql+psycopg://flwn:flwn@postgres:5432/flwn
+      APP_DB_PASSWORD: flwn_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build: .
+    image: flwn-data-engine:local
+    # DATA_API_KEY, AZURE_FOUNDRY_ENDPOINT and AZURE_FOUNDRY_KEY come from .env (see .env.example).
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Overrides any DATABASE_URL in .env: inside compose the database is the postgres service.
+      DATABASE_URL: postgresql+psycopg://flwn_app:flwn_app@postgres:5432/flwn
+      DATABASE_ADMIN_URL: ""
+    ports:
+      - "127.0.0.1:8002:8002"
+    depends_on:
+      install:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
