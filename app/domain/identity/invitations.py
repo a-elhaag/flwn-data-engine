@@ -114,10 +114,12 @@ class InvitationService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = session.scalar(
-                select(Invitation).where(
+                select(Invitation)
+                .where(
                     Invitation.workspace_id == self.workspace_id,
                     Invitation.id == uuid.UUID(str(invitation_id)),
                 )
+                .with_for_update()  # one revoke or accept at a time per invitation
             )
             if row is None:
                 raise IdentityNotFound("invitation not found")
@@ -136,10 +138,12 @@ class InvitationService:
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
             row = session.scalar(
-                select(Invitation).where(
+                select(Invitation)
+                .where(
                     Invitation.workspace_id == self.workspace_id,
                     Invitation.token_hash == _hash(token),
                 )
+                .with_for_update()  # a token is used once, even under concurrent accepts
             )
             if row is None:
                 raise IdentityNotFound("invitation not found")
