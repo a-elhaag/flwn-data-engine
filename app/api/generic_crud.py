@@ -28,6 +28,7 @@ from sqlalchemy.exc import IntegrityError
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.api import auth, tokens
 from app.api.errors import api_error
+from app.api.route_kinds import INTERNAL_TABLES
 from app.db.base import Base
 from app.db.session import session_for
 from app.openapi.examples import EXAMPLES
@@ -243,6 +244,7 @@ def _register(table, models: dict) -> dict:
         for name in key_names
     ]
     label = table.name.replace("_", " ")
+    public = table.name not in INTERNAL_TABLES  # engine tables: service key only, hidden (#18)
     one = table.name[:-1] if table.name.endswith("s") else table.name  # operation ids
     read_scope, write_scope = ACCESS.get(table.name, (None, None))
     read_guard = auth.allow(read_scope)
@@ -298,7 +300,7 @@ def _register(table, models: dict) -> dict:
         methods=["GET"],
         response_model=models["page"],
         dependencies=[read_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"GET /workspaces/{{workspace_id}}{base}"] = (
         f"List {label}",
@@ -318,7 +320,7 @@ def _register(table, models: dict) -> dict:
         methods=["GET"],
         response_model=models["out"],
         dependencies=[read_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"GET /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Get one {label[:-1] if label.endswith('s') else label}",
@@ -356,7 +358,7 @@ def _register(table, models: dict) -> dict:
         status_code=201,
         response_model=models["out"],
         dependencies=[write_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"POST /workspaces/{{workspace_id}}{base}"] = (
         f"Create {label}",
@@ -392,7 +394,7 @@ def _register(table, models: dict) -> dict:
         methods=["PATCH"],
         response_model=models["out"],
         dependencies=[write_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"PATCH /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Update {label}",
@@ -414,7 +416,7 @@ def _register(table, models: dict) -> dict:
         methods=["DELETE"],
         status_code=204,
         dependencies=[write_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"DELETE /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Delete {label}",
@@ -433,7 +435,9 @@ def build() -> dict:
         models = _models(table)
         for model in models.values():
             setattr(module, model.__name__, model)
-        summaries.update(_register(table, models))
+        registered = _register(table, models)
+        if table.name not in INTERNAL_TABLES:
+            summaries.update(registered)
     return summaries
 
 

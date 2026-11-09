@@ -184,36 +184,6 @@
           ]
         },
         {
-          "name": "GET List approved, unclaimed approvals",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/approvals/ready"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "GET Get an approval",
           "request": {
             "method": "GET",
@@ -317,49 +287,6 @@
           ]
         },
         {
-          "name": "POST Bootstrap the execution run",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/approvals/{{approvalId}}/execution-run",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"estimated_cost\": \"0.05\",\n  \"estimated_actions\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "PUT Report the outcome",
           "request": {
             "method": "PUT",
@@ -407,32 +334,6 @@
     {
       "name": "Atoms",
       "item": [
-        {
-          "name": "GET Workspaces with scheduler work",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              }
-            ],
-            "url": "{{baseUrl}}/atoms/scheduler-workspaces"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
         {
           "name": "POST Create an atom",
           "request": {
@@ -492,36 +393,6 @@
               }
             ],
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/atoms"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Scheduler state",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/atoms/scheduler-state"
           },
           "event": [
             {
@@ -813,49 +684,6 @@
           ]
         },
         {
-          "name": "POST Start a run",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/atoms/{{atomId}}/runs",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"schedule_id\": \"1e3a5c7b-9d2f-4b48-8a6c-0f2e4d6b8a13\",\n  \"scheduled_for\": \"2026-10-17T09:30:00Z\",\n  \"idempotency_key\": \"digest-2026-10-17\",\n  \"estimated_cost\": \"0.05\",\n  \"estimated_actions\": 3\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "POST Add a schedule",
           "request": {
             "method": "POST",
@@ -1082,49 +910,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST Release stale runs",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/atoms/{{atomId}}/runs/release-stale",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"older_than_seconds\": 3600\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]
@@ -2544,36 +2329,6 @@
               }
             }
           ]
-        },
-        {
-          "name": "POST Reindex a file",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/files/{{fileId}}/reindex"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
         }
       ]
     },
@@ -3807,49 +3562,6 @@
           ]
         },
         {
-          "name": "POST Sprint completed",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/sprint-completed",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"retention_days\": 30,\n  \"dry_run\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "POST Remember many",
           "request": {
             "method": "POST",
@@ -3871,92 +3583,6 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"items\": [\n    {\n      \"text\": \"We decided to use Postgres with pgvector for memory.\",\n      \"source\": \"chat\",\n      \"agent\": \"planner\"\n    }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST Clean up memories",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/memories/cleanup",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"retention_days\": 30,\n  \"dry_run\": true\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST Organize memories",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/memories/organize",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"dry_run\": true,\n  \"max_clusters\": 50\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5076,255 +4702,8 @@
       ]
     },
     {
-      "name": "Skills",
+      "name": "Raw tables",
       "item": [
-        {
-          "name": "DELETE Delete a skill",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/skills/{{skillId}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST Promote a skill",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/skills/{{skillId}}/promote"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "System",
-      "item": [
-        {
-          "name": "GET Liveness check",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              }
-            ],
-            "url": "{{baseUrl}}/healthz"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Readiness check",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              }
-            ],
-            "url": "{{baseUrl}}/readyz"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "POST Revoke a token",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{baseUrl}}/auth/revocations",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"jti\": \"7c1f0c52a4f94b0e\",\n  \"expires_at\": 1792229400\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Check a token",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              }
-            ],
-            "url": "{{baseUrl}}/auth/session"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Tables",
-      "item": [
-        {
-          "name": "GET List agent reports",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/agent-reports"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET List agent runs",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/agent-runs"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
         {
           "name": "GET List atom connections",
           "request": {
@@ -5566,36 +4945,6 @@
           ]
         },
         {
-          "name": "GET List chunks",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/chunks"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "POST Create collections",
           "request": {
             "method": "POST",
@@ -5670,36 +5019,6 @@
           ]
         },
         {
-          "name": "GET List decisions",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/decisions"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "POST Create doc versions",
           "request": {
             "method": "POST",
@@ -5758,36 +5077,6 @@
               }
             ],
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/doc-versions"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET List events",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/events"
           },
           "event": [
             {
@@ -6114,36 +5403,6 @@
               }
             ],
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/links"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET List llm usage",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/llm-usage"
           },
           "event": [
             {
@@ -6765,36 +6024,6 @@
           ]
         },
         {
-          "name": "GET List transcript segments",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/transcript-segments"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "GET List transcripts",
           "request": {
             "method": "GET",
@@ -6882,66 +6111,6 @@
               }
             ],
             "url": "{{baseUrl}}/workspaces/{{workspaceId}}/work-item-labels"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Get one agent report",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/agent-reports/{{id}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Get one agent run",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/agent-runs/{{id}}"
           },
           "event": [
             {
@@ -7198,36 +6367,6 @@
           ]
         },
         {
-          "name": "GET Get one chunk",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/chunks/{{id}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "GET Get one collection",
           "request": {
             "method": "GET",
@@ -7331,36 +6470,6 @@
           ]
         },
         {
-          "name": "GET Get one decision",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/decisions/{{memoryId}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "GET Get one doc version",
           "request": {
             "method": "GET",
@@ -7456,36 +6565,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Get one event",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/events/{{id}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]
@@ -7936,36 +7015,6 @@
           ]
         },
         {
-          "name": "GET Get one llm usage",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/llm-usage/{{id}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
           "name": "GET Get one milestone",
           "request": {
             "method": "GET",
@@ -8400,36 +7449,6 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
-                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
-                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "GET Get one transcript segment",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "X-Data-API-Key",
-                "value": "{{serviceKey}}"
-              },
-              {
-                "key": "X-Acting-Member-Id",
-                "value": "{{memberId}}"
-              }
-            ],
-            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/transcript-segments/{{id}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]
@@ -8932,6 +7951,193 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Skills",
+      "item": [
+        {
+          "name": "DELETE Delete a skill",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/skills/{{skillId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Promote a skill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "X-Acting-Member-Id",
+                "value": "{{memberId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/workspaces/{{workspaceId}}/skills/{{skillId}}/promote"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "GET Liveness check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/healthz"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Readiness check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/readyz"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST Revoke a token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/revocations",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jti\": \"7c1f0c52a4f94b0e\",\n  \"expires_at\": 1792229400\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([204, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
+                  "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
+                  "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET Check a token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Data-API-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/session"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status is documented or a standard client error\", () => pm.expect([200, 401, 403, 404, 409, 422]).to.include(pm.response.code));",
                   "pm.test(\"not a server error\", () => pm.expect(pm.response.code).to.be.below(500));",
                   "pm.test(\"json body when present\", () => { if (pm.response.text()) pm.response.json(); });"
                 ]

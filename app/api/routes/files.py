@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Response
 
-from app.api.auth import Principal, WorkspaceId
+from app.api.auth import Principal, WorkspaceId, allow
 from app.api.deps import FILES_DELETE, FILES_READ, FILES_WRITE, Files
 from app.api.errors import api_error
 from app.api.schemas.common import FileKind, SearchFilesRequest, StartUploadRequest
@@ -39,7 +39,7 @@ def search(
     return search_files(str(workspace_id), **request.model_dump())
 
 
-@router.post("/{file_id}/reindex", dependencies=[FILES_WRITE])
+@router.post("/{file_id}/reindex", dependencies=[allow(None)], include_in_schema=False)
 def reindex(file_id: UUID, files: Files) -> FileRecord:
     return files.reindex(str(file_id))
 

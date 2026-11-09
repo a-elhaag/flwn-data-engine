@@ -47,7 +47,9 @@ def _call(fn, *args, **kwargs):
         raise api_error(422, code, f"{code}: {exc}") from None
 
 
-@scheduler_router.get("/scheduler-workspaces", dependencies=[Depends(service_only)])
+@scheduler_router.get(
+    "/scheduler-workspaces", dependencies=[Depends(service_only)], include_in_schema=False
+)
 def list_scheduler_workspaces():
     return {"workspace_ids": scheduler_workspaces()}
 
@@ -62,7 +64,7 @@ def list_atoms(service: Service):
     return _call(service.list)
 
 
-@router.get("/scheduler-state", dependencies=[allow(None)])
+@router.get("/scheduler-state", dependencies=[allow(None)], include_in_schema=False)
 def scheduler_state(
     workspace_id: WorkspaceId,
     status: Literal["draft", "active", "paused", "killed"] | None = None,
@@ -72,7 +74,7 @@ def scheduler_state(
     return _call(service.list, status=status, enabled=enabled)
 
 
-@router.post("/{atom_id}/runs/release-stale", dependencies=[allow(None)])
+@router.post("/{atom_id}/runs/release-stale", dependencies=[allow(None)], include_in_schema=False)
 def release_stale(workspace_id: WorkspaceId, atom_id: UUID, body: ReleaseStaleRuns):
     service = AtomService(str(workspace_id), trusted=True)
     return _call(service.release_stale, str(atom_id), **body.model_dump())
@@ -186,7 +188,7 @@ def configure_attachment(
     )
 
 
-@router.post("/{atom_id}/runs", dependencies=[allow(None)])
+@router.post("/{atom_id}/runs", dependencies=[allow(None)], include_in_schema=False)
 def start_run(workspace_id: WorkspaceId, atom_id: UUID, body: StartRun):
     service = AtomService(str(workspace_id), actor=None, trusted=True)
     return _call(

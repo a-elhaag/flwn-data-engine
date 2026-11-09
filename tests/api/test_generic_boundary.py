@@ -7,6 +7,7 @@ writes, and the full-CRUD ones round-trip, including a composite key."""
 from harness import MemoryHarness
 
 from app.api import generic_crud
+from app.api.route_kinds import INTERNAL_TABLES
 
 # Every table that generic CRUD can write. Changing this list is a deliberate, reviewed decision.
 WRITABLE = {
@@ -118,7 +119,7 @@ class GenericCrudTests(MemoryHarness):
         from app.main import app
 
         spec = app.openapi()["paths"]
-        for table in sorted(generic_crud.READ_TABLES):
+        for table in sorted(generic_crud.READ_TABLES - INTERNAL_TABLES):  # internal: hidden
             path = f"/workspaces/{{workspace_id}}/{table.replace('_', '-')}"
             with self.subTest(table=table):
                 self.assertNotIn("post", spec.get(path, {}))

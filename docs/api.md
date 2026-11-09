@@ -9,21 +9,17 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | Route | What | Auth |
 | --- | --- | --- |
 | `POST /workspaces/{ws}/approvals` | Request an approval | scope `atoms:run` |
-| `GET /workspaces/{ws}/approvals/ready` | List approved, unclaimed approvals | service key only |
 | `GET /workspaces/{ws}/approvals/{approval_id}` | Get an approval | scope `atoms:run` |
 | `POST /workspaces/{ws}/approvals/{approval_id}/claim` | Claim an approval | scope `atoms:run` |
 | `PUT /workspaces/{ws}/approvals/{approval_id}/decision` | Approve or reject | service key only |
-| `POST /workspaces/{ws}/approvals/{approval_id}/execution-run` | Bootstrap the execution run | service key only |
 | `PUT /workspaces/{ws}/approvals/{approval_id}/outcome` | Report the outcome | scope `atoms:run` |
 
 ## Atoms
 
 | Route | What | Auth |
 | --- | --- | --- |
-| `GET /atoms/scheduler-workspaces` | Workspaces with scheduler work | service key only |
 | `GET /workspaces/{ws}/atoms` | List atoms | scope `atoms:admin` |
 | `POST /workspaces/{ws}/atoms` | Create an atom | scope `atoms:admin` |
-| `GET /workspaces/{ws}/atoms/scheduler-state` | Scheduler state | service key only |
 | `GET /workspaces/{ws}/atoms/{atom_id}` | Get an atom | scope `atoms:admin` |
 | `PATCH /workspaces/{ws}/atoms/{atom_id}` | Configure an atom | scope `atoms:admin` |
 | `DELETE /workspaces/{ws}/atoms/{atom_id}` | Delete an atom | scope `atoms:admin` |
@@ -34,8 +30,6 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `PUT /workspaces/{ws}/atoms/{atom_id}/grants` | Grant access | scope `atoms:admin` |
 | `DELETE /workspaces/{ws}/atoms/{atom_id}/grants/{grant_id}` | Revoke a grant | scope `atoms:admin` |
 | `POST /workspaces/{ws}/atoms/{atom_id}/rollback` | Roll back to a version | scope `atoms:admin` |
-| `POST /workspaces/{ws}/atoms/{atom_id}/runs` | Start a run | service key only |
-| `POST /workspaces/{ws}/atoms/{atom_id}/runs/release-stale` | Release stale runs | service key only |
 | `POST /workspaces/{ws}/atoms/{atom_id}/schedules` | Add a schedule | scope `atoms:admin` |
 | `PUT /workspaces/{ws}/atoms/{atom_id}/schedules/{schedule_id}` | Replace a schedule | scope `atoms:admin` |
 | `DELETE /workspaces/{ws}/atoms/{atom_id}/schedules/{schedule_id}` | Delete a schedule | scope `atoms:admin` |
@@ -93,7 +87,6 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `DELETE /workspaces/{ws}/files/{file_id}` | Delete a file | scope `files:delete` |
 | `POST /workspaces/{ws}/files/{file_id}/complete` | Complete an upload | scope `files:write` |
 | `GET /workspaces/{ws}/files/{file_id}/download` | Get a download link | scope `files:read` |
-| `POST /workspaces/{ws}/files/{file_id}/reindex` | Reindex a file | scope `files:write` |
 
 ## Identity
 
@@ -143,15 +136,12 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `POST /workspaces/{ws}/memories` | Remember | scope `memory:write` |
 | `DELETE /workspaces/{ws}/memories` | Purge all memories | service key only |
 | `POST /workspaces/{ws}/memories/batch` | Remember many | scope `memory:write` |
-| `POST /workspaces/{ws}/memories/cleanup` | Clean up memories | service key only |
-| `POST /workspaces/{ws}/memories/organize` | Organize memories | service key only |
 | `POST /workspaces/{ws}/memories/recall` | Recall | scope `memory:read` |
 | `GET /workspaces/{ws}/memories/stats` | Memory statistics | scope `memory:read` |
 | `GET /workspaces/{ws}/memories/{point_id}` | Open a memory | scope `memory:read` |
 | `PATCH /workspaces/{ws}/memories/{point_id}` | Revise a memory | scope `memory:write` |
 | `DELETE /workspaces/{ws}/memories/{point_id}` | Forget a memory | scope `memory:delete` |
 | `PUT /workspaces/{ws}/memories/{point_id}/pin` | Pin or unpin a memory | scope `memory:write` |
-| `POST /workspaces/{ws}/sprint-completed` | Sprint completed | service key only |
 
 ## Planning
 
@@ -183,30 +173,10 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `DELETE /workspaces/{ws}/projects/{project_id}/work-items/{work_item_id}` | Delete a work item | scope `planning:read`, writes `planning:write` |
 | `GET /workspaces/{ws}/tasks/by-key/{key}` | Get a task by its key | scope `planning:read`, writes `planning:write` |
 
-## Skills
+## Raw tables
 
 | Route | What | Auth |
 | --- | --- | --- |
-| `DELETE /workspaces/{ws}/skills/{skill_id}` | Delete a skill | scope `atoms:admin` |
-| `POST /workspaces/{ws}/skills/{skill_id}/promote` | Promote a skill | scope `atoms:admin` |
-
-## System
-
-| Route | What | Auth |
-| --- | --- | --- |
-| `POST /auth/revocations` | Revoke a token | service key only |
-| `GET /auth/session` | Check a token | any valid caller |
-| `GET /healthz` | Liveness check | any valid caller |
-| `GET /readyz` | Readiness check | service key only |
-
-## Tables
-
-| Route | What | Auth |
-| --- | --- | --- |
-| `GET /workspaces/{ws}/agent-reports` | List agent reports | service key only |
-| `GET /workspaces/{ws}/agent-reports/{id}` | Get one agent report | service key only |
-| `GET /workspaces/{ws}/agent-runs` | List agent runs | service key only |
-| `GET /workspaces/{ws}/agent-runs/{id}` | Get one agent run | service key only |
 | `GET /workspaces/{ws}/atom-connections` | List atom connections | service key only |
 | `GET /workspaces/{ws}/atom-connections/{id}` | Get one atom connection | service key only |
 | `GET /workspaces/{ws}/atom-grants` | List atom grants | scope `atoms:read` |
@@ -223,22 +193,16 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/backlogs/{id}` | Get one backlog | scope `planning:read` |
 | `GET /workspaces/{ws}/catalog-skills` | List catalog skills | scope `skills:read` |
 | `GET /workspaces/{ws}/catalog-skills/{id}` | Get one catalog skill | scope `skills:read` |
-| `GET /workspaces/{ws}/chunks` | List chunks | service key only |
-| `GET /workspaces/{ws}/chunks/{id}` | Get one chunk | service key only |
 | `GET /workspaces/{ws}/collections` | List collections | scope `collab:read` |
 | `POST /workspaces/{ws}/collections` | Create collections | scope `collab:write` |
 | `GET /workspaces/{ws}/collections/{id}` | Get one collection | scope `collab:read` |
 | `PATCH /workspaces/{ws}/collections/{id}` | Update collections | scope `collab:write` |
 | `DELETE /workspaces/{ws}/collections/{id}` | Delete collections | scope `collab:write` |
-| `GET /workspaces/{ws}/decisions` | List decisions | service key only |
-| `GET /workspaces/{ws}/decisions/{memory_id}` | Get one decision | service key only |
 | `GET /workspaces/{ws}/doc-versions` | List doc versions | service key only |
 | `POST /workspaces/{ws}/doc-versions` | Create doc versions | service key only |
 | `GET /workspaces/{ws}/doc-versions/{id}` | Get one doc version | service key only |
 | `PATCH /workspaces/{ws}/doc-versions/{id}` | Update doc versions | service key only |
 | `DELETE /workspaces/{ws}/doc-versions/{id}` | Delete doc versions | service key only |
-| `GET /workspaces/{ws}/events` | List events | service key only |
-| `GET /workspaces/{ws}/events/{id}` | Get one event | service key only |
 | `GET /workspaces/{ws}/favorites` | List favorites | service key only |
 | `POST /workspaces/{ws}/favorites` | Create favorites | service key only |
 | `GET /workspaces/{ws}/favorites/{id}` | Get one favorite | service key only |
@@ -261,8 +225,6 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/links/{id}` | Get one link | service key only |
 | `PATCH /workspaces/{ws}/links/{id}` | Update links | service key only |
 | `DELETE /workspaces/{ws}/links/{id}` | Delete links | service key only |
-| `GET /workspaces/{ws}/llm-usage` | List llm usage | service key only |
-| `GET /workspaces/{ws}/llm-usage/{id}` | Get one llm usage | service key only |
 | `GET /workspaces/{ws}/meeting-participants` | List meeting participants | service key only |
 | `GET /workspaces/{ws}/meeting-participants/{meeting_id}/{member_id}` | Get one meeting participant | service key only |
 | `GET /workspaces/{ws}/memory-links` | List memory links | service key only |
@@ -304,8 +266,6 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/task-relations/{task_id}/{related_task_id}/{type}` | Get one task relation | scope `planning:read` |
 | `PATCH /workspaces/{ws}/task-relations/{task_id}/{related_task_id}/{type}` | Update task relations | scope `planning:write` |
 | `DELETE /workspaces/{ws}/task-relations/{task_id}/{related_task_id}/{type}` | Delete task relations | scope `planning:write` |
-| `GET /workspaces/{ws}/transcript-segments` | List transcript segments | service key only |
-| `GET /workspaces/{ws}/transcript-segments/{id}` | Get one transcript segment | service key only |
 | `GET /workspaces/{ws}/transcripts` | List transcripts | service key only |
 | `GET /workspaces/{ws}/transcripts/{id}` | Get one transcript | service key only |
 | `GET /workspaces/{ws}/work-item-labels` | List work item labels | scope `planning:read` |
@@ -313,6 +273,22 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `GET /workspaces/{ws}/work-item-labels/{work_item_id}/{label_id}` | Get one work item label | scope `planning:read` |
 | `PATCH /workspaces/{ws}/work-item-labels/{work_item_id}/{label_id}` | Update work item labels | scope `planning:write` |
 | `DELETE /workspaces/{ws}/work-item-labels/{work_item_id}/{label_id}` | Delete work item labels | scope `planning:write` |
+
+## Skills
+
+| Route | What | Auth |
+| --- | --- | --- |
+| `DELETE /workspaces/{ws}/skills/{skill_id}` | Delete a skill | scope `atoms:admin` |
+| `POST /workspaces/{ws}/skills/{skill_id}/promote` | Promote a skill | scope `atoms:admin` |
+
+## System
+
+| Route | What | Auth |
+| --- | --- | --- |
+| `POST /auth/revocations` | Revoke a token | service key only |
+| `GET /auth/session` | Check a token | any valid caller |
+| `GET /healthz` | Liveness check | any valid caller |
+| `GET /readyz` | Readiness check | service key only |
 
 ## Users
 
