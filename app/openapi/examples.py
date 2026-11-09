@@ -132,9 +132,13 @@ EXAMPLES: dict[str, dict] = {
         "slug": "acme",
         "description": "Acme product team",
         "owner_user_id": "6a1e3c5b-7d92-4f08-a6b4-2c8e0d9f1b37",
+        "settings": {"engine": {"recording_retention_days": 90}, "product": {"theme": "dark"}},
     },
     "OwnershipTransfer": {"to_member_id": MEMBER, "demote_self_to": "admin"},
-    "WorkspaceUpdate": {"description": "Acme product and design"},
+    "WorkspaceUpdate": {
+        "description": "Acme product and design",
+        "settings": {"engine": {"recording_retention_days": 180}},
+    },
     "MemberCreate": {
         "type": "HUMAN",
         "role": "member",

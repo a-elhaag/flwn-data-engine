@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.db.atom_access import AtomAccessError
 from app.domain.decisions.errors import ConflictNotFound, ConflictStateError, HumanRequired
+from app.domain.error_codes import CODES
 from app.domain.meetings.errors import (
     ConsentMissing,
     MeetingForbidden,
@@ -89,9 +90,9 @@ async def _validation(request: Request, exc: RequestValidationError) -> JSONResp
     for error in errors:
         loc = error["loc"][1:] or error["loc"]  # drop "body", "query", ...
         fields.setdefault(".".join(str(part) for part in loc), error["msg"])
-    return JSONResponse(
-        _body(jsonable_encoder(errors), "validation_error", fields), status_code=422
-    )
+    # A validator that raises PydanticCustomError with one of our codes names that code.
+    code = next((e["type"] for e in errors if e["type"] in CODES), "validation_error")
+    return JSONResponse(_body(jsonable_encoder(errors), code, fields), status_code=422)
 
 
 async def _http(request: Request, exc: StarletteHTTPException) -> JSONResponse:
