@@ -33,8 +33,8 @@ class FakeBlobs:
         if self.fail_deletes:
             raise RuntimeError("storage is down")
         self.deleted.append((container, path))
-        self.stored.pop((container, path), None)
         self.data.pop((container, path), None)
+        return self.stored.pop((container, path), None) is not None
 
     def upload(self, ticket, size=None, content_type="application/octet-stream", data=None):
         """What the client does: PUT the bytes to the ticket's URL."""

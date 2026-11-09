@@ -7,7 +7,6 @@ locally). That identity needs the "Storage Blob Data Contributor" role on the ac
 """
 
 import threading
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
@@ -103,9 +102,13 @@ class BlobStorage:
             )
         return blob.download_blob().readall()
 
-    def delete(self, container: str, path: str) -> None:
-        with suppress(ResourceNotFoundError):  # already gone
+    def delete(self, container: str, path: str) -> bool:
+        """Delete a blob. Returns False if it was already gone, which is not an error."""
+        try:
             self._client.get_blob_client(container, path).delete_blob()
+        except ResourceNotFoundError:
+            return False
+        return True
 
 
 @lru_cache

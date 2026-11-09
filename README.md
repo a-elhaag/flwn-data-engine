@@ -71,6 +71,12 @@ docker compose up --build     # Postgres, the schema install, and the API on htt
 The API there connects as `flwn_app`, a role without superuser or BYPASSRLS, which the workspace
 isolation needs. `docker compose` ignores `DATABASE_URL` in `.env` and uses its own database.
 
+Blob reaper: a workspace delete records its blobs in `blob_purges` and removes the rows, but the
+bytes stay in Azure until `bash run.sh reap` runs. It deletes them in batches until the queue is
+empty and prints the counts. Schedule it (cron, or a Container Apps job) to run **every 15 minutes**;
+a failed blob stays queued and is retried on the next run. Safe to run from several replicas at once.
+It is not started in the API process.
+
 Other commands: `bash run.sh test`, `bash run.sh lint`, `bash run.sh ready` (live dependency
 check), `bash run.sh postman` (rebuild the
 Postman collection). Tests are discovered with `-s tests -t tests`.
