@@ -157,7 +157,7 @@ def delete_doc(request: Request, workspace_id: WorkspaceId, doc_id: UUID):
 
 
 @router.get("/docs/{doc_id}/blocks", response_model=BlockPage)
-def list_doc_blocks(
+def list_blocks(
     request: Request,
     workspace_id: WorkspaceId,
     doc_id: UUID,
@@ -172,14 +172,14 @@ def list_doc_blocks(
 
 
 @router.post("/docs/{doc_id}/blocks", status_code=201, response_model=BlockOut)
-def create_doc_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, body: BlockCreate):
+def create_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, body: BlockCreate):
     return _call(
         DocService(str(workspace_id), actor(request)).create_block, str(doc_id), **body.model_dump()
     )
 
 
 @router.patch("/docs/{doc_id}/blocks/{block_id}", response_model=BlockOut)
-def update_doc_block(
+def update_block(
     request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID, body: BlockUpdate
 ):
     return _call(
@@ -191,7 +191,7 @@ def update_doc_block(
 
 
 @router.delete("/docs/{doc_id}/blocks/{block_id}", status_code=204)
-def delete_doc_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
+def delete_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
     _call(DocService(str(workspace_id), actor(request)).delete_block, str(doc_id), str(block_id))
     return Response(status_code=204)
 
