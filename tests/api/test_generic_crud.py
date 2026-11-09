@@ -261,7 +261,8 @@ class GenericTableAuthTests(CrudHarness):
         gone |= {"chunks", "decisions", "agent_runs", "atom_connections", "links"}
         self.assertFalse(gone & set(generic_crud.ACCESS))
         collab = self.token_headers(self.team_a, t.SCOPE_COLLAB_WRITE)
-        for table in ("channel-members", "transcripts"):
-            with self.subTest(table=table):
-                url = f"/workspaces/{self.team_a}/{table}"
-                self.assertEqual(self.client.get(url, headers=collab).status_code, 403)
+        # channel-members has no generic route any more (issue #29); transcripts is read-only.
+        url = f"/workspaces/{self.team_a}/channel-members"
+        self.assertEqual(self.client.get(url, headers=collab).status_code, 404)
+        url = f"/workspaces/{self.team_a}/transcripts"
+        self.assertEqual(self.client.get(url, headers=collab).status_code, 403)

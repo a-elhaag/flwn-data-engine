@@ -2,7 +2,8 @@
 
 Each table's request and response models are built from its columns, so they cannot drift from the
 database. Full CRUD for the child tables in CRUD_TABLES; read-only (list and get) for the engine-
-written and security-sensitive tables in READ_TABLES. Composite keys are addressed by their parts,
+written, security-sensitive and domain-owned tables in READ_TABLES. Tables with a hand-written route
+or service rule never get generic writes. Composite keys are addressed by their parts,
 for example DELETE /workspaces/{ws}/team-members/{team_id}/{member_id}.
 
 Access follows ACCESS: a token with the table's read or write scope (the area's scopes, locked to
@@ -30,25 +31,21 @@ from app.db.base import Base
 from app.db.session import session_for
 from app.openapi.examples import EXAMPLES
 
+# Writable through generic routes: child tables with no hand-written route and no service that writes
+# them. Tables with a domain route or service rule are read-only below; tables whose hand-written
+# route duplicates the generic one (team_members, channel_members, doc_blocks) have no generic
+# routes at all (issue #29).
 CRUD_TABLES = {
     "links",
     "favorites",
     "labels",
-    "notifications",
     "subscriptions",
-    "team_members",
-    "backlogs",
     "collections",
     "folders",
     "milestones",
     "project_updates",
     "saved_views",
-    "channel_members",
-    "memory_links",
-    "doc_blocks",
     "doc_versions",
-    "meeting_participants",
-    "transcripts",
     "work_item_labels",
     "task_labels",
     "task_relations",
@@ -71,6 +68,12 @@ READ_TABLES = {
     "invitations",
     "decisions",
     "catalog_skills",
+    # Read-only because a domain route or service owns their writes (issue #18).
+    "meeting_participants",  # POST /meetings/{id}/participants
+    "transcripts",  # PUT /meetings/{id}/transcript
+    "memory_links",  # /memories
+    "backlogs",  # created by the planning service with each project
+    "notifications",  # created by the approvals service
 }
 # Never sent by clients or returned in full: the database or search machinery owns them.
 HIDDEN = {"tsv", "embedding"}
@@ -89,10 +92,11 @@ FILES = (tokens.SCOPE_FILES_READ, tokens.SCOPE_FILES_WRITE)
 ATOMS = (tokens.SCOPE_ATOMS_READ, None)  # engine-written: read only
 ACCESS = {
     **dict.fromkeys(
-        ("backlogs", "milestones", "project_updates", "labels", "saved_views", "task_labels")
+        ("milestones", "project_updates", "labels", "saved_views", "task_labels")
         + ("task_relations", "work_item_labels"),
         PLANNING,
     ),
+    "backlogs": (tokens.SCOPE_PLANNING_READ, None),  # read-only: see READ_TABLES
     "collections": COLLAB,
     **dict.fromkeys(("folders", "file_derivatives"), FILES),
     **dict.fromkeys(("atom_grants", "atom_versions", "atom_schedules", "atom_skills"), ATOMS),
