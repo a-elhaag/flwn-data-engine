@@ -120,6 +120,20 @@ class InvitationsApiTests(CrudHarness):
             0,
         )
 
+    def test_invitations_are_not_a_generic_table(self):
+        from app.api import generic_crud
+
+        self.assertNotIn("invitations", generic_crud.CRUD_TABLES | generic_crud.READ_TABLES)
+        self.assertNotIn("invitations", generic_crud.ACCESS)
+        generic_paths = {getattr(r, "path", None) for r in generic_crud.router.routes}
+        self.assertNotIn("/workspaces/{workspace_id}/invitations", generic_paths)
+        # The invitation routes still answer on that path: they list and create.
+        invitation = self.invite(self.team_a)
+        listed = self.client.get(f"/workspaces/{self.team_a}/invitations")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertIn(invitation["id"], {i["id"] for i in listed.json()["items"]})
+        self.assertNotIn("token_hash", listed.json()["items"][0])
+
     def test_accept_is_service_only_and_listing_needs_an_administrator(self):
         invitation = self.invite(self.team_a)
         headers = self.token_headers(self.team_a, t.SCOPE_ADMIN)
