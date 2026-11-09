@@ -3,11 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import actor, allow, service_only
+from app.api.errors import api_error
 from app.api.paging import split_page
 from app.api.schemas.identity import (
     WorkspaceCreate,
@@ -26,11 +27,13 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except WorkspaceNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except WorkspaceConflict as exc:
-        raise HTTPException(409, str(exc)) from None
+        raise api_error(409, exc.code, str(exc)) from None
     except IntegrityError:
-        raise HTTPException(409, "workspace conflicts with an existing record") from None
+        raise api_error(
+            409, "conflict_workspace", "workspace conflicts with an existing record"
+        ) from None
 
 
 @router.post(

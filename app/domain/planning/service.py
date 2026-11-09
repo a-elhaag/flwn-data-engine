@@ -10,16 +10,17 @@ from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, Workspace
 from app.db.models.planning import Backlog, Milestone, Project, Sprint, Task, WorkItem
 from app.db.session import session_for
+from app.domain.error_codes import DomainError, Invalid
 
 TASK_KEY = re.compile(r"^([A-Z][A-Z0-9]{0,9})-([1-9][0-9]*)$")
 
 
-class PlanningNotFound(LookupError):
-    pass
+class PlanningNotFound(DomainError, LookupError):
+    code = "planning_not_found"
 
 
-class PlanningConflict(ValueError):
-    pass
+class PlanningConflict(DomainError, ValueError):
+    code = "planning_conflict"
 
 
 def _workspace(session, workspace_id):
@@ -29,7 +30,7 @@ def _workspace(session, workspace_id):
         )
         is None
     ):
-        raise PlanningNotFound("workspace not found")
+        raise PlanningNotFound("workspace not found", code="workspace_not_found")
 
 
 def _project(session, workspace_id, project_id):
@@ -41,7 +42,7 @@ def _project(session, workspace_id, project_id):
         )
     )
     if row is None:
-        raise PlanningNotFound("project not found")
+        raise PlanningNotFound("project not found", code="project_not_found")
     return row
 
 
@@ -55,7 +56,7 @@ def _work_item(session, workspace_id, project_id, work_item_id):
         )
     )
     if row is None:
-        raise PlanningNotFound("work item not found")
+        raise PlanningNotFound("work item not found", code="work_item_not_found")
     return row
 
 
@@ -69,7 +70,7 @@ def _task(session, workspace_id, project_id, task_id):
         )
     )
     if row is None:
-        raise PlanningNotFound("task not found")
+        raise PlanningNotFound("task not found", code="task_not_found")
     return row
 
 
@@ -86,7 +87,7 @@ def _check_project_refs(session, workspace_id, fields):
             )
             is None
         ):
-            raise PlanningNotFound("team not found")
+            raise PlanningNotFound("team not found", code="team_not_found")
         fields["team_id"] = team_id
     if fields.get("lead_id") is not None:
         lead_id = uuid.UUID(str(fields["lead_id"]))
@@ -101,7 +102,7 @@ def _check_project_refs(session, workspace_id, fields):
             )
             is None
         ):
-            raise PlanningNotFound("active member not found")
+            raise PlanningNotFound("active member not found", code="member_not_found")
         fields["lead_id"] = lead_id
 
 
@@ -114,7 +115,7 @@ def _member_in_workspace(session, workspace_id, member_id):
         )
     )
     if found is None:
-        raise PlanningNotFound("member not found")
+        raise PlanningNotFound("member not found", code="member_not_found")
     return found
 
 
@@ -398,7 +399,7 @@ class TaskService:
         """A task by its readable identifier, such as FLWN-12."""
         found = TASK_KEY.match(key)
         if found is None:
-            raise ValueError("task key looks like FLWN-12")
+            raise Invalid("task key looks like FLWN-12", code="task_key_invalid")
         with session_for(str(self.workspace_id)) as session:
             row = session.scalar(
                 select(Task)
@@ -415,7 +416,7 @@ class TaskService:
                 )
             )
             if row is None:
-                raise PlanningNotFound("task not found")
+                raise PlanningNotFound("task not found", code="task_not_found")
             return _task_view(session, row)
 
     def assigned_to(self, member_id, limit=50, offset=0):
@@ -506,7 +507,10 @@ class TaskService:
                     )
                     is None
                 ):
-                    raise PlanningNotFound(f"{key.removesuffix('_id')} not found")
+                    raise PlanningNotFound(
+                        f"{key.removesuffix('_id')} not found",
+                        code=f"{key.removesuffix('_id')}_not_found",
+                    )
                 fields[key] = value
         if fields.get("assignee_id") is not None:
             value = uuid.UUID(str(fields["assignee_id"]))
@@ -521,7 +525,7 @@ class TaskService:
                 )
                 is None
             ):
-                raise PlanningNotFound("active assignee not found")
+                raise PlanningNotFound("active assignee not found", code="assignee_not_found")
             fields["assignee_id"] = value
         if fields.get("parent_task_id") is not None:
             value = uuid.UUID(str(fields["parent_task_id"]))
@@ -537,7 +541,7 @@ class TaskService:
                 )
                 is None
             ):
-                raise PlanningNotFound("parent task not found")
+                raise PlanningNotFound("parent task not found", code="parent_task_not_found")
             if task_id is not None:
                 self._refuse_task_cycle(session, task_id, value)
             fields["parent_task_id"] = value
@@ -560,14 +564,14 @@ class TaskService:
             session.scalar(select(Task.sprint_id).where(Task.id == task_id)) if task_id else None
         )
         if current != wanted:
-            raise PlanningConflict("sprint_completed")
+            raise PlanningConflict("sprint_completed", code="sprint_completed")
 
     def _refuse_task_cycle(self, session, task_id, parent_id):
         """A task cannot be its own ancestor: walk up from the new parent and look for it."""
         seen, current = set(), parent_id
         while current is not None and current not in seen:
             if current == task_id:
-                raise PlanningConflict("task_cycle")
+                raise PlanningConflict("task_cycle", code="task_cycle")
             seen.add(current)
             current = session.scalar(
                 select(Task.parent_task_id).where(
@@ -585,7 +589,7 @@ def _sprint(session, workspace_id, project_id, sprint_id):
         )
     )
     if row is None:
-        raise PlanningNotFound("sprint not found")
+        raise PlanningNotFound("sprint not found", code="sprint_not_found")
     return row
 
 
@@ -658,7 +662,9 @@ class SprintService:
             if move_open_tasks_to != "backlog":
                 target = _sprint(session, self.workspace_id, project.id, move_open_tasks_to)
                 if target.id == row.id or target.status != "planned":
-                    raise PlanningConflict("target_sprint_not_planned")
+                    raise PlanningConflict(
+                        "target_sprint_not_planned", code="target_sprint_not_planned"
+                    )
             self._move(session, row, "completed")
             open_tasks = session.scalars(
                 select(Task).where(
@@ -687,7 +693,7 @@ class SprintService:
         if status == row.status:
             return
         if (row.status, status) not in SPRINT_MOVES:
-            raise PlanningConflict("invalid_sprint_transition")
+            raise PlanningConflict("invalid_sprint_transition", code="invalid_sprint_transition")
         if status == "active":
             other = session.scalar(
                 select(Sprint.id).where(
@@ -697,7 +703,7 @@ class SprintService:
                 )
             )
             if other is not None:
-                raise PlanningConflict("sprint_already_active")
+                raise PlanningConflict("sprint_already_active", code="sprint_already_active")
             row.started_at = datetime.now(UTC)
         else:
             row.completed_at = datetime.now(UTC)

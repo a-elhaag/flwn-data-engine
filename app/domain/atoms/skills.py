@@ -16,6 +16,7 @@ from app.db.atom_access import (
 from app.db.models.atoms import Atom, AtomConnection, AtomSkill, CatalogSkill, Skill
 from app.db.models.identity import Member
 from app.db.session import tune_vector_search
+from app.domain.error_codes import Forbidden, Invalid, Missing
 from app.domain.memory import vectorizer
 from app.integrations.ranking import FUSION_K, fuse
 
@@ -28,17 +29,17 @@ def _uuid(value):
 
 def _requirements(value):
     if not isinstance(value, list):
-        raise ValueError("tools_required must be a list")
+        raise Invalid("tools_required must be a list", code="invalid")
     for item in value:
         if not isinstance(item, dict) or set(item) != {"ref", "minimum_permission"}:
-            raise ValueError("tools_required entries need ref and minimum_permission")
+            raise Invalid("tools_required entries need ref and minimum_permission", code="invalid")
         if not isinstance(item["ref"], str) or not item["ref"].strip():
-            raise ValueError("tool ref must be nonempty")
+            raise Invalid("tool ref must be nonempty", code="invalid")
         if (
             not isinstance(item["minimum_permission"], str)
             or item["minimum_permission"] not in PERMISSIONS
         ):
-            raise ValueError("unknown minimum_permission")
+            raise Invalid("unknown minimum_permission", code="invalid")
     return value
 
 
@@ -87,7 +88,7 @@ class SkillService:
             or str(self.atom_id) != str(context.atom_id)
             or str(self.run_id) != str(context.run_id)
         ):
-            raise PermissionError("service caller must match the bound atom context")
+            raise Forbidden("service caller must match the bound atom context", code="denied")
         if context is None and self.atom_id and self.run_id:
             # Validate before elevation: a shared Connection retains transaction-local GUCs.
             validate_context(
@@ -109,10 +110,10 @@ class SkillService:
             )
         )
         if member is None:
-            raise PermissionError("active workspace member required")
+            raise Forbidden("active workspace member required", code="denied")
         if member.type != "HUMAN":
             if member.agent_kind != "atom" or not self.atom_id or not self.run_id:
-                raise PermissionError("a bound atom run is required")
+                raise Forbidden("a bound atom run is required", code="denied")
             owner = session.scalar(
                 select(Atom.owner_member_id).where(
                     Atom.workspace_id == self.workspace_id,
@@ -128,7 +129,7 @@ class SkillService:
         member = self._member(session)
         target = _uuid(atom_id) if atom_id else self.atom_id
         if target is None:
-            raise ValueError("atom_id is required")
+            raise Invalid("atom_id is required", code="invalid")
         row = session.scalar(
             select(Atom)
             .where(
@@ -139,15 +140,15 @@ class SkillService:
             .with_for_update()
         )
         if row is None:
-            raise LookupError("atom not found")
+            raise Missing("atom not found", code="not_found")
         if member.type == "HUMAN":
             if row.kind == "personal":
                 if row.owner_member_id != self.actor:
-                    raise PermissionError("personal atom owner required")
+                    raise Forbidden("personal atom owner required", code="denied")
             elif member.role not in ("admin", "owner"):
-                raise PermissionError("workspace admin required")
+                raise Forbidden("workspace admin required", code="denied")
         elif target != self.atom_id or row.member_id != self.actor:
-            raise PermissionError("atom may only attach its own skills")
+            raise Forbidden("atom may only attach its own skills", code="denied")
         return row, member
 
     def _visible(self, model):
@@ -161,9 +162,9 @@ class SkillService:
 
     def search(self, query, limit=5):
         if not isinstance(query, str) or not query.strip():
-            raise ValueError("query must be nonempty")
+            raise Invalid("query must be nonempty", code="invalid")
         if type(limit) is not int or not 1 <= limit <= 50:
-            raise ValueError("limit must be between 1 and 50")
+            raise Invalid("limit must be between 1 and 50", code="invalid")
         with self._session() as session:
             self._member(session)
             vector = vectorizer.embed_one(query)
@@ -223,27 +224,31 @@ class SkillService:
         owner_member_id=None,
     ):
         if scope not in ("workspace", "personal"):
-            raise PermissionError("catalog publication is a trusted service operation")
+            raise Forbidden("catalog publication is a trusted service operation", code="denied")
         if type(version) is not int or version < 1:
-            raise ValueError("version must be positive")
+            raise Invalid("version must be positive", code="invalid")
         if any(
             not isinstance(value, str) or not value.strip()
             for value in (name, description, when_to_use, instructions)
         ):
-            raise ValueError("skill content must be nonempty")
+            raise Invalid("skill content must be nonempty", code="invalid")
         requirements = _requirements([] if tools_required is None else tools_required)
         with self._session() as session:
             member = self._member(session)
             if member.role == "viewer":
-                raise PermissionError("viewers cannot write skills")
+                raise Forbidden("viewers cannot write skills", code="denied")
             if scope == "workspace":
                 if member.type == "HUMAN":
                     if member.role not in ("admin", "owner"):
-                        raise PermissionError("workspace skill writes require a human admin")
+                        raise Forbidden(
+                            "workspace skill writes require a human admin", code="denied"
+                        )
                 else:
                     atom, _ = self._atom(session, self.atom_id)
                     if atom.kind != "workspace":
-                        raise PermissionError("personal atoms may only write personal skills")
+                        raise Forbidden(
+                            "personal atoms may only write personal skills", code="denied"
+                        )
             row = Skill(
                 workspace_id=self.workspace_id,
                 name=name,
@@ -261,13 +266,15 @@ class SkillService:
             try:
                 session.flush()
             except IntegrityError as exc:
-                raise ValueError("skill name and version must be unique in the workspace") from exc
+                raise Invalid(
+                    "skill name and version must be unique in the workspace", code="invalid"
+                ) from exc
             return _skill_dict(row, instructions=True)
 
     def _admin_skill(self, session, skill_id):
         member = self._member(session)
         if member.type != "HUMAN" or member.role not in ("owner", "admin"):
-            raise PermissionError("skill administration requires a human admin")
+            raise Forbidden("skill administration requires a human admin", code="denied")
         row = session.scalar(
             select(Skill)
             .where(
@@ -277,7 +284,7 @@ class SkillService:
             .with_for_update()
         )
         if row is None:
-            raise LookupError("skill not found")
+            raise Missing("skill not found", code="not_found")
         return row
 
     def promote(self, skill_id):
@@ -298,11 +305,11 @@ class SkillService:
 
     def set_attachment(self, attachment_id, *, enabled, atom_id=None):
         if type(enabled) is not bool:
-            raise ValueError("enabled must be boolean")
+            raise Invalid("enabled must be boolean", code="invalid")
         with self._session() as session:
             atom, member = self._atom(session, atom_id)
             if member.type != "HUMAN" or member.role not in ("owner", "admin"):
-                raise PermissionError("attachment overrides require a human admin")
+                raise Forbidden("attachment overrides require a human admin", code="denied")
             row = session.scalar(
                 select(AtomSkill)
                 .where(
@@ -313,7 +320,7 @@ class SkillService:
                 .with_for_update()
             )
             if row is None:
-                raise LookupError("attachment not found")
+                raise Missing("attachment not found", code="not_found")
             if enabled:
                 model = CatalogSkill if row.catalog_skill_id else Skill
                 skill = session.scalar(
@@ -324,7 +331,7 @@ class SkillService:
                     )
                 )
                 if skill is None:
-                    raise LookupError("active skill version not found")
+                    raise Missing("active skill version not found", code="not_found")
                 self._connections(session, atom, skill.tools_required)
             row.enabled = enabled
             return {"id": str(row.id), "enabled": enabled}
@@ -334,13 +341,15 @@ class SkillService:
             ref = requirement["ref"]
             if ref.startswith("flwn:"):
                 if not ref.removeprefix("flwn:").strip():
-                    raise ValueError("native tool ref is empty")
+                    raise Invalid("native tool ref is empty", code="invalid")
                 continue
             if not ref.startswith("composio:") or "/" not in ref:
-                raise ValueError("tool ref must be flwn:<tool> or composio:<toolkit>/<tool>")
+                raise Invalid(
+                    "tool ref must be flwn:<tool> or composio:<toolkit>/<tool>", code="invalid"
+                )
             toolkit, tool = ref.removeprefix("composio:").split("/", 1)
             if not toolkit or not tool or "/" in tool:
-                raise ValueError("invalid Composio tool ref")
+                raise Invalid("invalid Composio tool ref", code="invalid")
             connection = session.scalar(
                 select(AtomConnection)
                 .where(
@@ -355,25 +364,25 @@ class SkillService:
                 or connection.status != "active"
                 or not connection.composio_account_ref
             ):
-                raise PermissionError("an active connected account is required")
+                raise Forbidden("an active connected account is required", code="denied")
             if (
                 not connection.toolkit_version.strip()
                 or connection.toolkit_version.strip().lower() == "latest"
             ):
-                raise PermissionError("a pinned toolkit version is required")
+                raise Forbidden("a pinned toolkit version is required", code="denied")
             if tool not in connection.allowed_tools:
-                raise PermissionError("tool is not explicitly allowed by the connection")
+                raise Forbidden("tool is not explicitly allowed by the connection", code="denied")
             if (
                 PERMISSIONS[requirement["minimum_permission"]]
                 > PERMISSIONS[connection.permission_ceiling]
             ):
-                raise PermissionError("tool exceeds connection permission ceiling")
+                raise Forbidden("tool exceeds connection permission ceiling", code="denied")
             if atom.kind == "personal" and connection.composio_user_id != str(atom.owner_member_id):
-                raise PermissionError("personal connection must belong to the atom owner")
+                raise Forbidden("personal connection must belong to the atom owner", code="denied")
 
     def attach(self, skill_id, *, skill_version, catalog=False, atom_id=None):
         if type(skill_version) is not int or skill_version < 1:
-            raise ValueError("skill_version must be positive")
+            raise Invalid("skill_version must be positive", code="invalid")
         with self._session() as session:
             atom, member = self._atom(session, atom_id)
             model = CatalogSkill if catalog else Skill
@@ -387,9 +396,11 @@ class SkillService:
                 .with_for_update()
             )
             if row is None:
-                raise LookupError("active skill version not found")
+                raise Missing("active skill version not found", code="not_found")
             if not catalog and row.scope == "personal" and atom.kind != "personal":
-                raise PermissionError("personal skills cannot be attached to workspace atoms")
+                raise Forbidden(
+                    "personal skills cannot be attached to workspace atoms", code="denied"
+                )
             self._connections(session, atom, row.tools_required)
             field = AtomSkill.catalog_skill_id if catalog else AtomSkill.skill_id
             attached = session.scalar(
@@ -412,7 +423,9 @@ class SkillService:
                 session.add(attached)
             elif not attached.enabled:
                 if member.type != "HUMAN" or member.role not in ("owner", "admin"):
-                    raise PermissionError("disabled attachments require a human admin override")
+                    raise Forbidden(
+                        "disabled attachments require a human admin override", code="denied"
+                    )
                 attached.enabled = True
             session.flush()
             return {

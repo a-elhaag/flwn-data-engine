@@ -51,9 +51,14 @@ def audio_track(data: bytes, name: str) -> tuple[bytes, str, str]:
     """Extract the sound of a video as mono 16 kHz Opus in an Ogg file: (bytes, name, mime)."""
     container = container_format(data)
     if container is None:
-        raise Unindexable("unsupported video format (mp4, mov, mkv, webm and avi are read)")
+        raise Unindexable(
+            "unsupported video format (mp4, mov, mkv, webm and avi are read)",
+            code="video_format_unsupported",
+        )
     if shutil.which("ffmpeg") is None:
-        raise Unindexable("video files need ffmpeg, which is not installed on this server")
+        raise Unindexable(
+            "video files need ffmpeg, which is not installed on this server", code="ffmpeg_missing"
+        )
     with tempfile.TemporaryDirectory() as folder:
         source, target = Path(folder, "input.bin"), Path(folder, "out.ogg")
         source.write_bytes(data)
@@ -68,7 +73,7 @@ def audio_track(data: bytes, name: str) -> tuple[bytes, str, str]:
                 timeout=settings.FFMPEG_TIMEOUT_SECONDS,
             )  # fmt: skip
         except subprocess.TimeoutExpired:
-            raise Unindexable("reading the video took too long") from None
+            raise Unindexable("reading the video took too long", code="video_timeout") from None
         if run.returncode != 0 or not target.exists() or target.stat().st_size == 0:
-            raise Unindexable("the video has no readable sound track")
+            raise Unindexable("the video has no readable sound track", code="video_no_audio")
         return target.read_bytes(), "audio.ogg", "audio/ogg"

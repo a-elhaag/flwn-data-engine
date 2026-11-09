@@ -3,11 +3,12 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow, author, viewer
+from app.api.errors import api_error, code_of
 from app.api.paging import split_page
 from app.api.schemas.collab import (
     BlockCreate,
@@ -52,15 +53,17 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except CollaborationNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except CollaborationForbidden as exc:
-        raise HTTPException(403, str(exc)) from None
+        raise api_error(403, exc.code, str(exc)) from None
     except CollaborationConflict as exc:
-        raise HTTPException(409, str(exc)) from None
+        raise api_error(409, exc.code, str(exc)) from None
     except IntegrityError:
-        raise HTTPException(409, "resource conflicts with an existing record") from None
+        raise api_error(
+            409, "conflict_record", "resource conflicts with an existing record"
+        ) from None
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
 @router.post("/comments", status_code=201, response_model=CommentOut)

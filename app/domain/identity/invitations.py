@@ -13,6 +13,7 @@ from sqlalchemy import select
 from app.db import events
 from app.db.models.identity import Invitation, Member, User
 from app.db.session import session_for
+from app.domain.error_codes import Invalid
 from app.domain.identity.email import canonical_email
 from app.domain.identity.members_teams import (
     IdentityConflict,
@@ -81,7 +82,10 @@ class InvitationService:
                 )
             )
             if active is not None:
-                raise IdentityConflict("user is already an active member of this workspace")
+                raise IdentityConflict(
+                    "user is already an active member of this workspace",
+                    code="already_active_member",
+                )
             row = session.scalar(
                 select(Invitation).where(
                     Invitation.workspace_id == self.workspace_id,
@@ -122,9 +126,9 @@ class InvitationService:
                 .with_for_update()  # one revoke or accept at a time per invitation
             )
             if row is None:
-                raise IdentityNotFound("invitation not found")
+                raise IdentityNotFound("invitation not found", code="invitation_not_found")
             if row.status != "pending":
-                raise IdentityConflict(f"invitation is {row.status}")
+                raise IdentityConflict(f"invitation is {row.status}", code="invitation_not_pending")
             row.status = "revoked"
             session.flush()
             events.record(
@@ -146,11 +150,11 @@ class InvitationService:
                 .with_for_update()  # a token is used once, even under concurrent accepts
             )
             if row is None:
-                raise IdentityNotFound("invitation not found")
+                raise IdentityNotFound("invitation not found", code="invitation_not_found")
             if row.status != "pending":
-                raise IdentityConflict(f"invitation is {row.status}")
+                raise IdentityConflict(f"invitation is {row.status}", code="invitation_not_pending")
             if row.expires_at <= now:
-                raise IdentityConflict("invitation has expired")
+                raise IdentityConflict("invitation has expired", code="invitation_expired")
             # Only live accounts count. A soft-deleted account keeps its email in the unique
             # index, so an address held only by one cannot be joined: refuse, do not reuse it.
             user = session.scalar(
@@ -158,9 +162,11 @@ class InvitationService:
             )
             if user is None:
                 if session.scalar(select(User.id).where(email_matches(row.email))) is not None:
-                    raise IdentityConflict(EMAIL_TAKEN)
+                    raise IdentityConflict(EMAIL_TAKEN, code="email_taken")
                 if not name or not name.strip():
-                    raise ValueError("name is required to create the account")
+                    raise Invalid(
+                        "name is required to create the account", code="account_name_required"
+                    )
                 user = User(email=row.email, name=name.strip())
                 session.add(user)
                 session.flush()
@@ -180,7 +186,10 @@ class InvitationService:
                 )
                 session.add(member)
             elif member.status == "active" and member.deleted_at is None:
-                raise IdentityConflict("user is already an active member of this workspace")
+                raise IdentityConflict(
+                    "user is already an active member of this workspace",
+                    code="already_active_member",
+                )
             else:
                 member.status = "active"
                 member.role = row.role

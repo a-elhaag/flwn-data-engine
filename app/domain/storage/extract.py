@@ -102,10 +102,10 @@ def file_type(content_type: str | None, name: str) -> str | None:
 def _decode(data: bytes) -> list[Section]:
     text = data.decode("utf-8", errors="replace").replace("\x00", "")
     if len(text) > 100 and text.count("�") > len(text) * 0.1:
-        raise Unindexable("the file looks like binary data, not text")
+        raise Unindexable("the file looks like binary data, not text", code="binary_file")
     text = text[:MAX_TEXT_CHARS].strip()
     if not text:
-        raise Unindexable("the file is empty")
+        raise Unindexable("the file is empty", code="file_empty")
     return [Section(text)]
 
 
@@ -122,7 +122,7 @@ def _read_member(archive: zipfile.ZipFile, name: str) -> bytes:
     with archive.open(name) as member:
         data = member.read(MAX_DOCX_XML_BYTES + 1)
     if len(data) > MAX_DOCX_XML_BYTES:
-        raise Unindexable("the Word document is too large to read")
+        raise Unindexable("the Word document is too large to read", code="document_too_large")
     return data
 
 
@@ -144,7 +144,9 @@ def _docx_markdown(data: bytes) -> list[Section]:
     except Unindexable:
         raise
     except (zipfile.BadZipFile, KeyError, ElementTree.ParseError) as exc:
-        raise Unindexable("the file is not a readable .docx Word document") from exc
+        raise Unindexable(
+            "the file is not a readable .docx Word document", code="docx_unreadable"
+        ) from exc
     lines: list[str] = []
     for node in body if body is not None else []:
         if node.tag == f"{_W}p":
@@ -167,7 +169,7 @@ def _docx_markdown(data: bytes) -> list[Section]:
                     lines.append("| " + " | ".join(cells) + " |")
     text = "\n\n".join(lines)[:MAX_TEXT_CHARS].strip()
     if not text:
-        raise Unindexable("no text found in the Word document")
+        raise Unindexable("no text found in the Word document", code="docx_no_text")
     return [Section(text)]
 
 
@@ -175,14 +177,17 @@ def _pdf_text(data: bytes) -> tuple[list[Section], int]:
     try:
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
-            raise Unindexable("the PDF is password-protected")
+            raise Unindexable("the PDF is password-protected", code="pdf_encrypted")
         pages = len(reader.pages)
     except Unindexable:
         raise
     except Exception as exc:
-        raise Unindexable("the file is not a readable PDF") from exc
+        raise Unindexable("the file is not a readable PDF", code="pdf_unreadable") from exc
     if pages > settings.INDEX_MAX_PAGES:
-        raise Unindexable(f"{pages} pages is over the {settings.INDEX_MAX_PAGES} page limit")
+        raise Unindexable(
+            f"{pages} pages is over the {settings.INDEX_MAX_PAGES} page limit",
+            code="pdf_too_many_pages",
+        )
     sections = []
     for number, page in enumerate(reader.pages, start=1):
         try:
@@ -211,7 +216,7 @@ def _read_scanned_pages(data: bytes, pages: int) -> Extracted:
     finally:
         document.close()
     if not sections:
-        raise Unindexable("no readable text found in the scanned pages")
+        raise Unindexable("no readable text found in the scanned pages", code="scan_no_text")
     notes = [f"read the first {limit} of {pages} scanned pages"] if pages > limit else []
     return Extracted(sections, notes)
 
@@ -225,7 +230,7 @@ def extract(data: bytes, content_type: str | None, name: str) -> Extracted:
     if kind == "image":
         text = inference.parse_image(data, (content_type or "image/png").split(";")[0].strip())
         if not text:
-            raise Unindexable("no readable text found in the image")
+            raise Unindexable("no readable text found in the image", code="image_no_text")
         return Extracted([Section(text)])
     if kind == "pdf":
         sections, pages = _pdf_text(data)
@@ -233,5 +238,9 @@ def extract(data: bytes, content_type: str | None, name: str) -> Extracted:
             return Extracted(sections)
         return _read_scanned_pages(data, pages)
     if kind in ("audio", "video"):
-        raise Unindexable("audio and video are transcribed, not extracted")
-    raise Unindexable(f"no text extractor for {content_type or 'this file type'}")
+        raise Unindexable(
+            "audio and video are transcribed, not extracted", code="media_not_extractable"
+        )
+    raise Unindexable(
+        f"no text extractor for {content_type or 'this file type'}", code="no_extractor"
+    )

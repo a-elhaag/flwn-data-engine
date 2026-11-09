@@ -8,18 +8,19 @@ from sqlalchemy import func, select
 from app.db import events
 from app.db.models.identity import Member, User, Workspace
 from app.db.session import service_session
+from app.domain.error_codes import DomainError
 
 
-class WorkspaceNotFound(LookupError):
-    pass
+class WorkspaceNotFound(DomainError, LookupError):
+    code = "workspace_not_found"
 
 
 class OwnerNotFound(WorkspaceNotFound):
-    pass
+    code = "owner_user_not_found"
 
 
-class WorkspaceConflict(ValueError):
-    pass
+class WorkspaceConflict(DomainError, ValueError):
+    code = "workspace_conflict"
 
 
 def _workspace(session, workspace_id):
@@ -29,7 +30,7 @@ def _workspace(session, workspace_id):
         )
     )
     if row is None:
-        raise WorkspaceNotFound("workspace not found")
+        raise WorkspaceNotFound("workspace not found", code="workspace_not_found")
     return row
 
 
@@ -40,7 +41,7 @@ def _slug_available(session, slug, *, exclude_id=None):
     if exclude_id is not None:
         query = query.where(Workspace.id != exclude_id)
     if session.scalar(query) is not None:
-        raise WorkspaceConflict("workspace slug already exists")
+        raise WorkspaceConflict("workspace slug already exists", code="workspace_slug_taken")
 
 
 class WorkspaceService:

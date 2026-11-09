@@ -23,9 +23,10 @@ from dataclasses import dataclass, replace
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, Path, Request
+from fastapi import Depends, Header, Path, Request
 
 from app.api import tokens
+from app.api.errors import api_error, code_of
 from app.core.config import settings
 from app.db.session import bind_viewer
 from app.domain.identity import viewer as members
@@ -119,7 +120,7 @@ def _principal(
         try:
             claims = tokens.verify(authorization[7:].strip())
         except tokens.TokenError:
-            raise HTTPException(status_code=401, detail="Invalid or expired token") from None
+            raise api_error(401, "token_invalid", "Invalid or expired token") from None
         return Principal(
             subject=claims.subject,
             service=False,
@@ -134,7 +135,7 @@ def _principal(
             obo=claims.obo,
             act=claims.act,
         )
-    raise HTTPException(status_code=401, detail="Invalid data API key")
+    raise api_error(401, "service_key_invalid", "Invalid data API key")
 
 
 def _acting_for(principal: Principal, workspace_id: UUID, header: str | None) -> Principal:
@@ -144,10 +145,18 @@ def _acting_for(principal: Principal, workspace_id: UUID, header: str | None) ->
     try:
         member = str(UUID(header))
     except ValueError:
-        raise HTTPException(status_code=422, detail="X-Acting-Member-Id must be a UUID") from None
+        raise api_error(
+            422,
+            "acting_member_invalid",
+            "X-Acting-Member-Id must be a UUID",
+            {"X-Acting-Member-Id": "must be a UUID"},
+        ) from None
     if not members.is_active(str(workspace_id), member):
-        raise HTTPException(
-            status_code=422, detail="Acting member not found or not active in this workspace"
+        raise api_error(
+            422,
+            "acting_member_not_found",
+            "Acting member not found or not active in this workspace",
+            {"X-Acting-Member-Id": "not an active member of this workspace"},
         )
     return replace(principal, member_id=member)
 
@@ -158,7 +167,7 @@ def service_only(
 ) -> Principal:
     if not _service_key_valid(x_data_api_key):
         _reject_service_key(request, x_data_api_key)
-        raise HTTPException(status_code=401, detail="Invalid data API key")
+        raise api_error(401, "service_key_invalid", "Invalid data API key")
     return Principal(subject="service", service=True)
 
 
@@ -188,17 +197,17 @@ def allow(
             principal = _acting_for(principal, workspace_id, x_acting_member_id)
         else:
             if needed is None:
-                raise HTTPException(status_code=403, detail="Service credentials required")
+                raise api_error(403, "service_credentials_required", "Service credentials required")
             if principal.workspace_id != str(workspace_id):
-                raise HTTPException(status_code=403, detail="Token not valid for workspace")
+                raise api_error(403, "token_workspace_mismatch", "Token not valid for workspace")
             if needed not in principal.scopes and tokens.SCOPE_ADMIN not in principal.scopes:
-                raise HTTPException(status_code=403, detail=f"Missing scope {needed}")
+                raise api_error(403, "scope_missing", f"Missing scope {needed}")
             # An assistant acts for a human: both must still be active, so suspending the human
             # stops the assistant's next request too.
             for acting in (principal.member_id, principal.obo):
                 if acting and not members.is_active(str(workspace_id), acting):
-                    raise HTTPException(
-                        status_code=403, detail="Member is not active in this workspace"
+                    raise api_error(
+                        403, "member_inactive", "Member is not active in this workspace"
                     )
         from app.db.atom_access import (
             AtomAccessError,
@@ -221,10 +230,10 @@ def allow(
                 try:
                     validate_context(context, allow_finished=allow_finished)
                 except AtomAccessError as exc:
-                    raise HTTPException(status_code=403, detail=str(exc)) from exc
+                    raise api_error(403, code_of(exc, "atom_access_denied"), str(exc)) from exc
             elif principal.member_id and is_atom_member(str(workspace_id), principal.member_id):
-                raise HTTPException(
-                    status_code=403, detail="Atom members require run-scoped tokens"
+                raise api_error(
+                    403, "atom_token_required", "Atom members require run-scoped tokens"
                 )
         request.state.principal = principal
         # Async yield keeps the ContextVar in the event-loop task copied into sync endpoints.
@@ -258,10 +267,10 @@ def author(request: Request, requested: UUID | None) -> UUID | None:
     """
     mine = viewer(request).member_id
     if mine is None and not request.state.principal.service:
-        raise HTTPException(status_code=403, detail="A member-bound token is required to write")
+        raise api_error(403, "member_token_required", "A member-bound token is required to write")
     if requested is not None and requested != mine:
-        raise HTTPException(
-            status_code=403, detail="author_id must be the acting member (X-Acting-Member-Id)"
+        raise api_error(
+            403, "author_mismatch", "author_id must be the acting member (X-Acting-Member-Id)"
         )
     return mine
 

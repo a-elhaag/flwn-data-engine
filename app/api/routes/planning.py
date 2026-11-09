@@ -3,11 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow
+from app.api.errors import api_error, code_of
 from app.api.paging import split_page
 from app.api.schemas.planning import (
     ProjectCreate,
@@ -48,15 +49,17 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except PlanningNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except PlanningConflict as exc:
-        raise HTTPException(409, str(exc)) from None
+        raise api_error(409, exc.code, str(exc)) from None
     except IntegrityError as exc:
         if "uq_sprints_one_active" in str(exc.orig):  # lost a race with another start
-            raise HTTPException(409, "sprint_already_active") from None
-        raise HTTPException(409, "resource conflicts with an existing record") from None
+            raise api_error(409, "sprint_already_active", "sprint_already_active") from None
+        raise api_error(
+            409, "conflict_record", "resource conflicts with an existing record"
+        ) from None
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
 @router.post("/projects", status_code=201, response_model=ProjectOut)
@@ -188,7 +191,7 @@ def list_tasks(
     offset: Annotated[int, Query(ge=0)] = 0,
 ):
     if status is not None and status not in WORK_STATUSES:
-        raise HTTPException(422, "invalid status")
+        raise api_error(422, "invalid_status", "invalid status")
     items = _call(
         TaskService(str(workspace_id), actor(request)).list,
         str(project_id),

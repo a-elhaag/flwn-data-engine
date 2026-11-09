@@ -19,6 +19,7 @@ from app.db.models.files import File
 from app.db.models.identity import Member, Team, Workspace
 from app.db.models.planning import Project, ProjectUpdate, Sprint, Task, WorkItem
 from app.db.session import session_for
+from app.domain.error_codes import DomainError
 from app.domain.identity.viewer import Viewer
 
 COMMENT_TARGETS = {
@@ -31,16 +32,16 @@ COMMENT_TARGETS = {
 }
 
 
-class CollaborationNotFound(LookupError):
-    pass
+class CollaborationNotFound(DomainError, LookupError):
+    code = "collaboration_not_found"
 
 
-class CollaborationConflict(ValueError):
-    pass
+class CollaborationConflict(DomainError, ValueError):
+    code = "collaboration_conflict"
 
 
-class CollaborationForbidden(PermissionError):
-    pass
+class CollaborationForbidden(DomainError, PermissionError):
+    code = "collaboration_forbidden"
 
 
 def _workspace(session, workspace_id):
@@ -53,7 +54,7 @@ def _workspace(session, workspace_id):
         )
         is None
     ):
-        raise CollaborationNotFound("workspace not found")
+        raise CollaborationNotFound("workspace not found", code="workspace_not_found")
 
 
 def _active_member(session, workspace_id, member_id):
@@ -71,7 +72,7 @@ def _active_member(session, workspace_id, member_id):
         )
         is None
     ):
-        raise CollaborationNotFound("active member not found")
+        raise CollaborationNotFound("active member not found", code="member_not_found")
     return member_id
 
 
@@ -85,7 +86,7 @@ def _doc(session, workspace_id, doc_id):
         )
     )
     if row is None:
-        raise CollaborationNotFound("doc not found")
+        raise CollaborationNotFound("doc not found", code="doc_not_found")
     return row
 
 
@@ -119,7 +120,7 @@ def _channel(session, workspace_id, channel_id, viewer: Viewer):
         )
     )
     if row is None:
-        raise CollaborationNotFound("channel not found")
+        raise CollaborationNotFound("channel not found", code="channel_not_found")
     return row
 
 
@@ -136,7 +137,9 @@ def _require_channel_owner(session, channel, viewer: Viewer):
         )
     )
     if not owner:
-        raise CollaborationForbidden("only a channel owner or an administrator can do this")
+        raise CollaborationForbidden(
+            "only a channel owner or an administrator can do this", code="channel_admin_required"
+        )
 
 
 def _message(session, workspace_id, channel_id, message_id):
@@ -149,7 +152,7 @@ def _message(session, workspace_id, channel_id, message_id):
         )
     )
     if row is None:
-        raise CollaborationNotFound("message not found")
+        raise CollaborationNotFound("message not found", code="message_not_found")
     return row
 
 
@@ -166,7 +169,10 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
             if hasattr(model, "deleted_at"):
                 filters.append(model.deleted_at.is_(None))
             if session.scalar(select(model.id).where(*filters)) is None:
-                raise CollaborationNotFound(f"{key.removesuffix('_id')} not found")
+                raise CollaborationNotFound(
+                    f"{key.removesuffix('_id')} not found",
+                    code=f"{key.removesuffix('_id')}_not_found",
+                )
             fields[key] = value
     if fields.get("parent_doc_id") is not None:
         value = uuid.UUID(str(fields["parent_doc_id"]))
@@ -182,7 +188,7 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
             )
             is None
         ):
-            raise CollaborationNotFound("parent doc not found")
+            raise CollaborationNotFound("parent doc not found", code="parent_doc_not_found")
         parent_id = value
         while parent_id is not None:
             parent_id = session.scalar(
@@ -194,7 +200,9 @@ def _check_doc_refs(session, workspace_id, fields, doc_id=None):
                 )
             )
             if doc_id is not None and parent_id == doc_id:  # a new doc has no id yet
-                raise CollaborationConflict("doc parent cannot create a cycle")
+                raise CollaborationConflict(
+                    "doc parent cannot create a cycle", code="doc_parent_cycle"
+                )
         fields["parent_doc_id"] = value
 
 
@@ -212,7 +220,9 @@ class CommentService:
             if hasattr(model, "deleted_at"):
                 filters.append(model.deleted_at.is_(None))
             if session.scalar(select(model.id).where(*filters)) is None:
-                raise CollaborationNotFound(f"{target_type} not found")
+                raise CollaborationNotFound(
+                    f"{target_type} not found", code=f"{target_type}_not_found"
+                )
             rows = session.scalars(
                 select(Comment)
                 .where(
@@ -237,7 +247,7 @@ class CommentService:
                 )
             )
             if row is None:
-                raise CollaborationNotFound("comment not found")
+                raise CollaborationNotFound("comment not found", code="comment_not_found")
             return row
 
     def create(
@@ -253,7 +263,9 @@ class CommentService:
             if hasattr(model, "archived_at"):
                 filters.append(model.archived_at.is_(None))
             if session.scalar(select(model.id).where(*filters)) is None:
-                raise CollaborationNotFound(f"{target_type} not found")
+                raise CollaborationNotFound(
+                    f"{target_type} not found", code=f"{target_type}_not_found"
+                )
             values = {f"{target_type}_id": target_id}
             if block_id is not None:
                 block_id = uuid.UUID(str(block_id))
@@ -267,12 +279,15 @@ class CommentService:
                     )
                     is None
                 ):
-                    raise CollaborationNotFound("doc block not found")
+                    raise CollaborationNotFound("doc block not found", code="doc_block_not_found")
                 values["block_id"] = block_id
             if parent_comment_id is not None:
                 parent = self._get_comment(session, parent_comment_id)
                 if getattr(parent, f"{target_type}_id") != target_id:
-                    raise CollaborationConflict("reply must target the same resource as its parent")
+                    raise CollaborationConflict(
+                        "reply must target the same resource as its parent",
+                        code="reply_target_mismatch",
+                    )
                 values["parent_comment_id"] = parent.id
             values.update(
                 author_id=_active_member(session, self.workspace_id, author_id),
@@ -326,7 +341,7 @@ class CommentService:
             )
         )
         if row is None:
-            raise CollaborationNotFound("comment not found")
+            raise CollaborationNotFound("comment not found", code="comment_not_found")
         return row
 
 
@@ -448,7 +463,9 @@ class DocService:
                     )
                     is None
                 ):
-                    raise CollaborationNotFound("parent block not found")
+                    raise CollaborationNotFound(
+                        "parent block not found", code="parent_block_not_found"
+                    )
                 fields["parent_block_id"] = parent_id
             row = DocBlock(workspace_id=self.workspace_id, doc_id=doc.id, **fields)
             session.add(row)
@@ -476,7 +493,9 @@ class DocService:
                     )
                     is None
                 ):
-                    raise CollaborationNotFound("parent block not found")
+                    raise CollaborationNotFound(
+                        "parent block not found", code="parent_block_not_found"
+                    )
                 ancestor_id = parent_id
                 while ancestor_id is not None:
                     ancestor_id = session.scalar(
@@ -487,7 +506,9 @@ class DocService:
                         )
                     )
                     if ancestor_id == row.id:
-                        raise CollaborationConflict("block parent cannot create a cycle")
+                        raise CollaborationConflict(
+                            "block parent cannot create a cycle", code="block_parent_cycle"
+                        )
                 fields["parent_block_id"] = parent_id
             for key, value in fields.items():
                 setattr(row, key, value)
@@ -522,7 +543,7 @@ class DocService:
             )
         )
         if row is None:
-            raise CollaborationNotFound("doc block not found")
+            raise CollaborationNotFound("doc block not found", code="doc_block_not_found")
         return row
 
 
@@ -564,7 +585,10 @@ class ChannelService:
                     if hasattr(model, "deleted_at"):
                         filters.append(model.deleted_at.is_(None))
                     if session.scalar(select(model.id).where(*filters)) is None:
-                        raise CollaborationNotFound(f"{key.removesuffix('_id')} not found")
+                        raise CollaborationNotFound(
+                            f"{key.removesuffix('_id')} not found",
+                            code=f"{key.removesuffix('_id')}_not_found",
+                        )
                     fields[key] = value
             member_ids = {uuid.UUID(str(item)) for item in (member_ids or [])}
             creator = self.viewer.member_id
@@ -665,7 +689,8 @@ class ChannelService:
         )
         if active != member_ids:
             raise CollaborationNotFound(
-                "all channel members must be active members of this workspace"
+                "all channel members must be active members of this workspace",
+                code="channel_member_inactive",
             )
 
 
@@ -752,4 +777,7 @@ class MessageService:
     def _require_author(self, message):
         mine = self.viewer.member_id
         if not self.viewer.admin and (mine is None or message.author_id != mine):
-            raise CollaborationForbidden("only the author or an administrator can change a message")
+            raise CollaborationForbidden(
+                "only the author or an administrator can change a message",
+                code="message_edit_forbidden",
+            )

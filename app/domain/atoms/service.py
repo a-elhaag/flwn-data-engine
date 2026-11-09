@@ -24,17 +24,18 @@ from app.db.models.atoms import (
 )
 from app.db.models.identity import Member
 from app.db.models.memory import AgentRun, Approval, LlmUsage
+from app.domain.error_codes import DomainError, Invalid
 
 
-class AtomError(ValueError):
+class AtomError(DomainError, ValueError):
     code = "invalid"
 
 
-class AtomPermissionError(PermissionError):
+class AtomPermissionError(DomainError, PermissionError):
     code = "denied"
 
 
-class AtomNotFound(LookupError):
+class AtomNotFound(DomainError, LookupError):
     code = "not_found"
 
 
@@ -124,12 +125,12 @@ def _validate_cron(cron):
             for part in field.split(","):
                 base, *step = part.split("/")
                 if len(step) > 1 or (step and not 1 <= int(step[0]) <= high - low + 1):
-                    raise ValueError
+                    raise Invalid(code="invalid")
                 if base == "*":
                     continue
                 bounds = [int(value) for value in base.split("-")]
                 if len(bounds) not in (1, 2) or not low <= bounds[0] <= bounds[-1] <= high:
-                    raise ValueError
+                    raise Invalid(code="invalid")
         except ValueError:
             raise AtomError("invalid numeric cron field") from None
 

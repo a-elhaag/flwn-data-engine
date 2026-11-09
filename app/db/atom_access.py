@@ -11,9 +11,11 @@ from dataclasses import dataclass
 
 from sqlalchemy import text
 
+from app.domain.error_codes import DomainError
 
-class AtomAccessError(PermissionError):
-    pass
+
+class AtomAccessError(DomainError, PermissionError):
+    code = "atom_access_denied"
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,9 @@ def validate_context(context: AtomContext, bind=None, *, allow_finished: bool = 
     from app.db.session import engine, workspace_session
 
     if not all((context.workspace_id, context.atom_id, context.run_id, context.member_id)):
-        raise AtomAccessError("Atom tokens require matching member, atom and run")
+        raise AtomAccessError(
+            "Atom tokens require matching member, atom and run", code="atom_token_context_missing"
+        )
     with (
         bind_context(context),
         workspace_session(bind if bind is not None else engine(), context.workspace_id) as session,
@@ -55,7 +59,9 @@ def validate_context(context: AtomContext, bind=None, *, allow_finished: bool = 
             text("select atom_context_valid(:allow_finished)"), {"allow_finished": allow_finished}
         )
     if not valid:
-        raise AtomAccessError("Atom, member or run is not active or does not match")
+        raise AtomAccessError(
+            "Atom, member or run is not active or does not match", code="atom_context_inactive"
+        )
 
 
 def atom_kind(workspace_id: str, atom_id: str, bind=None) -> str | None:
@@ -98,7 +104,9 @@ def privileged_atom_session(workspace_id: str, bind=None):
     context = current_context()
     if context is not None:
         if str(workspace_id) != str(context.workspace_id):
-            raise AtomAccessError("Atom context is bound to another workspace")
+            raise AtomAccessError(
+                "Atom context is bound to another workspace", code="atom_workspace_mismatch"
+            )
         validate_context(context, bind=bind)
     with (
         bind_context(None),
@@ -145,7 +153,9 @@ def require_row_access(session, table: str, row: dict, *, level: str = "read") -
         },
     )
     if not valid:
-        raise AtomAccessError("No live atom grant permits this operation")
+        raise AtomAccessError(
+            "No live atom grant permits this operation", code="atom_grant_missing"
+        )
 
 
 def live_grants(context: AtomContext, bind=None) -> list[dict]:

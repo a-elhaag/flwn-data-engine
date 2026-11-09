@@ -28,6 +28,7 @@ from app.domain.atoms.service import (
     _uuid,
     _view,
 )
+from app.domain.error_codes import Invalid
 
 
 class ApprovalService(AtomService):
@@ -80,13 +81,13 @@ class ApprovalService(AtomService):
     ):
         self._bound()
         if kind not in ("plan", "pull_request", "deploy", "action", "atom_action"):
-            raise ValueError("invalid approval kind")
+            raise Invalid("invalid approval kind", code="invalid")
         if not isinstance(title, str) or not title.strip() or len(title) > 300:
-            raise ValueError("title must contain 1 to 300 characters")
+            raise Invalid("title must contain 1 to 300 characters", code="invalid")
         if request_key is not None and (
             not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 200
         ):
-            raise ValueError("request_key must contain 1 to 200 characters")
+            raise Invalid("request_key must contain 1 to 200 characters", code="invalid")
         if (
             not isinstance(payload, dict)
             or set(payload) != {"tool_slug", "arguments", "connection_id"}
@@ -94,7 +95,9 @@ class ApprovalService(AtomService):
             or not payload["tool_slug"].strip()
             or not isinstance(payload["arguments"], dict)
         ):
-            raise ValueError("payload requires tool_slug, arguments object and connection_id")
+            raise Invalid(
+                "payload requires tool_slug, arguments object and connection_id", code="invalid"
+            )
         payload = deepcopy(payload)
         payload["connection_id"] = str(_uuid(payload["connection_id"]))
         expires_at = _time(expires_at) if expires_at else None
@@ -182,7 +185,7 @@ class ApprovalService(AtomService):
         if not self.actor:
             raise AtomPermissionError("X-Acting-Member-Id is required")
         if status not in ("approved", "rejected"):
-            raise ValueError("decision must be approved or rejected")
+            raise Invalid("decision must be approved or rejected", code="invalid")
         with workspace_session(
             self.bind if self.bind is not None else db.engine(), self.workspace_id
         ) as session:
@@ -209,7 +212,7 @@ class ApprovalService(AtomService):
     def ready(self, *, limit=100):
         self._trusted()
         if not isinstance(limit, int) or not 1 <= limit <= 200:
-            raise ValueError("limit must be between 1 and 200")
+            raise Invalid("limit must be between 1 and 200", code="invalid")
         with self._session(scheduler=True) as session:
             return [
                 _view(row)
@@ -289,9 +292,9 @@ class ApprovalService(AtomService):
     def outcome(self, approval_id, *, status, result=None):
         self._bound()
         if status not in ("succeeded", "failed", "unknown"):
-            raise ValueError("outcome must be succeeded, failed or unknown")
+            raise Invalid("outcome must be succeeded, failed or unknown", code="invalid")
         if result is not None and not isinstance(result, dict):
-            raise ValueError("result must be an object")
+            raise Invalid("result must be an object", code="invalid")
         with self._session(finishing=True) as session:
             atom = self._atom(session, self.atom_id, lock=True)
             row = self._approval(session, approval_id, lock=True)

@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.models.identity import Member, User, Workspace
 from app.db.session import database_url, service_session
+from app.domain.error_codes import DomainError
 from app.domain.identity.email import canonical_email
 from app.domain.identity.members_teams import IdentityConflict, MemberService
 from app.domain.identity.users import UserConflict, UserService, email_matches
@@ -55,8 +56,8 @@ def enabled() -> bool:
     return all(_is_local(host.strip()) for host in hosts.split(","))
 
 
-class RealUser(PermissionError):  # a real account or workspace is in the way
-    pass
+class RealUser(DomainError, PermissionError):
+    code = "dev_account_conflict"
 
 
 def loopback(client_host: str | None) -> bool:
@@ -83,7 +84,10 @@ def _claim_user(email: str) -> None:
     with service_session() as session:
         settings = session.scalar(select(User.settings).where(email_matches(email)))
     if settings is not None and not settings.get(MARKER):
-        raise RealUser("that email belongs to a real account; dev sign-in only uses its own")
+        raise RealUser(
+            "that email belongs to a real account; dev sign-in only uses its own",
+            code="real_account_email",
+        )
 
 
 def _mark_user(user_id: str) -> None:
@@ -143,7 +147,10 @@ def _workspace(slug: str, name: str, owner_user_id: str) -> str:
             if found is None:
                 raise
     if not found.settings.get(MARKER):
-        raise RealUser(f"a workspace called {slug} already exists and is not a dev workspace")
+        raise RealUser(
+            f"a workspace called {slug} already exists and is not a dev workspace",
+            code="dev_workspace_slug_taken",
+        )
     return str(found.id)
 
 

@@ -9,26 +9,27 @@ from app.db import events
 from app.db.models.identity import Member, Team, TeamMember, User, Workspace
 from app.db.models.planning import Project
 from app.db.session import session_for
+from app.domain.error_codes import DomainError, Invalid
 from app.domain.identity.email import canonical_email
 from app.domain.identity.owners import ensure_an_owner, lock_owners
 from app.domain.identity.users import email_matches
 from app.domain.identity.viewer import Viewer
 
 
-class IdentityNotFound(LookupError):
-    pass
+class IdentityNotFound(DomainError, LookupError):
+    code = "identity_not_found"
 
 
-class IdentityConflict(ValueError):
-    pass
+class IdentityConflict(DomainError, ValueError):
+    code = "identity_conflict"
 
 
-class IdentityForbidden(PermissionError):
-    pass
+class IdentityForbidden(DomainError, PermissionError):
+    code = "identity_forbidden"
 
 
-class InvalidTarget(ValueError):
-    pass
+class InvalidTarget(DomainError, ValueError):
+    code = "invalid_target"
 
 
 def _workspace(session, workspace_id):
@@ -38,7 +39,7 @@ def _workspace(session, workspace_id):
         )
     )
     if row is None:
-        raise IdentityNotFound("workspace not found")
+        raise IdentityNotFound("workspace not found", code="workspace_not_found")
 
 
 def _member(session, workspace_id, member_id):
@@ -50,7 +51,7 @@ def _member(session, workspace_id, member_id):
         )
     )
     if row is None:
-        raise IdentityNotFound("member not found")
+        raise IdentityNotFound("member not found", code="member_not_found")
     return row
 
 
@@ -64,7 +65,7 @@ def _team(session, workspace_id, team_id):
         )
     )
     if row is None:
-        raise IdentityNotFound("team not found")
+        raise IdentityNotFound("team not found", code="team_not_found")
     return row
 
 
@@ -91,7 +92,7 @@ def _seat(session, team_id, member_id):
     """A member's place on a team."""
     row = session.get(TeamMember, (team_id, uuid.UUID(str(member_id))))
     if row is None:
-        raise IdentityNotFound("team member not found")
+        raise IdentityNotFound("team member not found", code="team_member_not_found")
     return row
 
 
@@ -131,7 +132,7 @@ class MemberService:
 
     def create(self, *, type, role, status, name, email, agent_kind, avatar_url, settings):
         if type != "HUMAN" and role == "owner":
-            raise ValueError("AI members cannot be owners")
+            raise Invalid("AI members cannot be owners", code="ai_member_owner_forbidden")
         normalized_email = canonical_email(email) if email else None
         with session_for(str(self.workspace_id)) as session:
             _workspace(session, self.workspace_id)
@@ -140,7 +141,7 @@ class MemberService:
                 user = session.scalar(select(User).where(email_matches(normalized_email)))
                 if user is not None and user.deleted_at is not None:
                     # never link a new membership to a deleted account (see users.delete)
-                    raise IdentityConflict("email cannot be used")
+                    raise IdentityConflict("email cannot be used", code="email_unavailable")
                 if user is None:
                     user = User(email=normalized_email, name=name.strip())
                     session.add(user)
@@ -154,7 +155,9 @@ class MemberService:
                     )
                 )
                 if duplicate:
-                    raise IdentityConflict("user is already a member of this workspace")
+                    raise IdentityConflict(
+                        "user is already a member of this workspace", code="already_member"
+                    )
             row = Member(
                 workspace_id=self.workspace_id,
                 user_id=user_id,
@@ -179,15 +182,16 @@ class MemberService:
                 owners = lock_owners(session, [self.workspace_id])  # first: see the latest
             row = _member(session, self.workspace_id, member_id)
             if fields.get("role") == "owner" and row.type != "HUMAN":
-                raise ValueError("AI members cannot be owners")
+                raise Invalid("AI members cannot be owners", code="ai_member_owner_forbidden")
             account = {"name", "email", "avatar_url"} & fields.keys()
             if row.type == "HUMAN" and account:
                 # These live on the person's user account, shared by every workspace they are in.
-                raise ValueError(
-                    f"{', '.join(sorted(account))} belong to the user account, not the member"
+                raise Invalid(
+                    f"{', '.join(sorted(account))} belong to the user account, not the member",
+                    code="account_fields_forbidden",
                 )
             if "email" in fields:
-                raise ValueError("AI members cannot have an email")
+                raise Invalid("AI members cannot have an email", code="ai_member_email_forbidden")
             if "name" in fields:
                 fields["name"] = fields["name"].strip()
             for key, value in fields.items():
@@ -227,7 +231,9 @@ class MemberService:
             if current is None or not (
                 current.role == "owner" and current.type == "HUMAN" and current.status == "active"
             ):
-                raise IdentityForbidden("only a current owner can transfer ownership")
+                raise IdentityForbidden(
+                    "only a current owner can transfer ownership", code="owner_transfer_forbidden"
+                )
             target = session.scalar(
                 select(Member)
                 .where(
@@ -238,9 +244,13 @@ class MemberService:
                 .with_for_update()
             )
             if target is None or target.type != "HUMAN" or target.status != "active":
-                raise InvalidTarget("the new owner must be an active human member")
+                raise InvalidTarget(
+                    "the new owner must be an active human member", code="owner_target_invalid"
+                )
             if target.id == current.id:
-                raise InvalidTarget("the new owner must be another member")
+                raise InvalidTarget(
+                    "the new owner must be another member", code="owner_target_self"
+                )
             target.role = "owner"
             if demote_self_to is not None:
                 current.role = demote_self_to
@@ -322,7 +332,10 @@ class TeamService:
                 )
             )
             if owns is not None:
-                raise IdentityConflict("team still owns projects; move them to another team first")
+                raise IdentityConflict(
+                    "team still owns projects; move them to another team first",
+                    code="team_has_projects",
+                )
             row.deleted_at = datetime.now(UTC)
             session.flush()
             events.record(session, str(self.workspace_id), self.actor, "team", row.id, "deleted")
@@ -375,9 +388,12 @@ class TeamService:
             team = _team(session, self.workspace_id, team_id)
             member = _member(session, self.workspace_id, member_id)
             if member.status != "active":
-                raise ValueError("team members must be active members of this workspace")
+                raise Invalid(
+                    "team members must be active members of this workspace",
+                    code="team_member_inactive",
+                )
             if session.get(TeamMember, (team.id, member.id)) is not None:
-                raise IdentityConflict("member is already on this team")
+                raise IdentityConflict("member is already on this team", code="already_on_team")
             seat = TeamMember(
                 workspace_id=self.workspace_id, team_id=team.id, member_id=member.id, role=role
             )
@@ -459,7 +475,10 @@ class TeamService:
                 )
             )
             if active != added:
-                raise ValueError("new team members must be active members of this workspace")
+                raise Invalid(
+                    "new team members must be active members of this workspace",
+                    code="team_member_inactive",
+                )
             removed = [member_id for member_id in seats if member_id not in ids]
             for member_id in removed:
                 session.delete(seats[member_id])

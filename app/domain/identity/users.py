@@ -13,18 +13,19 @@ from app.db import events
 from app.db.base import Base
 from app.db.models.identity import Member, TeamMember, User, Workspace
 from app.db.session import service_session, session_for
+from app.domain.error_codes import DomainError
 from app.domain.identity.email import canonical_email, canonical_or_none
 from app.domain.identity.owners import LastOwner, active_owners, lock_owners
 
 EMAIL_TAKEN = "email_taken"
 
 
-class UserNotFound(LookupError):
-    pass
+class UserNotFound(DomainError, LookupError):
+    code = "user_not_found"
 
 
-class UserConflict(ValueError):
-    pass
+class UserConflict(DomainError, ValueError):
+    code = "user_conflict"
 
 
 def _user(session, user_id):
@@ -32,7 +33,7 @@ def _user(session, user_id):
         select(User).where(User.id == uuid.UUID(str(user_id)), User.deleted_at.is_(None))
     )
     if row is None:
-        raise UserNotFound("user not found")
+        raise UserNotFound("user not found", code="user_not_found")
     return row
 
 
@@ -63,7 +64,7 @@ def _email_available(session, email, *, exclude_id=None):
     if exclude_id is not None:
         query = query.where(User.id != exclude_id)
     if session.scalar(query) is not None:
-        raise UserConflict(EMAIL_TAKEN)
+        raise UserConflict(EMAIL_TAKEN, code="email_taken")
 
 
 class UserService:

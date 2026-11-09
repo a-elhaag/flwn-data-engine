@@ -19,6 +19,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import revocation
 from app.core.config import settings
+from app.domain.error_codes import DomainError
 
 SCOPE_READ = "memory:read"
 SCOPE_WRITE = "memory:write"
@@ -91,8 +92,8 @@ AGENT_SCOPES = frozenset(
 )
 
 
-class TokenError(Exception):
-    pass
+class TokenError(DomainError):
+    code = "token_invalid"
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ def _workspace(value) -> str:
     try:
         return str(uuid.UUID(str(value)))
     except ValueError:
-        raise TokenError("workspace must be a UUID") from None
+        raise TokenError("workspace must be a UUID", code="token_workspace_invalid") from None
 
 
 def _member(value) -> str | None:
@@ -124,26 +125,33 @@ def _member(value) -> str | None:
     try:
         return str(uuid.UUID(str(value)))
     except ValueError:
-        raise TokenError("member must be a UUID") from None
+        raise TokenError("member must be a UUID", code="token_member_invalid") from None
 
 
 def _atom_claims(member_id, atom_id, run_id, scopes, ttl_seconds, ctx):
     if (atom_id is None and run_id is None) != (ctx is None):
-        raise TokenError("atom tokens require ctx, and only atom tokens carry it")
+        raise TokenError(
+            "atom tokens require ctx, and only atom tokens carry it", code="token_ctx_misplaced"
+        )
     if atom_id is not None or run_id is not None:
         if ctx not in CONTEXTS:
-            raise TokenError("ctx must be personal or workspace")
+            raise TokenError("ctx must be personal or workspace", code="token_ctx_invalid")
         if not (atom_id and run_id and member_id):
-            raise TokenError("atom tokens require atom_id, run_id and member_id")
+            raise TokenError(
+                "atom tokens require atom_id, run_id and member_id",
+                code="token_atom_claims_missing",
+            )
         if SCOPE_ATOMS_ADMIN in scopes or SCOPE_ADMIN in scopes:
-            raise TokenError("admin scopes are forbidden for atom tokens")
+            raise TokenError(
+                "admin scopes are forbidden for atom tokens", code="token_admin_scope_forbidden"
+            )
         if not 1 <= ttl_seconds <= 900:
-            raise TokenError("atom ttl_seconds must be 1-900")
+            raise TokenError("atom ttl_seconds must be 1-900", code="token_ttl_invalid")
 
 
 def verify(token: str) -> Claims:
     if not settings.AGENT_TOKENS_ENABLED:
-        raise TokenError("tokens are disabled")
+        raise TokenError("tokens are disabled", code="tokens_disabled")
     try:
         alg = jwt.get_unverified_header(token).get("alg")
     except jwt.PyJWTError:
@@ -167,7 +175,7 @@ def _signing_key(token: str):
         raise TokenError("invalid or expired token")
     if settings.TOKEN_JWKS_URL:
         return _jwks_client(settings.TOKEN_JWKS_URL).get_signing_key_from_jwt(token).key
-    raise TokenError("no token signing keys configured")
+    raise TokenError("no token signing keys configured", code="token_signing_key_missing")
 
 
 def _verify_signed(token: str) -> Claims:
@@ -186,12 +194,14 @@ def _verify_signed(token: str) -> Claims:
     try:
         revoked = revocation.is_revoked(jti)
     except (SQLAlchemyError, RuntimeError):
-        raise TokenError("token status unavailable") from None  # fail closed
+        raise TokenError(
+            "token status unavailable", code="token_status_unavailable"
+        ) from None  # fail closed
     if revoked:
-        raise TokenError("token revoked")
+        raise TokenError("token revoked", code="token_revoked")
     typ, ctx = data["typ"], data["ctx"]
     if typ not in TYPES or ctx not in CONTEXTS:
-        raise TokenError("typ or ctx is not valid")
+        raise TokenError("typ or ctx is not valid", code="token_type_invalid")
     member_id, obo = _member(data.get("mem")), _member(data.get("obo"))
     agent, run = _member(data.get("agent")), _member(data.get("run"))
     scopes = frozenset(str(data.get("scope", "")).split())
@@ -207,7 +217,7 @@ def _verify_signed(token: str) -> Claims:
     else:  # service: an engine with no user behind it
         ok = not (member_id or obo or agent or run)
     if not ok:
-        raise TokenError(f"claims do not fit typ {typ}")
+        raise TokenError(f"claims do not fit typ {typ}", code="token_claims_mismatch")
     return Claims(
         workspace_id=_workspace(data["ws"]),
         scopes=scopes,

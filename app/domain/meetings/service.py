@@ -164,7 +164,7 @@ class MeetingService:
         if meeting is None or not self._is_part_of(session, meeting):
             raise MeetingNotFound(meeting_id)
         if host_only and not (self.trusted or meeting.host_id == self.actor):
-            raise MeetingForbidden("only the host can do this")
+            raise MeetingForbidden("only the host can do this", code="host_required")
         return meeting
 
     def _is_part_of(self, session, meeting: Meeting) -> bool:
@@ -303,7 +303,10 @@ class MeetingService:
                 meeting.scheduled_at = scheduled_at
             if status and status != meeting.status:
                 if status not in NEXT_STATUS[meeting.status]:
-                    raise MeetingStateError(f"a {meeting.status} meeting cannot become {status}")
+                    raise MeetingStateError(
+                        f"a {meeting.status} meeting cannot become {status}",
+                        code="meeting_transition_invalid",
+                    )
                 now = datetime.now(UTC)
                 if status == "live":
                     meeting.started_at = now
@@ -317,14 +320,20 @@ class MeetingService:
         with session_for(self.workspace_id) as session:
             meeting = self._meeting(session, meeting_id, host_only=True, lock=True)
             if meeting.status in ("ended", "canceled"):
-                raise MeetingStateError(f"a {meeting.status} meeting cannot take new participants")
+                raise MeetingStateError(
+                    f"a {meeting.status} meeting cannot take new participants",
+                    code="meeting_participants_locked",
+                )
             if session.scalars(
                 select(Recording.id).where(
                     Recording.workspace_id == self.workspace, Recording.meeting_id == meeting.id
                 )
             ).first():
                 # someone added now was never asked before the recording began
-                raise MeetingStateError("a recorded meeting cannot take new participants")
+                raise MeetingStateError(
+                    "a recorded meeting cannot take new participants",
+                    code="meeting_participants_locked",
+                )
             have = set(
                 session.scalars(
                     select(MeetingParticipant.member_id).where(
@@ -350,9 +359,14 @@ class MeetingService:
             meeting = self._meeting(session, meeting_id, lock=True)
             participant = self._participant(session, meeting) if self.actor else None
             if participant is None:
-                raise MeetingForbidden("only a participant can answer for themselves")
+                raise MeetingForbidden(
+                    "only a participant can answer for themselves", code="participant_required"
+                )
             if meeting.status in ("ended", "canceled"):
-                raise MeetingStateError(f"a {meeting.status} meeting cannot change consent")
+                raise MeetingStateError(
+                    f"a {meeting.status} meeting cannot change consent",
+                    code="meeting_consent_locked",
+                )
             participant.consent_status = status
             participant.consented_at = datetime.now(UTC) if status == "granted" else None
             self._log(session, meeting.id, f"consent_{status}")
@@ -382,11 +396,15 @@ class MeetingService:
     ) -> RecordingStart:
         """Register a recording and get its upload link. Everyone present must have agreed."""
         if not self.trusted or self.files is None:
-            raise MeetingForbidden("recordings are started by the meeting service")
+            raise MeetingForbidden(
+                "recordings are started by the meeting service", code="recording_service_only"
+            )
         with session_for(self.workspace_id) as session:
             meeting = self._meeting(session, meeting_id, lock=True)
             if meeting.status not in ("live", "ended"):
-                raise MeetingStateError("only a live or ended meeting can have a recording")
+                raise MeetingStateError(
+                    "only a live or ended meeting can have a recording", code="meeting_not_live"
+                )
             snapshot, _ = self._consented(session, meeting)
             team_id, project_id = meeting.team_id, meeting.project_id
         ticket = self.files.start_upload(
@@ -405,7 +423,10 @@ class MeetingService:
                 meeting = self._meeting(session, meeting_id, lock=True)
                 again, _ = self._consented(session, meeting)
                 if meeting.status not in ("live", "ended") or again.keys() != snapshot.keys():
-                    raise ConsentMissing("the participants changed while the recording started")
+                    raise ConsentMissing(
+                        "the participants changed while the recording started",
+                        code="participants_changed",
+                    )
             except (ConsentMissing, MeetingNotFound, MeetingStateError):
                 self.files.delete(ticket.file_id)
                 raise
@@ -430,10 +451,14 @@ class MeetingService:
         with session_for(self.workspace_id) as session:
             meeting = self._meeting(session, meeting_id, host_only=True, lock=True)
             if meeting.status not in ("live", "ended"):
-                raise MeetingStateError("only a live or ended meeting can have a transcript")
+                raise MeetingStateError(
+                    "only a live or ended meeting can have a transcript", code="meeting_not_live"
+                )
             _, present = self._consented(session, meeting)
             if any(s.speaker_member_id and s.speaker_member_id not in present for s in segments):
-                raise InvalidReference("a speaker is not a participant of this meeting")
+                raise InvalidReference(
+                    "a speaker is not a participant of this meeting", code="speaker_not_participant"
+                )
             known = {s.speaker_member_id for s in segments if s.speaker_member_id}
             names = dict(
                 session.execute(
