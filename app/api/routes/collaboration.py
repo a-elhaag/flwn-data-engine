@@ -33,6 +33,7 @@ from app.api.schemas.collab import (
     MessagePage,
     MessageUpdate,
 )
+from app.db.base import COMMENT_TARGET_TYPES
 from app.domain.collaboration.service import (
     ChannelService,
     CollaborationConflict,
@@ -76,7 +77,7 @@ def create_comment(request: Request, workspace_id: WorkspaceId, body: CommentCre
 def list_comments(
     request: Request,
     workspace_id: WorkspaceId,
-    target_type: Literal["task", "work_item", "project", "project_update", "sprint", "doc"],
+    target_type: Literal[COMMENT_TARGET_TYPES],
     target_id: UUID,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

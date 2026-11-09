@@ -12,14 +12,22 @@ from app.db.atom_access import (
     privileged_atom_session,
     validate_context,
 )
-from app.db.models.atoms import Atom, AtomConnection, AtomSkill, CatalogSkill, Skill
+from app.db.models.atoms import (
+    OWNERSHIP_SCOPES,
+    PERMISSION_CEILINGS,
+    Atom,
+    AtomConnection,
+    AtomSkill,
+    CatalogSkill,
+    Skill,
+)
 from app.db.models.identity import Member
 from app.db.session import tune_vector_search
 from app.domain.error_codes import Forbidden, Invalid, Missing
 from app.domain.memory import vectorizer
 from app.integrations.ranking import FUSION_K, fuse
 
-PERMISSIONS = {name: i for i, name in enumerate(("read", "draft", "write", "destructive"))}
+PERMISSIONS = {name: i for i, name in enumerate(PERMISSION_CEILINGS)}
 
 
 def _uuid(value):
@@ -220,7 +228,7 @@ class SkillService:
         tools_required=None,
         owner_member_id=None,
     ):
-        if scope not in ("workspace", "personal"):
+        if scope not in OWNERSHIP_SCOPES:
             raise Forbidden("catalog publication is a trusted service operation", code="denied")
         if type(version) is not int or version < 1:
             raise Invalid("version must be positive", code="invalid")

@@ -60,14 +60,7 @@ class ProjectUpdate(BaseModel):
         if not self.model_fields_set:
             raise ValueError("at least one field must be provided")
         _reject_null(self, {"key", "name", "status"})
-        if self.status is not None and self.status not in {
-            "backlog",
-            "planned",
-            "in_progress",
-            "paused",
-            "completed",
-            "canceled",
-        }:
+        if self.status is not None and self.status not in PROJECT_STATUSES:
             raise ValueError("invalid project status")
         return self
 

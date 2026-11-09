@@ -6,6 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.db.models.files import FILE_KINDS, FILE_SOURCES
+from app.db.models.memory import CONFLICT_RESOLUTIONS
+
 NonBlank = Annotated[str, Field(min_length=1, max_length=100000, pattern=r"\S")]
 
 
@@ -74,13 +77,11 @@ class FlagConflictRequest(BaseModel):
 
 
 class ResolveConflictRequest(BaseModel):
-    status: Literal["accepted", "dismissed", "resolved"]
+    status: Literal[CONFLICT_RESOLUTIONS]
     note: Annotated[str, Field(max_length=5000)] | None = None
 
 
-FileKind = Literal[
-    "document", "pdf", "image", "voice_note", "audio", "video", "recording", "report", "other"
-]
+FileKind = Literal[FILE_KINDS]
 
 
 class SearchFilesRequest(BaseModel):
@@ -95,7 +96,7 @@ class StartUploadRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=255, pattern=r"\S")]
     content_type: Annotated[str, Field(min_length=1, max_length=200, pattern=r"\S")]
     size_bytes: int = Field(ge=1)
-    source: Literal["workspace", "chat", "meeting", "agent", "import"] = "workspace"
+    source: Literal[FILE_SOURCES] = "workspace"
     project_id: UUID | None = None
     folder_id: UUID | None = None
     team_id: UUID | None = None

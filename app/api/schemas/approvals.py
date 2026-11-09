@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
+from app.db.models.memory import APPROVAL_KINDS, OUTCOME_STATUSES
+
 
 class ApprovalPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -15,7 +17,7 @@ class ApprovalPayload(BaseModel):
 
 class CreateApproval(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["plan", "pull_request", "deploy", "action", "atom_action"] = "atom_action"
+    kind: Literal[APPROVAL_KINDS] = "atom_action"
     title: Annotated[str, Field(min_length=1, max_length=300)]
     payload: ApprovalPayload
     request_key: Annotated[str | None, Field(min_length=1, max_length=200)] = None
@@ -37,5 +39,5 @@ class ApprovalBootstrap(BaseModel):
 
 class ApprovalOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    status: Literal["succeeded", "failed", "unknown"]
+    status: Literal[OUTCOME_STATUSES]
     result: dict | None = None

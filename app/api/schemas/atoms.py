@@ -7,6 +7,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.db.models.atoms import (
+    ATOM_LEVELS,
+    CONNECTION_STATUSES,
+    MODEL_TIERS,
+    OWNERSHIP_SCOPES,
+    PERMISSION_CEILINGS,
+    RESOURCE_TYPES,
+)
+
 NonBlank = Annotated[str, Field(min_length=1, max_length=20000, pattern=r"\S")]
 Money = Annotated[Decimal, Field(ge=0, allow_inf_nan=False, max_digits=12, decimal_places=6)]
 
@@ -18,9 +27,9 @@ class AtomBody(BaseModel):
 class CreateAtom(AtomBody):
     name: NonBlank
     description: str | None = None
-    kind: Literal["workspace", "personal"] = "workspace"
+    kind: Literal[OWNERSHIP_SCOPES] = "workspace"
     owner_member_id: UUID | None = None
-    model_tier: Literal["small", "medium"] = "small"
+    model_tier: Literal[MODEL_TIERS] = "small"
     max_runs_per_day: int = Field(ge=0)
     max_cost_per_day: Money
     max_actions_per_day: int = Field(ge=0)
@@ -29,7 +38,7 @@ class CreateAtom(AtomBody):
 class ConfigureAtom(AtomBody):
     name: NonBlank | None = None
     description: str | None = None
-    model_tier: Literal["small", "medium"] | None = None
+    model_tier: Literal[MODEL_TIERS] | None = None
     status: Literal["draft", "paused", "killed"] | None = None
     max_runs_per_day: int | None = Field(default=None, ge=0)
     max_cost_per_day: Money | None = None
@@ -64,11 +73,9 @@ class ActivateVersion(AtomBody):
 
 
 class GrantBody(AtomBody):
-    resource_type: Literal[
-        "project", "team", "collection", "channel", "folder", "memory", "meeting", "connection"
-    ]
+    resource_type: Literal[RESOURCE_TYPES]
     resource_id: UUID | None = None
-    level: Literal["summary", "read", "write"]
+    level: Literal[ATOM_LEVELS]
     constraints: dict = Field(default_factory=dict)
 
 
@@ -111,11 +118,11 @@ class ConnectionBody(AtomBody):
     composio_user_id: NonBlank
     composio_account_ref: NonBlank | None = None
     toolkit_version: Annotated[str, Field(min_length=1, max_length=200, pattern=r"^\S+$")]
-    permission_ceiling: Literal["read", "draft", "write", "destructive"]
+    permission_ceiling: Literal[PERMISSION_CEILINGS]
     allowed_tools: list[Annotated[str, Field(min_length=1, max_length=200, pattern=r"^\S+$")]] = (
         Field(default_factory=list, max_length=500)
     )
-    status: Literal["active", "expired", "revoked", "unknown"] = "unknown"
+    status: Literal[CONNECTION_STATUSES] = "unknown"
 
     @model_validator(mode="after")
     def pinned_version(self):

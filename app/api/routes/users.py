@@ -10,6 +10,7 @@ from app.api.auth import service_only
 from app.api.errors import api_error, code_of
 from app.api.paging import split_page
 from app.api.schemas.identity import MembershipList, UserCreate, UserOut, UserPage, UserUpdate
+from app.db.base import MEMBER_STATUSES, MEMBER_TYPES
 from app.domain.identity.owners import LAST_OWNER, LastOwner
 from app.domain.identity.users import EMAIL_TAKEN, UserConflict, UserNotFound, UserService
 
@@ -61,8 +62,8 @@ def get_user(user_id: UUID):
 )
 def list_user_memberships(
     user_id: UUID,
-    status: Literal["active", "suspended"] | None = None,
-    type: Literal["HUMAN", "AI"] | None = None,
+    status: Literal[MEMBER_STATUSES] | None = None,
+    type: Literal[MEMBER_TYPES] | None = None,
 ):
     items = _call(UserService().memberships, str(user_id), status=status, type=type)
     return MembershipList(items=items, total=len(items))

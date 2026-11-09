@@ -9,6 +9,12 @@ from mcp.server.fastmcp import Context
 from pydantic import Field
 
 from app.api.tokens import Claims
+from app.db.models.atoms import (
+    OWNERSHIP_SCOPES,
+    REPORTED_CONNECTION_STATUSES,
+    RESOURCE_TYPES,
+)
+from app.db.models.memory import APPROVAL_KINDS, OUTCOME_STATUSES, RUN_FINISH_STATUSES
 from app.integrations.mcp.core import READ_ONLY, WRITES, Label, Text, _guarded, _tool
 
 logger = logging.getLogger(__name__)
@@ -68,7 +74,7 @@ async def atom_run_start(
     description="Finish the bound run once, reconcile usage and advance its cursor only on success. Repeated finishes do not charge twice.",
 )
 async def atom_run_finish(
-    status: Literal["succeeded", "failed", "canceled"],
+    status: Literal[RUN_FINISH_STATUSES],
     ctx: Context,
     output: dict | None = None,
     tokens_in: Annotated[int, Field(ge=0)] = 0,
@@ -127,7 +133,7 @@ async def atom_propose_version(
 )
 async def atom_connection_report(
     connection_id: uuid.UUID,
-    status: Literal["expired", "revoked", "unknown"],
+    status: Literal[REPORTED_CONNECTION_STATUSES],
     ctx: Context,
     detail: Annotated[str | None, Field(max_length=2000)] = None,
 ) -> dict:
@@ -178,7 +184,7 @@ async def skill_write(
     description: Text,
     when_to_use: Text,
     instructions: Text,
-    scope: Literal["workspace", "personal"],
+    scope: Literal[OWNERSHIP_SCOPES],
     ctx: Context,
     version: Annotated[int, Field(ge=1)] = 1,
     tools_required: list[dict] | None = None,
@@ -224,9 +230,7 @@ async def skill_attach(
     description="Return counts, safe groupings or time trends permitted by live summary/read/write grants. Never returns raw row IDs, titles or bodies.",
 )
 async def aggregate_read(
-    resource_type: Literal[
-        "project", "team", "collection", "channel", "folder", "memory", "meeting", "connection"
-    ],
+    resource_type: Literal[RESOURCE_TYPES],
     ctx: Context,
     resource_id: uuid.UUID | None = None,
     group_by: str | None = None,
@@ -262,7 +266,7 @@ async def atom_approval_create(
     payload: dict,
     ctx: Context,
     request_key: Label | None = None,
-    kind: Literal["plan", "pull_request", "deploy", "action", "atom_action"] = "atom_action",
+    kind: Literal[APPROVAL_KINDS] = "atom_action",
     assigned_to: uuid.UUID | None = None,
     expires_at: datetime | None = None,
 ) -> dict:
@@ -334,7 +338,7 @@ async def atom_approval_claim(approval_id: uuid.UUID, ctx: Context) -> dict:
 )
 async def atom_approval_outcome(
     approval_id: uuid.UUID,
-    status: Literal["succeeded", "failed", "unknown"],
+    status: Literal[OUTCOME_STATUSES],
     ctx: Context,
     result: dict | None = None,
 ) -> dict:

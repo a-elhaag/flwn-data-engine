@@ -20,6 +20,7 @@ from app.api.schemas.atoms import (
     SkillAttachment,
     StartRun,
 )
+from app.db.base import ATOM_STATUSES
 from app.domain.atoms.service import AtomService, scheduler_workspaces
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/atoms")
@@ -65,7 +66,7 @@ def list_atoms(service: Service):
 @router.get("/scheduler-state", dependencies=[allow(None)])
 def scheduler_state(
     workspace_id: WorkspaceId,
-    status: Literal["draft", "active", "paused", "killed"] | None = None,
+    status: Literal[ATOM_STATUSES] | None = None,
     enabled: bool | None = None,
 ):
     service = AtomService(str(workspace_id), trusted=True)

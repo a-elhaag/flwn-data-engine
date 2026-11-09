@@ -15,7 +15,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.base import ATOM_STATUSES
 from app.db.models.atoms import (
+    ATOM_LEVELS,
+    ATOM_SOURCES,
+    CONNECTION_STATUSES,
+    MODEL_TIERS,
+    OWNERSHIP_SCOPES,
     PERMISSION_CEILINGS,
+    REPORTED_CONNECTION_STATUSES,
     RESOURCE_TYPES,
     Atom,
     AtomConnection,
@@ -24,7 +30,7 @@ from app.db.models.atoms import (
     AtomVersion,
 )
 from app.db.models.identity import Member
-from app.db.models.memory import AgentRun, Approval, LlmUsage
+from app.db.models.memory import RUN_FINISH_STATUSES, AgentRun, Approval, LlmUsage
 from app.domain.error_codes import DomainError, Invalid
 
 
@@ -272,7 +278,7 @@ class AtomService:
         max_cost_per_day="1",
         max_actions_per_day=100,
     ):
-        if kind not in ("workspace", "personal") or bool(owner_member_id) != (kind == "personal"):
+        if kind not in OWNERSHIP_SCOPES or bool(owner_member_id) != (kind == "personal"):
             raise AtomError("personal atoms require an owner; workspace atoms cannot have one")
         self._validate_config(
             dict(
@@ -326,7 +332,7 @@ class AtomService:
             raise AtomError("unsupported configuration fields")
         if "name" in fields and (not isinstance(fields["name"], str) or not fields["name"].strip()):
             raise AtomError("name is required")
-        if "model_tier" in fields and fields["model_tier"] not in ("small", "medium"):
+        if "model_tier" in fields and fields["model_tier"] not in MODEL_TIERS:
             raise AtomError("invalid model tier")
         for key in ("max_runs_per_day", "max_actions_per_day"):
             if key in fields:
@@ -429,7 +435,7 @@ class AtomService:
             atom = self._atom(session, target, lock=True)
             member = self._row(session, Member, self.actor)
             effective_source = "self" if member.type == "AI" else (source or "human")
-            if effective_source not in ("self", "human", "atomizer"):
+            if effective_source not in ATOM_SOURCES:
                 raise AtomError("invalid version source")
             number = (
                 session.scalar(
@@ -588,7 +594,7 @@ class AtomService:
     def set_grant(
         self, atom_id, *, resource_type, resource_id=None, level="read", constraints=None
     ):
-        if resource_type not in RESOURCE_TYPES or level not in ("summary", "read", "write"):
+        if resource_type not in RESOURCE_TYPES or level not in ATOM_LEVELS:
             raise AtomError("invalid grant")
         with self._session(admin=True, own=atom_id) as session:
             atom = self._atom(session, atom_id, lock=True)
@@ -696,7 +702,7 @@ class AtomService:
             or permission_ceiling not in PERMISSION_CEILINGS
         ):
             raise AtomError("invalid version or permission ceiling")
-        if status not in ("active", "expired", "revoked", "unknown"):
+        if status not in CONNECTION_STATUSES:
             raise AtomError("invalid connection status")
         if status == "active" and not composio_account_ref:
             raise AtomError("active connection requires an account reference")
@@ -739,7 +745,7 @@ class AtomService:
     def report_connection(
         self, connection_id, *, status, status_detail=None, atom_id=None, run_id=None
     ):
-        if status not in ("expired", "revoked", "unknown"):
+        if status not in REPORTED_CONNECTION_STATUSES:
             raise AtomError("atoms may only report expired, revoked, or unknown connections")
         target, run_target = atom_id or self.atom_id, run_id or self.run_id
         if target is None or run_target is None:
@@ -910,7 +916,7 @@ class AtomService:
         error=None,
         model=None,
     ):
-        if status not in ("succeeded", "failed", "canceled"):
+        if status not in RUN_FINISH_STATUSES:
             raise AtomError("invalid terminal status")
         tokens_in, tokens_out, actions = _count(tokens_in), _count(tokens_out), _count(actions)
         cost, output = _amount(cost), _object(output)
@@ -925,7 +931,7 @@ class AtomService:
                 raise AtomNotFound("atom run not found")
             atom = self._atom(session, run.atom_id, lock=True)
             session.refresh(run, with_for_update=True)
-            if run.status in ("succeeded", "failed", "canceled"):
+            if run.status in RUN_FINISH_STATUSES:
                 return _view(run)
             if run.status != "running":
                 raise AtomStateError("run is not running")
