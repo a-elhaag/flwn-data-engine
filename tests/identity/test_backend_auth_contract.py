@@ -235,7 +235,9 @@ class LastOwnerTests(ContractHarness):
 
     def assert_last_owner(self, response):
         self.assertEqual(response.status_code, 409, response.text)
-        self.assertEqual(response.json(), {"detail": "last_owner"})
+        self.assertEqual(
+            response.json(), {"detail": "last_owner", "code": "last_owner", "fields": None}
+        )
 
     def test_sole_owner_cannot_be_demoted_suspended_or_removed(self):
         self.assert_last_owner(self.patch_member(self.ws, self.owner_member, role="admin"))
@@ -404,12 +406,18 @@ class CanonicalEmailApiTests(ContractHarness):
         clash = self.client.post(
             "/users", json={"email": f"{local}+tag@xn--bcher-kva.example", "name": "Other"}
         )
-        self.assertEqual((clash.status_code, clash.json()), (409, {"detail": "email_taken"}))
+        self.assertEqual(
+            (clash.status_code, clash.json()),
+            (409, {"detail": "email_taken", "code": "email_taken", "fields": None}),
+        )
         other = self.user()
         taken = self.client.patch(
             f"/users/{other}", json={"email": f"{local.upper()}+tag@Bücher.example"}
         )
-        self.assertEqual((taken.status_code, taken.json()), (409, {"detail": "email_taken"}))
+        self.assertEqual(
+            (taken.status_code, taken.json()),
+            (409, {"detail": "email_taken", "code": "email_taken", "fields": None}),
+        )
         self.assertEqual(
             self.client.post("/users", json={"email": "a@localhost", "name": "X"}).status_code, 422
         )
@@ -451,7 +459,10 @@ class MemberEmailRaceTests(ContractHarness):
                     "email": "race@example.com",
                 },
             )
-        self.assertEqual((response.status_code, response.json()), (409, {"detail": "email_taken"}))
+        self.assertEqual(
+            (response.status_code, response.json()),
+            (409, {"detail": "email_taken", "code": "email_taken", "fields": None}),
+        )
 
 
 class ServiceKeyTests(ContractHarness):

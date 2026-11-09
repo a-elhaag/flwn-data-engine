@@ -3,10 +3,11 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api.auth import service_only
+from app.api.errors import api_error, code_of
 from app.api.paging import split_page
 from app.api.schemas.identity import MembershipList, UserCreate, UserOut, UserPage, UserUpdate
 from app.domain.identity.owners import LAST_OWNER, LastOwner
@@ -19,17 +20,17 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except UserNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except UserConflict as exc:
-        raise HTTPException(409, str(exc)) from None
-    except LastOwner:
-        raise HTTPException(409, LAST_OWNER) from None
+        raise api_error(409, exc.code, str(exc)) from None
+    except LastOwner as exc:
+        raise api_error(409, exc.code, LAST_OWNER) from None
     except IntegrityError as exc:
         if "uq_users_email" in str(exc.orig):  # lost a race with another create
-            raise HTTPException(409, EMAIL_TAKEN) from None
-        raise HTTPException(409, "user conflicts with an existing record") from None
+            raise api_error(409, "email_taken", EMAIL_TAKEN) from None
+        raise api_error(409, "conflict_user", "user conflicts with an existing record") from None
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
 @router.post("", status_code=201, response_model=UserOut)

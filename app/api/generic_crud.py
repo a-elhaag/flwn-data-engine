@@ -19,7 +19,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi import Path as PathParam
 from pydantic import ConfigDict, Field, create_model
 from sqlalchemy import select
@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.api import auth, tokens
+from app.api.errors import api_error
 from app.db.base import Base
 from app.db.session import session_for
 from app.openapi.examples import EXAMPLES
@@ -206,8 +207,12 @@ def _error(exc: Exception):
     if isinstance(exc, IntegrityError):
         text = str(exc.orig).lower()
         if "check constraint" in text:
-            raise HTTPException(422, "a value breaks a database rule") from None
-        raise HTTPException(409, "resource conflicts with an existing record") from None
+            raise api_error(
+                422, "database_rule_violated", "a value breaks a database rule"
+            ) from None
+        raise api_error(
+            409, "conflict_record", "resource conflicts with an existing record"
+        ) from None
     raise exc
 
 
@@ -254,7 +259,7 @@ def _register(table, models: dict) -> dict:
             query = query.where(model.deleted_at.is_(None))
         row = session.scalar(query)
         if row is None:
-            raise HTTPException(404, f"{label} not found")
+            raise api_error(404, f"{one}_not_found", f"{label} not found")
         return row
 
     def list_rows(workspace_id, request, limit: int = 50, offset: int = 0):

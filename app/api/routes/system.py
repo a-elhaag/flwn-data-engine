@@ -2,10 +2,11 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, Response
 
 from app.api import revocation
 from app.api.auth import _principal, service_only
+from app.api.errors import api_error
 from app.api.schemas.common import RevocationRequest
 from app.core.health import health_check
 from app.domain.identity import viewer as members
@@ -43,10 +44,10 @@ def token_session(authorization: Annotated[str | None, Header()] = None) -> dict
     if principal.atom_id or (
         principal.member_id and is_atom_member(principal.workspace_id, principal.member_id)
     ):
-        raise HTTPException(status_code=403, detail="Atom tokens are not checked here")
+        raise api_error(403, "atom_token_not_checked", "Atom tokens are not checked here")
     for acting in (principal.member_id, principal.obo):
         if acting and not members.is_active(principal.workspace_id, acting):
-            raise HTTPException(status_code=403, detail="Member is not active in this workspace")
+            raise api_error(403, "member_inactive", "Member is not active in this workspace")
     return {
         "workspace_id": principal.workspace_id,
         "member_id": principal.member_id,

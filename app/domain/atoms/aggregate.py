@@ -10,6 +10,7 @@ from app.db.models.meetings import Meeting
 from app.db.models.memory import Memory
 from app.db.models.planning import Project, Task
 from app.domain.atoms.skills import _uuid
+from app.domain.error_codes import Forbidden, Invalid
 
 # Grouping arbitrary strings (titles, labels, JSON properties, toolkits) can disclose raw data.
 RESOURCES = {
@@ -27,7 +28,7 @@ RESOURCES = {
 class AggregateService:
     def __init__(self, workspace_id, actor, *, atom_id=None, run_id=None, bind=None):
         if atom_id is None or run_id is None:
-            raise PermissionError("aggregate reads require an atom and run")
+            raise Forbidden("aggregate reads require an atom and run", code="denied")
         self.context = AtomContext(
             str(_uuid(workspace_id)), str(_uuid(atom_id)), str(_uuid(run_id)), str(_uuid(actor))
         )
@@ -35,12 +36,12 @@ class AggregateService:
 
     def read(self, resource_type, *, resource_id=None, group_by=None, trend=None):
         if resource_type not in RESOURCES:
-            raise ValueError("unsupported aggregate resource")
+            raise Invalid("unsupported aggregate resource", code="invalid")
         model, resource_field, fields = RESOURCES[resource_type]
         if group_by is not None and (not isinstance(group_by, str) or group_by not in fields):
-            raise ValueError("unsupported aggregate grouping")
+            raise Invalid("unsupported aggregate grouping", code="invalid")
         if trend not in (None, "day", "week", "month"):
-            raise ValueError("trend must be day, week, or month")
+            raise Invalid("trend must be day, week, or month", code="invalid")
         target = _uuid(resource_id) if resource_id is not None else None
         grants = live_grants(self.context, bind=self.bind)
         relevant = [
@@ -54,20 +55,20 @@ class AggregateService:
             )
         ]
         if not relevant:
-            raise PermissionError("an aggregate grant is required")
+            raise Forbidden("an aggregate grant is required", code="denied")
         for grant in relevant:
             constraints = grant["constraints"]
             if not isinstance(constraints, dict) or set(constraints) - {"labels", "since_days"}:
-                raise PermissionError("unknown grant constraints")
+                raise Forbidden("unknown grant constraints", code="denied")
             if "since_days" in constraints and (
                 type(constraints["since_days"]) is not int or constraints["since_days"] < 0
             ):
-                raise PermissionError("invalid since_days constraint")
+                raise Forbidden("invalid since_days constraint", code="denied")
             if "labels" in constraints and (
                 not isinstance(constraints["labels"], list)
                 or any(not isinstance(label, str) or not label for label in constraints["labels"])
             ):
-                raise PermissionError("invalid labels constraint")
+                raise Forbidden("invalid labels constraint", code="denied")
         table = model.__table__
         conditions = [
             model.workspace_id == _uuid(self.context.workspace_id),

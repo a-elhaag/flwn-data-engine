@@ -11,12 +11,15 @@ import uuid
 from sqlalchemy import func, select
 
 from app.db.models.identity import Member, User, Workspace
+from app.domain.error_codes import DomainError
 
 LAST_OWNER = "last_owner"
 
 
-class LastOwner(Exception):
+class LastOwner(DomainError):
     """The change would leave a workspace with no active human owner (HTTP 409 last_owner)."""
+
+    code = "last_owner"
 
     def __init__(self):
         super().__init__(LAST_OWNER)

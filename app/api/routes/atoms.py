@@ -3,9 +3,10 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 
 from app.api.auth import WorkspaceId, allow, service_only
+from app.api.errors import api_error, code_of
 from app.api.schemas.atoms import (
     ActivateVersion,
     AtomVersionBody,
@@ -38,11 +39,12 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except PermissionError as exc:
-        raise HTTPException(403, f"denied: {exc}") from None
+        raise api_error(403, code_of(exc, "denied"), f"denied: {exc}") from None
     except LookupError as exc:
-        raise HTTPException(404, f"not_found: {exc}") from None
+        raise api_error(404, code_of(exc, "not_found"), f"not_found: {exc}") from None
     except ValueError as exc:
-        raise HTTPException(422, f"{getattr(exc, 'code', 'invalid')}: {exc}") from None
+        code = code_of(exc, "invalid")
+        raise api_error(422, code, f"{code}: {exc}") from None
 
 
 @scheduler_router.get("/scheduler-workspaces", dependencies=[Depends(service_only)])

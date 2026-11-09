@@ -23,8 +23,12 @@ import unicodedata
 
 import idna
 
+from app.domain.error_codes import DomainError
 
-class InvalidEmail(ValueError):
+
+class InvalidEmail(DomainError, ValueError):
+    code = "invalid_email"
+
     def __init__(self, message: str = "invalid email address"):
         super().__init__(message)
 

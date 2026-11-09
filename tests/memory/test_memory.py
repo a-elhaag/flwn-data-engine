@@ -132,7 +132,8 @@ class MemoryApiTests(MemoryHarness):
             json={"text": "t", "source": "chat", "agent": "planner"},
         )
         self.assertEqual(
-            (response.status_code, response.json()), (404, {"detail": "Workspace not found"})
+            (response.status_code, response.json()),
+            (404, {"detail": "Workspace not found", "code": "workspace_not_found", "fields": None}),
         )
         self.assertEqual(self.recall(ghost).json(), [])
 

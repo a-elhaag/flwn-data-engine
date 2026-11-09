@@ -95,7 +95,7 @@ class ConflictService:
                 )
             ).first()
             if memory is None:
-                raise MemoryNotFound(decision_id)
+                raise MemoryNotFound(decision_id, code="decision_not_found")
             # The flag points at a `decisions` row; a decision stored as a plain memory has none yet.
             session.execute(
                 insert(Decision)

@@ -159,7 +159,9 @@ class FileService:
     ) -> UploadTicket:
         limit = LIMITS.get(kind, DEFAULT_LIMIT)
         if size_bytes > limit:
-            raise UploadRejected(f"{kind} files can be at most {limit // MB} MB")
+            raise UploadRejected(
+                f"{kind} files can be at most {limit // MB} MB", code="file_too_large"
+            )
         file_id = uuid.uuid4()
         container = container_for(kind, source)
         path = f"{self.workspace_id}/{file_id}/{safe_name(name)}"
@@ -272,7 +274,9 @@ class FileService:
         with session_for(self.workspace_id) as session:
             row = self._row(session, file_id)
             if row.status != "ready":
-                raise UploadIncomplete(f"the file is {row.status}, not ready")
+                raise UploadIncomplete(
+                    f"the file is {row.status}, not ready", code="file_not_ready"
+                )
             container, path, name = row.container, row.blob_path, row.name
         ttl = settings.DOWNLOAD_URL_TTL_SECONDS
         return DownloadLink(
@@ -298,7 +302,9 @@ class FileService:
         with session_for(self.workspace_id) as session:
             row = self._row(session, file_id)
             if row.status != "ready":
-                raise UploadIncomplete(f"the file is {row.status}, not ready")
+                raise UploadIncomplete(
+                    f"the file is {row.status}, not ready", code="file_not_ready"
+                )
             row.index_status, row.index_error = indexer.plan(row.source, row.content_type, row.name)
             self._log(session, row.id, "reindex_requested")
             record = _record(row)

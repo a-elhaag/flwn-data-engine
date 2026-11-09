@@ -62,10 +62,24 @@ class BearerGate:
                     raise tokens.TokenError("missing")
                 tokens.verify(header[7:].strip())
             except tokens.TokenError:
+                # "error" is what MCP clients read; "detail" and "code" follow the API error body.
                 response = JSONResponse(
-                    {"error": "invalid_token"},
+                    {
+                        "error": "invalid_token",
+                        "detail": "Invalid or expired token",
+                        "code": "token_invalid",
+                        "fields": None,
+                    },
                     status_code=401,
                     headers={"WWW-Authenticate": "Bearer"},
+                )
+                return await response(scope, receive, send)
+            if not scope["path"].startswith(
+                "/mcp"
+            ):  # this app owns only /mcp: anything else is missing
+                response = JSONResponse(
+                    {"detail": "Not Found", "code": "route_not_found", "fields": None},
+                    status_code=404,
                 )
                 return await response(scope, receive, send)
         await self.app(scope, receive, send)

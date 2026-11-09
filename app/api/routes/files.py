@@ -3,10 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, Query, Response
 
 from app.api.auth import Principal, WorkspaceId
 from app.api.deps import FILES_DELETE, FILES_READ, FILES_WRITE, Files
+from app.api.errors import api_error
 from app.api.schemas.common import FileKind, SearchFilesRequest, StartUploadRequest
 from app.domain.storage.files import DownloadLink, FilePage, FileRecord, UploadTicket
 from app.domain.storage.search import FileHit, search_files
@@ -24,7 +25,9 @@ def start_upload(
     `complete`. Meeting recordings can only be registered by the trusted backend (service key),
     because they must come from a meeting where everyone consented."""
     if (request.kind == "recording" or request.source == "meeting") and not principal.service:
-        raise HTTPException(status_code=403, detail="Recordings are created by the meeting service")
+        raise api_error(
+            403, "recording_service_only", "Recordings are created by the meeting service"
+        )
     return files.start_upload(**request.model_dump())
 
 

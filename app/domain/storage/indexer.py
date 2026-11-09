@@ -151,7 +151,7 @@ def _transcribe(claim: Claim, data: bytes, kind: str) -> list[Section]:
     result = inference.transcribe(data, name, mime.split(";")[0].strip() or "audio/wav")
     segments = transcripts.segments_from(result)
     if not segments:
-        raise Unindexable("no speech found")
+        raise Unindexable("no speech found", code="no_speech")
     with session_for(claim.workspace_id) as session:
         workspace = uuid.UUID(claim.workspace_id)
         recording = session.scalars(
@@ -211,7 +211,7 @@ def process(claim: Claim, storage: BlobStorage) -> None:
             sections, notes = extracted.sections, list(extracted.notes)
         pieces, cut = chunk_sections(sections, settings.INDEX_MAX_CHUNKS)
         if not pieces:
-            raise Unindexable("no text found")
+            raise Unindexable("no text found", code="no_text")
         vectors = inference.embed_many([piece.embedding_text for piece in pieces])
         if cut:
             notes.append(f"indexed the first {len(pieces)} sections only")

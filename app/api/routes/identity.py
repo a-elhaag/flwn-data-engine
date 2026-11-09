@@ -3,11 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow, viewer
+from app.api.errors import api_error, code_of
 from app.api.paging import split_page
 from app.api.schemas.identity import (
     InvitationAccept,
@@ -55,21 +56,23 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except IdentityNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except IdentityConflict as exc:
-        raise HTTPException(409, str(exc)) from None
+        raise api_error(409, exc.code, str(exc)) from None
     except IdentityForbidden as exc:
-        raise HTTPException(403, str(exc)) from None
-    except LastOwner:
-        raise HTTPException(409, LAST_OWNER) from None
+        raise api_error(403, exc.code, str(exc)) from None
+    except LastOwner as exc:
+        raise api_error(409, exc.code, LAST_OWNER) from None
     except IntegrityError as exc:
         if LAST_OWNER in str(exc.orig):  # the database backstop (db/sql/70_identity.sql)
-            raise HTTPException(409, LAST_OWNER) from None
+            raise api_error(409, LAST_OWNER, LAST_OWNER) from None
         if "uq_users_email" in str(exc.orig):  # lost a race: another call created that user first
-            raise HTTPException(409, EMAIL_TAKEN) from None
-        raise HTTPException(409, "resource conflicts with an existing record") from None
+            raise api_error(409, "email_taken", EMAIL_TAKEN) from None
+        raise api_error(
+            409, "conflict_record", "resource conflicts with an existing record"
+        ) from None
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
 @router.post("/members", status_code=201, response_model=MemberOut, dependencies=[ADMIN])
