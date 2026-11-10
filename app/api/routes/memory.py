@@ -6,7 +6,6 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Response
 
-from app.api.auth import allow
 from app.api.deps import ADMIN, DELETE, READ, WRITE, Memory
 from app.api.schemas.common import (
     AnchorRequest,
@@ -63,17 +62,17 @@ def stats(memory: Memory) -> Stats:
     return memory.stats()
 
 
-@router.post("/memories/cleanup", dependencies=[allow(None)], include_in_schema=False)
+@router.post("/memories/cleanup", dependencies=[ADMIN], include_in_schema=False)
 def cleanup(request: CleanupRequest, memory: Memory) -> CleanupResponse:
     return CleanupResponse(**asdict(memory.sweep(**request.model_dump())))
 
 
-@router.post("/memories/organize", dependencies=[allow(None)], include_in_schema=False)
+@router.post("/memories/organize", dependencies=[ADMIN], include_in_schema=False)
 def organize(request: OrganizeRequest, memory: Memory) -> OrganizeResult:
     return memory.organize(**request.model_dump())
 
 
-@router.post("/sprint-completed", dependencies=[allow(None)], include_in_schema=False)
+@router.post("/sprint-completed", dependencies=[ADMIN], include_in_schema=False)
 def sprint_completed(request: CleanupRequest, memory: Memory) -> CleanupResponse:
     return cleanup(request, memory)
 

@@ -50,6 +50,8 @@ class RouteKindTests(CrudHarness):
         for method, path, route in self.routes:
             if rk.kind_of(method, path, route) != rk.INTERNAL:
                 continue
+            if (method, path) in rk.TOKEN_SCOPED_INTERNAL:
+                continue  # reachable with its scope by decision (see route_kinds)
             checked += 1
             with self.subTest(method=method, path=path):
                 response = self.client.request(method, _fill(path), headers=headers)

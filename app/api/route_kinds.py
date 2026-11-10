@@ -32,6 +32,16 @@ INTERNAL_TABLES = frozenset(
 )
 
 # Hand-written engine routes: (method, path template). Service key only, hidden from /docs.
+# Internal (hidden from OpenAPI) but still reachable with a token of the named scope, by decision:
+# they were token-scoped before the split and existing callers rely on it.
+TOKEN_SCOPED_INTERNAL = frozenset(
+    {
+        ("POST", "/workspaces/{workspace_id}/memories/cleanup"),
+        ("POST", "/workspaces/{workspace_id}/memories/organize"),
+        ("POST", "/workspaces/{workspace_id}/sprint-completed"),
+        ("POST", "/workspaces/{workspace_id}/files/{file_id}/reindex"),
+    }
+)
 INTERNAL_ROUTES = frozenset(
     {
         ("GET", "/atoms/scheduler-workspaces"),
