@@ -19,10 +19,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Check a token",
         "Any bearer token. 200 when the token is valid, not expired, not revoked and its member is active; 401 or 403 otherwise. Lets a service that only relays the token refuse a revoked one.",
     ),
-    "GET /atoms/scheduler-workspaces": (
-        "Workspaces with scheduler work",
-        "Trusted backend only. Ids of workspaces that have an active atom with an enabled schedule, or an approved approval waiting to run. The scheduler polls only these.",
-    ),
     f"POST {W}/memories": (
         "Remember",
         "Store one memory. Near-identical text is deduplicated and `deduplicated` is true. Needs `memory:write`.",
@@ -46,18 +42,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"GET {W}/memories/stats": (
         "Memory statistics",
         "Counts of total, active, superseded, pinned and never-recalled memories, plus a per-source breakdown.",
-    ),
-    f"POST {W}/memories/cleanup": (
-        "Clean up memories",
-        "Delete stale memories using `retention_days`. Use `dry_run` to preview. Trusted backend only.",
-    ),
-    f"POST {W}/memories/organize": (
-        "Organize memories",
-        "Cluster similar memories and merge or supersede duplicates. Use `dry_run` to preview. Trusted backend only.",
-    ),
-    f"POST {W}/sprint-completed": (
-        "Sprint completed",
-        "Runs the end-of-sprint cleanup. Same result shape as cleanup. Trusted backend only.",
     ),
     f"GET {W}/memories/{{point_id}}": (
         "Open a memory",
@@ -86,10 +70,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"POST {W}/files/search": (
         "Search file contents",
         "Semantic search over indexed file text. Returns the best matching chunks with page and heading. Needs `files:read`.",
-    ),
-    f"POST {W}/files/{{file_id}}/reindex": (
-        "Reindex a file",
-        "Re-run indexing, for example after an indexing error. Needs `files:write`.",
     ),
     f"POST {W}/files/{{file_id}}/complete": (
         "Complete an upload",
@@ -167,14 +147,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "List atoms",
         "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
-    f"GET {W}/atoms/scheduler-state": (
-        "Scheduler state",
-        "What the scheduler needs to decide what to run next. Trusted backend only.",
-    ),
-    f"POST {W}/atoms/{{atom_id}}/runs/release-stale": (
-        "Release stale runs",
-        "Releases runs stuck for longer than `older_than_seconds`. Trusted backend only.",
-    ),
     f"GET {W}/atoms/{{atom_id}}": (
         "Get an atom",
         "Returns one atom. Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
@@ -239,17 +211,9 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Enable or disable a skill",
         "Needs `atoms:admin` (a human member's token) or the service key acting as a human member.",
     ),
-    f"POST {W}/atoms/{{atom_id}}/runs": (
-        "Start a run",
-        "Starts a run for a schedule slot. `idempotency_key` guards against duplicate runs. Fails if a daily budget would be exceeded. Trusted backend only.",
-    ),
     f"POST {W}/approvals": (
         "Request an approval",
         "An atom asks a human to approve one tool call before it runs. Needs `atoms:run`.",
-    ),
-    f"GET {W}/approvals/ready": (
-        "List approved, unclaimed approvals",
-        "What the executor should run next. Trusted backend only.",
     ),
     f"GET {W}/approvals/{{approval_id}}": (
         "Get an approval",
@@ -258,10 +222,6 @@ OPERATIONS: dict[str, tuple[str, str]] = {
     f"PUT {W}/approvals/{{approval_id}}/decision": (
         "Approve or reject",
         "A human decides.",
-    ),
-    f"POST {W}/approvals/{{approval_id}}/execution-run": (
-        "Bootstrap the execution run",
-        "Creates the run that will carry out an approved action. Trusted backend only.",
     ),
     f"POST {W}/approvals/{{approval_id}}/claim": (
         "Claim an approval",

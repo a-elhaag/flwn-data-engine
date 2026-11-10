@@ -39,7 +39,7 @@ def search(
     return search_files(str(workspace_id), **request.model_dump())
 
 
-@router.post("/{file_id}/reindex", dependencies=[FILES_WRITE])
+@router.post("/{file_id}/reindex", dependencies=[FILES_WRITE], include_in_schema=False)
 def reindex(file_id: UUID, files: Files) -> FileRecord:
     return files.reindex(str(file_id))
 

@@ -72,6 +72,11 @@ TAGS = [
         "name": "Collaboration",
         "description": "Comments, docs and blocks, channels and messages. Trusted backend only.",
     },
+    {
+        "name": "Raw tables",
+        "description": "Generic list, get, create, update and delete over single tables. "
+        "Child tables with no domain route of their own; domain-owned tables are read-only.",
+    },
 ]
 
 SWAGGER_UI_PARAMETERS = {

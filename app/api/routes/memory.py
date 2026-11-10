@@ -62,17 +62,17 @@ def stats(memory: Memory) -> Stats:
     return memory.stats()
 
 
-@router.post("/memories/cleanup", dependencies=[ADMIN])
+@router.post("/memories/cleanup", dependencies=[ADMIN], include_in_schema=False)
 def cleanup(request: CleanupRequest, memory: Memory) -> CleanupResponse:
     return CleanupResponse(**asdict(memory.sweep(**request.model_dump())))
 
 
-@router.post("/memories/organize", dependencies=[ADMIN])
+@router.post("/memories/organize", dependencies=[ADMIN], include_in_schema=False)
 def organize(request: OrganizeRequest, memory: Memory) -> OrganizeResult:
     return memory.organize(**request.model_dump())
 
 
-@router.post("/sprint-completed", dependencies=[ADMIN])
+@router.post("/sprint-completed", dependencies=[ADMIN], include_in_schema=False)
 def sprint_completed(request: CleanupRequest, memory: Memory) -> CleanupResponse:
     return cleanup(request, memory)
 

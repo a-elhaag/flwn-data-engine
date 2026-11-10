@@ -5,6 +5,7 @@ from harness import CrudHarness, MemoryHarness
 
 from app.api import generic_crud
 from app.api import tokens as t
+from app.api.route_kinds import INTERNAL_TABLES
 
 
 class GenericCrudTests(MemoryHarness):
@@ -26,7 +27,7 @@ class GenericCrudTests(MemoryHarness):
         from app.main import app
 
         spec = app.openapi()["paths"]
-        for table in sorted(generic_crud.READ_TABLES):
+        for table in sorted(generic_crud.READ_TABLES - INTERNAL_TABLES):  # internal: hidden (#18)
             path = f"/workspaces/{{workspace_id}}/{table.replace('_', '-')}"
             with self.subTest(table=table):
                 self.assertNotIn("post", spec.get(path, {}))
