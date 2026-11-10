@@ -10,17 +10,23 @@ returns table (
     member_id uuid, workspace_id uuid, workspace_name text, workspace_slug text,
     user_id uuid, type text, role text, status text
 )
-language sql stable security definer
+language plpgsql security definer
 set search_path = pg_catalog, public
-set app.service = 'on'
 as $$
+declare prev text := current_setting('app.service', true);
+begin
+    -- app.service lifts row-level security for this call only: set for the transaction,
+    -- then put back as it was (SET in a function definition is refused on Azure Postgres).
+    perform set_config('app.service', 'on', true);
+    return query
     select m.id, m.workspace_id, w.name::text, w.slug::text,
            m.user_id, m.type::text, m.role::text, m.status::text
     from public.members m
     join public.workspaces w on w.id = m.workspace_id
     where m.user_id = target_user and m.deleted_at is null and w.deleted_at is null
-    order by w.created_at, w.id
-$$;
+    order by w.created_at, w.id;
+    perform set_config('app.service', coalesce(prev, ''), true);
+end $$;
 
 revoke all on function memberships_for_user(uuid) from public;
 
@@ -30,11 +36,13 @@ revoke all on function memberships_for_user(uuid) from public;
 create or replace function members_keep_an_owner() returns trigger
 language plpgsql security definer
 set search_path = pg_catalog, public
-set app.service = 'on'
 as $$
 declare ws uuid := old.workspace_id;
+  prev text := current_setting('app.service', true);
 begin
+    perform set_config('app.service', 'on', true);
     if not exists (select 1 from public.workspaces where id = ws and deleted_at is null) then
+        perform set_config('app.service', coalesce(prev, ''), true);
         return null;
     end if;
     perform 1 from public.members
@@ -48,6 +56,7 @@ begin
         raise exception 'last_owner' using errcode = '23514', constraint = 'last_owner',
             detail = format('workspace %s would have no active human owner', ws);
     end if;
+    perform set_config('app.service', coalesce(prev, ''), true);
     return null;
 end $$;
 
