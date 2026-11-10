@@ -37,6 +37,23 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `PATCH /workspaces/{ws}/atoms/{atom_id}/skills/{attachment_id}` | Enable or disable a skill | scope `atoms:admin` |
 | `POST /workspaces/{ws}/atoms/{atom_id}/versions` | Propose a version | scope `atoms:admin` |
 
+## Auth store
+
+| Route | What | Auth |
+| --- | --- | --- |
+| `GET /auth-store/credentials` | Look up a password hash by email | service key only |
+| `PUT /auth-store/credentials/{user_id}` | Set a user's password hash | service key only |
+| `DELETE /auth-store/credentials/{user_id}` | Delete a user's password hash | service key only |
+| `POST /auth-store/login-codes` | Store a login code | service key only |
+| `POST /auth-store/login-codes/consume` | Consume a login code | service key only |
+| `PUT /auth-store/oauth-identities` | Link an OAuth identity to a user | service key only |
+| `GET /auth-store/oauth-identities/{provider}/{subject}` | Find the user behind an OAuth identity | service key only |
+| `GET /auth-store/sessions` | Find a live refresh session | service key only |
+| `POST /auth-store/sessions` | Create a refresh session | service key only |
+| `POST /auth-store/sessions/revoke` | Revoke a refresh session | service key only |
+| `POST /auth-store/sessions/rotate` | Rotate a refresh token | service key only |
+| `POST /auth-store/users/{user_id}/sessions/revoke` | Revoke every session of a user | service key only |
+
 ## Collaboration
 
 | Route | What | Auth |

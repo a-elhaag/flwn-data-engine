@@ -504,6 +504,54 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Delete a message",
         "Hard delete. Returns 204.",
     ),
+    "GET /auth-store/credentials": (
+        "Look up a password hash by email",
+        "Trusted backend only. Email is matched ignoring case. Returns the user id and the stored hash; 404 `credential_not_found` if no account has a password.",
+    ),
+    "PUT /auth-store/credentials/{user_id}": (
+        "Set a user's password hash",
+        "Trusted backend only. Stores a hash the backend computed; the engine never sees the password. Replaces any previous hash. 404 `user_not_found` if the user is missing.",
+    ),
+    "DELETE /auth-store/credentials/{user_id}": (
+        "Delete a user's password hash",
+        "Trusted backend only. Idempotent: returns 204 whether or not the user had a password. Live refresh sessions are not touched; revoke them separately.",
+    ),
+    "POST /auth-store/sessions": (
+        "Create a refresh session",
+        "Trusted backend only. Stores the hash of a new refresh token for a user. Returns the session id.",
+    ),
+    "GET /auth-store/sessions": (
+        "Find a live refresh session",
+        "Trusted backend only. Looks up a refresh token by its hash. 404 `session_not_found` if it is unknown, revoked, replaced or expired.",
+    ),
+    "POST /auth-store/sessions/rotate": (
+        "Rotate a refresh token",
+        "Trusted backend only. Retires the old token and stores the new one in a single transaction. 401 `refresh_invalid` or `refresh_expired` for a bad token. 409 `refresh_reused` if the old token was already used: every session of that user is revoked.",
+    ),
+    "POST /auth-store/sessions/revoke": (
+        "Revoke a refresh session",
+        "Trusted backend only. Idempotent: revoking an unknown or revoked token still returns 204.",
+    ),
+    "POST /auth-store/users/{user_id}/sessions/revoke": (
+        "Revoke every session of a user",
+        "Trusted backend only. Revokes all live refresh sessions of the user. Idempotent.",
+    ),
+    "POST /auth-store/login-codes": (
+        "Store a login code",
+        "Trusted backend only. Stores the hash of a one-time code sent by email, with its expiry.",
+    ),
+    "POST /auth-store/login-codes/consume": (
+        "Consume a login code",
+        "Trusted backend only. A code works once. Returns the email it was issued for; 404 `code_invalid` if it is unknown, used or expired.",
+    ),
+    "PUT /auth-store/oauth-identities": (
+        "Link an OAuth identity to a user",
+        "Trusted backend only. Upserts the link for a provider (`google` or `github`) and the provider's subject id.",
+    ),
+    "GET /auth-store/oauth-identities/{provider}/{subject}": (
+        "Find the user behind an OAuth identity",
+        "Trusted backend only. Returns the user id; 404 `oauth_identity_not_found` if the identity is not linked.",
+    ),
 }
 
 

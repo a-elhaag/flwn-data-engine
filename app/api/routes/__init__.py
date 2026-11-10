@@ -4,6 +4,7 @@ from app.api import generic_crud
 from app.api.routes import (
     approvals,
     atoms,
+    auth_store,
     collaboration,
     conflicts,
     dev,
@@ -29,6 +30,7 @@ router.include_router(atoms.scheduler_router, tags=["Atoms"])
 router.include_router(approvals.router, tags=["Approvals"])
 router.include_router(skills.router, tags=["Skills"])
 router.include_router(users.router, tags=["Users"])
+router.include_router(auth_store.router, tags=["Auth store"])
 router.include_router(workspaces.router, tags=["Workspaces"])
 router.include_router(identity.router, tags=["Identity"])
 router.include_router(dev.router)

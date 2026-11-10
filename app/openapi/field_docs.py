@@ -382,6 +382,41 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "created_at": "When the invitation was created.",
     },
     "InvitationPage": {"items": "The invitations on this page."},
+    "ConsumeIn": {"code_hash": "Hash of the one-time login code (SHA-256 hex)."},
+    "ConsumedOut": {"email": "The email the login code was issued for."},
+    "CredentialIn": {"password_hash": "Hash of the password, computed by the backend."},
+    "CredentialOut": {
+        "user_id": "The account the password belongs to.",
+        "password_hash": "Stored password hash.",
+    },
+    "LoginCodeIn": {
+        "code_hash": "Hash of the one-time login code (SHA-256 hex).",
+        "email": "Email the code was sent to. Stored lower-cased.",
+        "expires_at": "When the code stops working.",
+    },
+    "OAuthIdentityIn": {
+        "provider": "OAuth provider: `google` or `github`.",
+        "subject": "The provider's id for the account.",
+        "user_id": "The user to link the identity to.",
+    },
+    "OAuthIdentityOut": {"user_id": "The user the identity is linked to."},
+    "RevokeIn": {"refresh_hash": "Hash of the refresh token to revoke."},
+    "RotateIn": {
+        "refresh_hash": "Hash of the current refresh token.",
+        "new_refresh_hash": "Hash of the refresh token that replaces it.",
+        "expires_at": "When the new refresh token stops working.",
+    },
+    "RotateOut": {"user_id": "The user the session belongs to."},
+    "SessionIn": {
+        "user_id": "The user the session belongs to.",
+        "refresh_hash": "Hash of the refresh token (SHA-256 hex).",
+        "expires_at": "When the refresh token stops working.",
+        "user_agent": "Browser or client identifier. Optional, up to 500 characters.",
+    },
+    "SessionOut": {
+        "user_id": "The user the session belongs to.",
+        "expires_at": "When the session stops working.",
+    },
     "UserCreate": {
         "email": "Email address. Unique ignoring case.",
         "name": "Full name.",

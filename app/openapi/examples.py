@@ -205,6 +205,32 @@ EXAMPLES: dict[str, dict] = {
     "ChannelMembersUpdate": {"member_ids": [MEMBER]},
     "MessageCreate": {"body": "Deploy is green.", "kind": "text"},
     "MessageUpdate": {"pinned": True},
+    "ConsumeIn": {"code_hash": "5e8848c0f9c1d7e2b4a6f3d1c0e9b8a7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1"},
+    "CredentialIn": {"password_hash": "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$hashhashhash"},
+    "LoginCodeIn": {
+        "code_hash": "5e8848c0f9c1d7e2b4a6f3d1c0e9b8a7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1",
+        "email": "sara@example.com",
+        "expires_at": "2026-11-10T12:15:00Z",
+    },
+    "OAuthIdentityIn": {
+        "provider": "github",
+        "subject": "1834567",
+        "user_id": "3f6c1a2e-9b7d-4e8a-8c1f-2a5b6d7e8f90",
+    },
+    "RevokeIn": {
+        "refresh_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
+    },
+    "RotateIn": {
+        "refresh_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "new_refresh_hash": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "expires_at": "2026-12-10T12:00:00Z",
+    },
+    "SessionIn": {
+        "user_id": "3f6c1a2e-9b7d-4e8a-8c1f-2a5b6d7e8f90",
+        "refresh_hash": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "expires_at": "2026-12-10T12:00:00Z",
+        "user_agent": "Mozilla/5.0",
+    },
 }
 
 # Responses
