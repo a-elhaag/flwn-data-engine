@@ -1,9 +1,10 @@
 """Let the application role run memberships_for_user.
 
 Migration 0005 granted this only when DATABASE_URL named a different user than the one running
-the migration. A database set up another way (production) ended up without the grant, so listing
-a person's workspaces failed with "permission denied for function memberships_for_user".
-Granting again is harmless when the role already has it. Nothing is revoked on the way down.
+the migration. In production the migration job's DATABASE_URL is the admin login too, so the
+grant was skipped and listing a person's workspaces failed with "permission denied for function
+memberships_for_user". APP_DB_ROLE names the application's role directly (a plain setting, no
+password). Granting again is harmless when the role already has it. Nothing is revoked on the way down.
 
 Revision ID: 0019
 Revises: 0018
@@ -24,11 +25,12 @@ FUNCTION = "public.memberships_for_user(uuid)"
 
 
 def app_role(bind) -> str | None:
-    """The role the API connects as (DATABASE_URL), unless it is the role running the migration."""
-    url = os.environ.get("DATABASE_URL", "").strip()
-    if not url:
-        return None
-    role = make_url(url).username
+    """The role the API connects as: APP_DB_ROLE, else the user in DATABASE_URL, unless it is the
+    role running the migration."""
+    role = os.environ.get("APP_DB_ROLE", "").strip()
+    if not role:
+        url = os.environ.get("DATABASE_URL", "").strip()
+        role = make_url(url).username if url else None
     current = bind.execute(sa.text("select current_user")).scalar()
     return role if role and role != current else None
 
