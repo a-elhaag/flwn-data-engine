@@ -13,6 +13,7 @@ from app.api.routes import (
     meetings,
     memory,
     planning,
+    rate_limits,
     skills,
     system,
     users,
@@ -31,6 +32,7 @@ router.include_router(approvals.router, tags=["Approvals"])
 router.include_router(skills.router, tags=["Skills"])
 router.include_router(users.router, tags=["Users"])
 router.include_router(auth_store.router, tags=["Auth store"])
+router.include_router(rate_limits.router, tags=["Rate limits"])
 router.include_router(workspaces.router, tags=["Workspaces"])
 router.include_router(identity.router, tags=["Identity"])
 router.include_router(dev.router)

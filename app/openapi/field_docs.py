@@ -400,6 +400,16 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "user_id": "The user to link the identity to.",
     },
     "OAuthIdentityOut": {"user_id": "The user the identity is linked to."},
+    "RateKey": {
+        "bucket": "Name of the limit, lower case letters and underscores (for example `login_fail`).",
+        "key_hash": "SHA-256 hex of the limited key (an email or an IP), computed by the backend.",
+    },
+    "RateWindow": {
+        "bucket": "Name of the limit, lower case letters and underscores (for example `login_fail`).",
+        "key_hash": "SHA-256 hex of the limited key (an email or an IP), computed by the backend.",
+        "window_seconds": "How far back to count hits, in seconds (1 to 86400).",
+    },
+    "RateCount": {"count": "Hits for this bucket and key inside the window."},
     "RevokeIn": {"refresh_hash": "Hash of the refresh token to revoke."},
     "RotateIn": {
         "refresh_hash": "Hash of the current refresh token.",

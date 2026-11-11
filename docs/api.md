@@ -190,6 +190,14 @@ must hold the scope shown. Request and response bodies: `GET /openapi.json`.
 | `DELETE /workspaces/{ws}/projects/{project_id}/work-items/{work_item_id}` | Delete a work item | scope `planning:read`, writes `planning:write` |
 | `GET /workspaces/{ws}/tasks/by-key/{key}` | Get a task by its key | scope `planning:read`, writes `planning:write` |
 
+## Rate limits
+
+| Route | What | Auth |
+| --- | --- | --- |
+| `POST /rate-limits/count` | Count recent hits | service key only |
+| `POST /rate-limits/hit` | Record a hit | service key only |
+| `POST /rate-limits/reset` | Clear a key's hits | service key only |
+
 ## Raw tables
 
 | Route | What | Auth |

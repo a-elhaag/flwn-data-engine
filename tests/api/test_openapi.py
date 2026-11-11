@@ -16,6 +16,7 @@ SCHEMA_MODULES = (
     "app.api.schemas.approvals",
     "app.api.schemas.identity",
     "app.api.schemas.auth_store",
+    "app.api.schemas.rate_limits",
     "app.api.schemas.planning",
     "app.api.schemas.collab",
     "app.domain.memory.recall",

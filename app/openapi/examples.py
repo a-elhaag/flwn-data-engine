@@ -217,6 +217,15 @@ EXAMPLES: dict[str, dict] = {
         "subject": "1834567",
         "user_id": "3f6c1a2e-9b7d-4e8a-8c1f-2a5b6d7e8f90",
     },
+    "RateKey": {
+        "bucket": "login_fail",
+        "key_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    },
+    "RateWindow": {
+        "bucket": "login_fail",
+        "key_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        "window_seconds": 900,
+    },
     "RevokeIn": {
         "refresh_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
     },

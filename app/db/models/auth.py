@@ -4,7 +4,7 @@ links. The backend owns the logic; these tables keep only hashes and never the r
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, func
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Identity, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, Created
@@ -60,3 +60,17 @@ class OAuthIdentity(Created, Base):
     provider: Mapped[str] = mapped_column(primary_key=True)
     subject: Mapped[str] = mapped_column(primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+
+
+class RateHit(Base):
+    """One counted attempt. Rate-limit buckets read it; keys are hashes the backend computed."""
+
+    __tablename__ = "rate_hits"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    bucket: Mapped[str] = mapped_column(String(40))
+    key_hash: Mapped[str] = mapped_column(String(64))
+    hit_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+Index("ix_rate_hits_bucket_key_hash_hit_at", RateHit.bucket, RateHit.key_hash, RateHit.hit_at)

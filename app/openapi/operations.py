@@ -552,6 +552,18 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Find the user behind an OAuth identity",
         "Trusted backend only. Returns the user id; 404 `oauth_identity_not_found` if the identity is not linked.",
     ),
+    "POST /rate-limits/count": (
+        "Count recent hits",
+        "Trusted backend only. Counts the hits for a bucket and key hash inside the window. Does not add a hit.",
+    ),
+    "POST /rate-limits/hit": (
+        "Record a hit",
+        "Trusted backend only. Adds one hit for a bucket and key hash, then returns the count inside the window. Hits older than a day are deleted.",
+    ),
+    "POST /rate-limits/reset": (
+        "Clear a key's hits",
+        "Trusted backend only. Deletes every hit of one bucket and key hash. Returns 204 whether or not there were any.",
+    ),
 }
 
 
