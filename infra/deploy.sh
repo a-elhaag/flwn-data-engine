@@ -66,12 +66,12 @@ private_endpoint pe-flwn-blob-uae-01 "$SA_ID" blob privatelink.blob.core.windows
 az acr repository show -n "$ACR" --image "$IMAGE" -o none 2>/dev/null \
   || az acr build -r "$ACR" -t "$IMAGE" --no-logs .   # skip if this commit is already built
 
-# ---- Container Apps: VNet environment, public ingress ---------------------------------------
+# ---- Container Apps: VNet environment, internal ingress (reachable only from apps in it) ---------------------------------------
 SUBNET_ID=$(az network vnet subnet show -n snet-apps --vnet-name "$VNET" -g "$RG" --query id -o tsv)
 az containerapp env create -n "$CAE" -g "$RG" -l "$LOC" --infrastructure-subnet-resource-id "$SUBNET_ID" \
   --enable-workload-profiles true --logs-destination none --tags $TAGS -o none
 CAE_DOMAIN=$(az containerapp env show -n "$CAE" -g "$RG" --query properties.defaultDomain -o tsv)
-FQDN="$APP.$CAE_DOMAIN"
+FQDN="$APP.internal.$CAE_DOMAIN"   # internal ingress adds ".internal."
 
 # Signed-token auth: the backend's public keys, from .env. Without them only the service key works.
 TOKEN_ENV=()
@@ -83,7 +83,7 @@ APP_ARGS=(
   --image "$ACR.azurecr.io/$IMAGE" --registry-server "$ACR.azurecr.io" --registry-identity "$ID_ID"
   --user-assigned "$ID_ID" --workload-profile-name Consumption
   --cpu 0.5 --memory 1Gi --min-replicas 1 --max-replicas 1
-  --target-port 8002 --ingress external
+  --target-port 8002 --ingress internal
   --secrets "database-url=$(env_val DATABASE_URL)" "foundry-key=$(env_val AZURE_FOUNDRY_KEY)" \
             "data-api-key=$(env_val DATA_API_KEY)"
   --env-vars DATABASE_URL=secretref:database-url AZURE_FOUNDRY_KEY=secretref:foundry-key \
@@ -103,11 +103,16 @@ else
 fi
 
 # ---- Gate: lock the data stores only once the app reaches Postgres over the private endpoint --
+# The address is private, so ask through the backend: its /ready calls this app's /healthz.
+# First ever deploy (no backend yet): check the revision is healthy, then lock stores by hand.
+BACKEND_APP="${BACKEND_APP:-ca-flwn-backend-uae-01}"
+BACKEND_FQDN=$(az containerapp show -n "$BACKEND_APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+[ -n "$BACKEND_FQDN" ] || { echo "No backend yet: check '$APP' is healthy, then lock Postgres and Blob by hand."; exit 1; }
 for _ in $(seq 1 30); do
-  curl -fsS -H "X-Data-Api-Key: $(env_val DATA_API_KEY)" "https://$FQDN/readyz" && break
+  curl -fsS "https://$BACKEND_FQDN/ready" && break
   sleep 10
-done || { echo "readyz never passed; data stores left open"; exit 1; }
+done || { echo "backend /ready never passed; data stores left open"; exit 1; }
 
 az postgres flexible-server update -n "$PG" -g "$RG" --public-access Disabled -o none
 az storage account update -n "$SA" -g "$RG" --public-network-access Disabled --default-action Deny -o none
-echo "Deployed: https://$FQDN  (Postgres and Blob now reachable only from $VNET)"
+echo "Deployed: https://$FQDN (internal)  (Postgres and Blob now reachable only from $VNET)"
