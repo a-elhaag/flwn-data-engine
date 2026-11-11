@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Response
 
 from app.api.deps import ADMIN, DELETE, READ, WRITE, Memory
-from app.api.schemas import (
+from app.api.schemas.common import (
     AnchorRequest,
     CleanupRequest,
     CleanupResponse,
@@ -19,8 +19,8 @@ from app.api.schemas import (
     RememberResponse,
     ReviseRequest,
 )
-from app.memory.recall import RankedResult
-from app.memory.steward import BrowsePage, MemoryRecord, OrganizeResult, Stats
+from app.domain.memory.recall import RankedResult
+from app.domain.memory.steward import BrowsePage, MemoryRecord, OrganizeResult, Stats
 
 router = APIRouter(prefix="/workspaces/{workspace_id}")
 
@@ -62,17 +62,17 @@ def stats(memory: Memory) -> Stats:
     return memory.stats()
 
 
-@router.post("/memories/cleanup", dependencies=[ADMIN])
+@router.post("/memories/cleanup", dependencies=[ADMIN], include_in_schema=False)
 def cleanup(request: CleanupRequest, memory: Memory) -> CleanupResponse:
     return CleanupResponse(**asdict(memory.sweep(**request.model_dump())))
 
 
-@router.post("/memories/organize", dependencies=[ADMIN])
+@router.post("/memories/organize", dependencies=[ADMIN], include_in_schema=False)
 def organize(request: OrganizeRequest, memory: Memory) -> OrganizeResult:
     return memory.organize(**request.model_dump())
 
 
-@router.post("/sprint-completed", dependencies=[ADMIN])
+@router.post("/sprint-completed", dependencies=[ADMIN], include_in_schema=False)
 def sprint_completed(request: CleanupRequest, memory: Memory) -> CleanupResponse:
     return cleanup(request, memory)
 

@@ -3,12 +3,14 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import WorkspaceId, actor, allow, author, viewer
-from app.api.collab_schemas import (
+from app.api.errors import api_error, code_of
+from app.api.paging import split_page
+from app.api.schemas.collab import (
     BlockCreate,
     BlockOut,
     BlockPage,
@@ -31,8 +33,8 @@ from app.api.collab_schemas import (
     MessagePage,
     MessageUpdate,
 )
-from app.api.paging import split_page
-from app.collaboration.service import (
+from app.db.base import COMMENT_TARGET_TYPES
+from app.domain.collaboration.service import (
     ChannelService,
     CollaborationConflict,
     CollaborationForbidden,
@@ -52,15 +54,17 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except CollaborationNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except CollaborationForbidden as exc:
-        raise HTTPException(403, str(exc)) from None
+        raise api_error(403, exc.code, str(exc)) from None
     except CollaborationConflict as exc:
-        raise HTTPException(409, str(exc)) from None
+        raise api_error(409, exc.code, str(exc)) from None
     except IntegrityError:
-        raise HTTPException(409, "resource conflicts with an existing record") from None
+        raise api_error(
+            409, "conflict_record", "resource conflicts with an existing record"
+        ) from None
     except ValueError as exc:
-        raise HTTPException(422, str(exc)) from None
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
 @router.post("/comments", status_code=201, response_model=CommentOut)
@@ -73,7 +77,7 @@ def create_comment(request: Request, workspace_id: WorkspaceId, body: CommentCre
 def list_comments(
     request: Request,
     workspace_id: WorkspaceId,
-    target_type: Literal["task", "work_item", "project", "project_update", "sprint", "doc"],
+    target_type: Literal[COMMENT_TARGET_TYPES],
     target_id: UUID,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -107,7 +111,8 @@ def update_comment(
 
 @router.delete("/comments/{comment_id}", status_code=204)
 def delete_comment(request: Request, workspace_id: WorkspaceId, comment_id: UUID):
-    _call(CommentService(str(workspace_id), actor(request)).delete, str(comment_id))
+    service = CommentService(str(workspace_id), actor(request), viewer(request))
+    _call(service.delete, str(comment_id))
     return Response(status_code=204)
 
 
@@ -157,7 +162,7 @@ def delete_doc(request: Request, workspace_id: WorkspaceId, doc_id: UUID):
 
 
 @router.get("/docs/{doc_id}/blocks", response_model=BlockPage)
-def list_doc_blocks(
+def list_blocks(
     request: Request,
     workspace_id: WorkspaceId,
     doc_id: UUID,
@@ -172,14 +177,14 @@ def list_doc_blocks(
 
 
 @router.post("/docs/{doc_id}/blocks", status_code=201, response_model=BlockOut)
-def create_doc_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, body: BlockCreate):
+def create_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, body: BlockCreate):
     return _call(
         DocService(str(workspace_id), actor(request)).create_block, str(doc_id), **body.model_dump()
     )
 
 
 @router.patch("/docs/{doc_id}/blocks/{block_id}", response_model=BlockOut)
-def update_doc_block(
+def update_block(
     request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID, body: BlockUpdate
 ):
     return _call(
@@ -191,7 +196,7 @@ def update_doc_block(
 
 
 @router.delete("/docs/{doc_id}/blocks/{block_id}", status_code=204)
-def delete_doc_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
+def delete_block(request: Request, workspace_id: WorkspaceId, doc_id: UUID, block_id: UUID):
     _call(DocService(str(workspace_id), actor(request)).delete_block, str(doc_id), str(block_id))
     return Response(status_code=204)
 

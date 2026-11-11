@@ -3,14 +3,20 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.exc import IntegrityError
 
 from app.api import tokens
 from app.api.auth import actor, allow, service_only
-from app.api.identity_schemas import WorkspaceCreate, WorkspaceOut, WorkspacePage, WorkspaceUpdate
+from app.api.errors import api_error, code_of
 from app.api.paging import split_page
-from app.identity.workspaces import WorkspaceConflict, WorkspaceNotFound, WorkspaceService
+from app.api.schemas.identity import (
+    WorkspaceCreate,
+    WorkspaceOut,
+    WorkspacePage,
+    WorkspaceUpdate,
+)
+from app.domain.identity.workspaces import WorkspaceConflict, WorkspaceNotFound, WorkspaceService
 
 router = APIRouter(prefix="/workspaces")
 # Creating and listing workspaces happens before any workspace token exists: backend only.
@@ -21,14 +27,27 @@ def _call(fn, *args, **kwargs):
     try:
         return fn(*args, **kwargs)
     except WorkspaceNotFound as exc:
-        raise HTTPException(404, str(exc)) from None
+        raise api_error(404, exc.code, str(exc)) from None
     except WorkspaceConflict as exc:
-        raise HTTPException(409, str(exc)) from None
+        raise api_error(409, exc.code, str(exc)) from None
     except IntegrityError:
-        raise HTTPException(409, "workspace conflicts with an existing record") from None
+        raise api_error(
+            409, "conflict_workspace", "workspace conflicts with an existing record"
+        ) from None
+    except ValueError as exc:
+        raise api_error(422, code_of(exc, "invalid_value"), str(exc)) from None
 
 
-@router.post("", status_code=201, response_model=WorkspaceOut, dependencies=[BACKEND])
+@router.post(
+    "",
+    status_code=201,
+    response_model=WorkspaceOut,
+    dependencies=[BACKEND],
+    responses={
+        404: {"description": "owner_user_id names no live user"},
+        409: {"description": "slug already taken"},
+    },
+)
 def create_workspace(body: WorkspaceCreate):
     return _call(WorkspaceService().create, **body.model_dump())
 

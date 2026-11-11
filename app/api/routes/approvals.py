@@ -5,15 +5,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
 
-from app.api.approval_schemas import (
+from app.api.auth import WorkspaceId, allow
+from app.api.routes.atoms import _call
+from app.api.schemas.approvals import (
     ApprovalBootstrap,
     ApprovalDecision,
     ApprovalOutcome,
     CreateApproval,
 )
-from app.api.auth import WorkspaceId, allow
-from app.api.routes.atoms import _call
-from app.atoms.approvals import ApprovalService
+from app.domain.atoms.approvals import ApprovalService
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/approvals")
 
@@ -28,7 +28,7 @@ def create_approval(workspace_id: WorkspaceId, body: CreateApproval, request: Re
     return _call(_bound(request, workspace_id).create_approval, **body.model_dump(mode="json"))
 
 
-@router.get("/ready", dependencies=[allow(None)])
+@router.get("/ready", dependencies=[allow(None)], include_in_schema=False)
 def ready_approvals(workspace_id: WorkspaceId, limit: Annotated[int, Query(ge=1, le=200)] = 100):
     return _call(ApprovalService(str(workspace_id), trusted=True).ready, limit=limit)
 
@@ -53,7 +53,7 @@ def decide_approval(
     return _call(service.decide, str(approval_id), **body.model_dump())
 
 
-@router.post("/{approval_id}/execution-run", dependencies=[allow(None)])
+@router.post("/{approval_id}/execution-run", dependencies=[allow(None)], include_in_schema=False)
 def bootstrap_approval(workspace_id: WorkspaceId, approval_id: UUID, body: ApprovalBootstrap):
     return _call(
         ApprovalService(str(workspace_id), trusted=True).bootstrap,

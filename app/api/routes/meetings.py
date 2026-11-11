@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query
 
 from app.api.auth import Principal
 from app.api.deps import MEETINGS_READ, MEETINGS_WRITE, Meetings
-from app.api.schemas import (
+from app.api.schemas.common import (
     ConsentRequest,
     CreateMeetingRequest,
     IngestTranscriptRequest,
@@ -15,8 +15,9 @@ from app.api.schemas import (
     StartRecordingRequest,
     UpdateMeetingRequest,
 )
-from app.meetings.service import MeetingPage, MeetingView, RecordingStart, TranscriptView
-from app.meetings.transcripts import Segment
+from app.db.base import MEETING_STATUSES
+from app.domain.meetings.service import MeetingPage, MeetingView, RecordingStart, TranscriptView
+from app.domain.storage.transcripts import Segment
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/meetings")
 
@@ -32,7 +33,7 @@ def create_meeting(
 @router.get("", dependencies=[MEETINGS_READ])
 def list_meetings(
     meetings: Meetings,
-    status: Annotated[str | None, Query(pattern="^(scheduled|live|ended|canceled)$")] = None,
+    status: Annotated[str | None, Query(pattern="^(" + "|".join(MEETING_STATUSES) + ")$")] = None,
     project_id: UUID | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
@@ -84,7 +85,7 @@ def ingest_transcript(
 
 
 @router.get("/{meeting_id}/transcript", dependencies=[MEETINGS_READ])
-def get_transcript(
+def get_meeting_transcript(
     meeting_id: str,
     meetings: Meetings,
     limit: Annotated[int, Query(ge=0, le=2000)] = 500,

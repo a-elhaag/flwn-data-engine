@@ -7,12 +7,13 @@ from sqlalchemy import Boolean, CheckConstraint, Float, Index, UniqueConstraint,
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
+    CHANNEL_TYPES,
     EMPTY_JSON,
     EMPTY_LIST,
+    MESSAGE_KINDS,
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -20,10 +21,8 @@ from app.db.base import (
     tfk,
 )
 
-# ----------------------------------------------------------- docs (Notion)
 
-
-class Collection(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Collection(IdPk, Tenant, Stamps, Base):
     """A Notion database: a schema of properties. Each row is a doc."""
 
     __tablename__ = "collections"
@@ -45,7 +44,7 @@ class Collection(IdPk, Tenant, Stamps, SoftDelete, Base):
     )
 
 
-class Doc(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Doc(IdPk, Tenant, Stamps, Base):
     __tablename__ = "docs"
 
     team_id: Mapped[uuid.UUID | None]
@@ -172,9 +171,6 @@ class DocVersion(IdPk, Tenant, Created, Base):
     )
 
 
-# ------------------------------------------------------------------ chat
-
-
 class Channel(IdPk, Tenant, Stamps, Base):
     __tablename__ = "channels"
 
@@ -189,7 +185,7 @@ class Channel(IdPk, Tenant, Stamps, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("type", "team", "project", "group", "dm", "agent"),
+        one_of("type", *CHANNEL_TYPES),
         tfk("team_id", "teams", "cascade"),
         tfk("project_id", "projects", "cascade"),
         tfk("created_by", "members", "set null"),
@@ -226,11 +222,10 @@ class Message(IdPk, Tenant, Created, Base):
     metadata_: Mapped[dict] = mapped_column("metadata", server_default=EMPTY_JSON)
     pinned_at: Mapped[datetime | None]
     edited_at: Mapped[datetime | None]
-    deleted_at: Mapped[datetime | None]
 
     __table_args__ = (
         tenant_unique(),
-        one_of("kind", "text", "voice_note", "image", "file", "system", "agent_report"),
+        one_of("kind", *MESSAGE_KINDS),
         tfk("channel_id", "channels", "cascade"),
         tfk("author_id", "members", "set null"),
         tfk("parent_message_id", "messages", "set null"),
@@ -241,9 +236,6 @@ class Message(IdPk, Tenant, Created, Base):
             postgresql_where=text("parent_message_id is not null"),
         ),
     )
-
-
-# --------------------------------------------------------------- comments
 
 
 class Comment(IdPk, Tenant, Stamps, Base):
@@ -266,7 +258,6 @@ class Comment(IdPk, Tenant, Stamps, Base):
     resolved_at: Mapped[datetime | None]
     resolved_by: Mapped[uuid.UUID | None]
     edited_at: Mapped[datetime | None]
-    deleted_at: Mapped[datetime | None]
 
     __table_args__ = (
         tenant_unique(),
@@ -344,9 +335,6 @@ class Reaction(IdPk, Tenant, Created, Base):
         tfk("message_id", "messages", "cascade"),
         tfk("task_id", "tasks", "cascade"),
     )
-
-
-# ------------------------------------------------- links, mentions, social
 
 
 class Link(IdPk, Tenant, Created, Base):

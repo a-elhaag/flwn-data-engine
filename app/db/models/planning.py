@@ -18,12 +18,13 @@ from app.db.base import (
     EMPTY_JSON,
     EMPTY_LIST,
     PRIORITIES,
+    PROJECT_STATUSES,
+    WORK_ITEM_TYPES,
     WORK_STATUSES,
     ZERO_UUID,
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -34,7 +35,7 @@ from app.db.base import (
 )
 
 
-class Project(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Project(IdPk, Tenant, Stamps, Base):
     __tablename__ = "projects"
 
     team_id: Mapped[uuid.UUID | None]  # null = workspace-wide project
@@ -52,8 +53,8 @@ class Project(IdPk, Tenant, Stamps, SoftDelete, Base):
 
     __table_args__ = (
         tenant_unique(),
-        one_of("status", "backlog", "planned", "in_progress", "paused", "completed", "canceled"),
-        tfk("team_id", "teams", "set null"),
+        one_of("status", *PROJECT_STATUSES),
+        tfk("team_id", "teams", "restrict"),  # a team with projects cannot be deleted
         tfk("lead_id", "members", "set null"),
         tfk("created_by", "members", "set null"),
         Index("ix_projects_workspace_id_team_id", "workspace_id", "team_id"),
@@ -123,6 +124,8 @@ class Sprint(IdPk, Tenant, Stamps, Base):
     status: Mapped[str] = mapped_column(server_default="planned")
     start_date: Mapped[date | None]
     end_date: Mapped[date | None]
+    started_at: Mapped[datetime | None]  # set by the engine when the sprint becomes active
+    completed_at: Mapped[datetime | None]  # set by the engine when it becomes completed
 
     __table_args__ = (
         tenant_unique(),
@@ -133,10 +136,17 @@ class Sprint(IdPk, Tenant, Stamps, Base):
         ),
         tfk("project_id", "projects", "cascade"),
         Index("ix_sprints_project_id_status", "project_id", "status"),
+        # At most one active sprint per project.
+        Index(
+            "uq_sprints_one_active",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
     )
 
 
-class WorkItem(IdPk, Tenant, Stamps, SoftDelete, Base):
+class WorkItem(IdPk, Tenant, Stamps, Base):
     __tablename__ = "work_items"
 
     project_id: Mapped[uuid.UUID]  # denormalized; the FK to backlogs keeps it consistent
@@ -151,7 +161,7 @@ class WorkItem(IdPk, Tenant, Stamps, SoftDelete, Base):
     __table_args__ = (
         tenant_unique(),
         project_unique(),
-        one_of("type", "FEATURE", "STORY", "BUG"),
+        one_of("type", *WORK_ITEM_TYPES),
         one_of("priority", *PRIORITIES),
         one_of("status", *WORK_STATUSES),
         pfk("backlog_id", "backlogs", "cascade"),
@@ -160,7 +170,7 @@ class WorkItem(IdPk, Tenant, Stamps, SoftDelete, Base):
     )
 
 
-class Task(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Task(IdPk, Tenant, Stamps, Base):
     __tablename__ = "tasks"
 
     project_id: Mapped[uuid.UUID]
@@ -192,7 +202,7 @@ class Task(IdPk, Tenant, Stamps, SoftDelete, Base):
         pfk("work_item_id", "work_items", "cascade"),
         pfk("sprint_id", "sprints", "set null"),
         pfk("milestone_id", "milestones", "set null"),
-        tfk("parent_task_id", "tasks", "set null"),
+        pfk("parent_task_id", "tasks", "set null"),  # a sub-task stays in its parent's project
         tfk("assignee_id", "members", "set null"),
         tfk("created_by", "members", "set null"),
         Index("uq_tasks_project_id_number", "project_id", "number", unique=True),

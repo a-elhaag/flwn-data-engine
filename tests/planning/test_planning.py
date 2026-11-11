@@ -1,0 +1,460 @@
+import uuid
+
+from harness import CrudHarness
+from sqlalchemy import event
+
+
+class PlanningApiTests(CrudHarness):
+    def project(self, workspace, key="ENG"):
+        response = self.client.post(
+            f"/workspaces/{workspace}/projects", json={"key": key, "name": "Engineering"}
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def work_item(self, workspace, project_id):
+        response = self.client.post(
+            f"/workspaces/{workspace}/projects/{project_id}/work-items",
+            json={"title": "API", "type": "FEATURE"},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_project_work_item_task_lifecycle_and_numbering(self):
+        project = self.project(self.team_a)
+        self.assertEqual(project["task_counter"], 0)
+        self.assertEqual(
+            self.sql(
+                "select count(*) as n from backlogs where workspace_id = :w and project_id = :p",
+                w=self.team_a,
+                p=project["id"],
+            )[0]["n"],
+            1,
+        )
+
+        item = self.work_item(self.team_a, project["id"])
+        created = self.client.post(
+            f"/workspaces/{self.team_a}/projects/{project['id']}/tasks",
+            json={"work_item_id": item["id"], "title": "Add endpoint", "priority": "high"},
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        task = created.json()
+        self.assertEqual((task["number"], task["identifier"]), (1, "ENG-1"))
+        self.assertEqual(task["status"], "backlog")
+
+        updated = self.client.patch(
+            f"/workspaces/{self.team_a}/projects/{project['id']}/tasks/{task['id']}",
+            json={"status": "in_progress", "estimate": 5},
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual((updated.json()["status"], updated.json()["estimate"]), ("in_progress", 5))
+        listed = self.client.get(f"/workspaces/{self.team_a}/projects/{project['id']}/tasks")
+        self.assertEqual([row["id"] for row in listed.json()["items"]], [task["id"]])
+
+        self.assertEqual(
+            self.client.delete(
+                f"/workspaces/{self.team_a}/projects/{project['id']}/work-items/{item['id']}"
+            ).status_code,
+            204,
+        )
+        self.assertEqual(
+            self.client.get(
+                f"/workspaces/{self.team_a}/projects/{project['id']}/tasks/{task['id']}"
+            ).status_code,
+            404,
+        )
+
+    def test_task_rejects_work_item_from_another_project(self):
+        project_a = self.project(self.team_a, "ALPHA")
+        project_b = self.project(self.team_a, "BETA")
+        item_b = self.work_item(self.team_a, project_b["id"])
+        response = self.client.post(
+            f"/workspaces/{self.team_a}/projects/{project_a['id']}/tasks",
+            json={"work_item_id": item_b["id"], "title": "Invalid association"},
+        )
+        self.assertEqual(response.status_code, 404, response.text)
+
+    def test_project_and_task_routes_require_service_credentials(self):
+        response = self.client.get(f"/workspaces/{self.team_a}/projects", headers=self.NO_TOKEN)
+        self.assertEqual(response.status_code, 401)
+
+    def task(self, workspace, project_id, work_item_id, status):
+        response = self.client.post(
+            f"/workspaces/{workspace}/projects/{project_id}/tasks",
+            json={"work_item_id": work_item_id, "title": "Step", "status": status},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_work_item_task_counts_by_status_skip_deleted_tasks(self):
+        project = self.project(self.team_a)
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+        item = self.work_item(self.team_a, project["id"])
+        empty = self.work_item(self.team_a, project["id"])
+        self.task(self.team_a, project["id"], item["id"], "backlog")
+        self.task(self.team_a, project["id"], item["id"], "done")
+        self.task(self.team_a, project["id"], item["id"], "done")
+        gone = self.task(self.team_a, project["id"], item["id"], "todo")
+        self.assertEqual(self.client.delete(f"{base}/tasks/{gone['id']}").status_code, 204)
+
+        page = self.client.get(f"{base}/work-items?limit=10").json()
+        counts = {row["id"]: row["task_counts"] for row in page["items"]}
+        self.assertEqual(counts[item["id"]], {"backlog": 1, "done": 2})
+        self.assertEqual(counts[empty["id"]], {})
+        single = self.client.get(f"{base}/work-items/{item['id']}").json()
+        self.assertEqual(single["task_counts"], {"backlog": 1, "done": 2})
+
+    def test_work_item_list_counts_take_one_query_per_page(self):
+        project = self.project(self.team_a)
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+
+        def list_queries():
+            statements = []
+
+            def record(conn, cursor, statement, *args):
+                statements.append(statement)
+
+            event.listen(self.engine, "before_cursor_execute", record)
+            try:
+                response = self.client.get(f"{base}/work-items?limit=50")
+            finally:
+                event.remove(self.engine, "before_cursor_execute", record)
+            self.assertEqual(response.status_code, 200, response.text)
+            return len(statements), response.json()["items"]
+
+        for _ in range(2):
+            item = self.work_item(self.team_a, project["id"])
+            self.task(self.team_a, project["id"], item["id"], "done")
+        two_queries, two_items = list_queries()
+
+        for _ in range(3):
+            item = self.work_item(self.team_a, project["id"])
+            self.task(self.team_a, project["id"], item["id"], "done")
+            self.task(self.team_a, project["id"], item["id"], "todo")
+        five_queries, five_items = list_queries()
+
+        self.assertEqual(len(two_items), 2)
+        self.assertEqual(len(five_items), 5)
+        self.assertEqual(two_queries, five_queries)
+        self.assertEqual([row["task_counts"] for row in two_items], [{"done": 1}] * 2)
+        self.assertEqual(
+            [row["task_counts"] for row in five_items],
+            [{"done": 1}] * 2 + [{"done": 1, "todo": 1}] * 3,
+        )
+
+    def test_projects_filter_by_team(self):
+        team = self.client.post(
+            f"/workspaces/{self.team_a}/teams", json={"key": "ENG", "name": "Eng"}
+        ).json()
+        other = self.client.post(
+            f"/workspaces/{self.team_a}/teams", json={"key": "OPS", "name": "Ops"}
+        ).json()
+        on_team = self.client.post(
+            f"/workspaces/{self.team_a}/projects",
+            json={"key": "ON", "name": "On", "team_id": team["id"]},
+        ).json()
+        self.project(self.team_a, key="FREE")  # workspace-wide, no team
+        self.client.post(
+            f"/workspaces/{self.team_a}/projects",
+            json={"key": "OTHER", "name": "Other", "team_id": other["id"]},
+        )
+
+        listed = self.client.get(
+            f"/workspaces/{self.team_a}/projects", params={"team_id": team["id"]}
+        )
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual([p["id"] for p in listed.json()["items"]], [on_team["id"]])
+        self.assertEqual(
+            len(self.client.get(f"/workspaces/{self.team_a}/projects").json()["items"]), 3
+        )
+
+    def sprint(self, workspace, project_id, **body):
+        response = self.client.post(
+            f"/workspaces/{workspace}/projects/{project_id}/sprints",
+            json={"name": "Sprint 1", **body},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_sprint_lifecycle_and_delete_returns_tasks_to_backlog(self):
+        project = self.project(self.team_a)
+        sprint = self.sprint(self.team_a, project["id"], goal="Ship it")
+        self.assertEqual((sprint["status"], sprint["goal"]), ("planned", "Ship it"))
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+
+        updated = self.client.patch(
+            f"{base}/sprints/{sprint['id']}",
+            json={"status": "active", "start_date": "2026-01-05", "end_date": "2026-01-19"},
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["status"], "active")
+        listed = self.client.get(f"{base}/sprints", params={"status": "active"})
+        self.assertEqual([row["id"] for row in listed.json()["items"]], [sprint["id"]])
+        none = self.client.get(f"{base}/sprints", params={"status": "completed"})
+        self.assertEqual(none.json()["items"], [])
+
+        item = self.work_item(self.team_a, project["id"])
+        task = self.client.post(
+            f"{base}/tasks",
+            json={"work_item_id": item["id"], "title": "In sprint", "sprint_id": sprint["id"]},
+        ).json()
+        self.assertEqual(task["sprint_id"], sprint["id"])
+
+        self.assertEqual(self.client.delete(f"{base}/sprints/{sprint['id']}").status_code, 204)
+        self.assertEqual(self.client.get(f"{base}/sprints/{sprint['id']}").status_code, 404)
+        kept = self.client.get(f"{base}/tasks/{task['id']}")
+        self.assertEqual(kept.status_code, 200, kept.text)
+        self.assertIsNone(kept.json()["sprint_id"])
+
+    def test_sprint_rules(self):
+        project = self.project(self.team_a)
+        base = f"/workspaces/{self.team_a}/projects/{project['id']}"
+        first, second = (
+            self.sprint(self.team_a, project["id"]),
+            self.sprint(self.team_a, project["id"]),
+        )
+        self.assertEqual((first["started_at"], first["completed_at"]), (None, None))
+
+        def post(path, **kw):
+            return self.client.post(f"{base}/sprints/{path}", **kw)
+
+        def patch(sprint, status):
+            return self.client.patch(f"{base}/sprints/{sprint['id']}", json={"status": status})
+
+        # planned cannot jump to completed
+        r = patch(first, "completed")
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "invalid_sprint_transition"))
+        started = post(f"{first['id']}/start")
+        self.assertEqual(started.status_code, 200, started.text)
+        self.assertIsNotNone(started.json()["started_at"])
+        # one active sprint per project
+        r = post(f"{second['id']}/start")
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "sprint_already_active"))
+        self.assertEqual(patch(second, "active").status_code, 409)
+        # a task cannot be created in a completed sprint, nor moved into one
+        item = self.work_item(self.team_a, project["id"])
+        task = self.client.post(
+            f"{base}/tasks",
+            json={"work_item_id": item["id"], "title": "open", "sprint_id": first["id"]},
+        ).json()
+        done = self.client.post(
+            f"{base}/tasks",
+            json={
+                "work_item_id": item["id"],
+                "title": "done",
+                "sprint_id": first["id"],
+                "status": "done",
+            },
+        ).json()
+        # complete: the open task goes to the planned sprint, the done one stays
+        r = post(f"{first['id']}/complete", json={"move_open_tasks_to": first["id"]})
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "target_sprint_not_planned"))
+        r = post(f"{first['id']}/complete", json={"move_open_tasks_to": second["id"]})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["status"], "completed")
+        self.assertIsNotNone(r.json()["completed_at"])
+        get = lambda t: self.client.get(f"{base}/tasks/{t['id']}").json()["sprint_id"]  # noqa: E731
+        self.assertEqual((get(task), get(done)), (second["id"], first["id"]))
+        # completed is final
+        for status in ("planned", "active", "completed"):
+            r = patch(first, status)
+            self.assertEqual(r.status_code, 409 if status != "completed" else 200, status)
+        # no new task in a completed sprint; the done task may stay where it is
+        r = self.client.post(
+            f"{base}/tasks",
+            json={"work_item_id": item["id"], "title": "x", "sprint_id": first["id"]},
+        )
+        self.assertEqual((r.status_code, r.json()["detail"]), (409, "sprint_completed"))
+        r = self.client.patch(f"{base}/tasks/{task['id']}", json={"sprint_id": first["id"]})
+        self.assertEqual(r.status_code, 409)
+        r = self.client.patch(
+            f"{base}/tasks/{done['id']}", json={"sprint_id": first["id"], "title": "d"}
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        # the default target is the backlog
+        post(f"{second['id']}/start")
+        r = post(f"{second['id']}/complete")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertIsNone(get(task))
+
+    def test_sprint_rejects_bad_dates_and_status(self):
+        project = self.project(self.team_a)
+        url = f"/workspaces/{self.team_a}/projects/{project['id']}/sprints"
+        for body in (
+            {"name": "S", "start_date": "2026-02-02", "end_date": "2026-02-01"},
+            {"name": "S", "status": "active"},  # a sprint always starts planned
+            {"name": "  "},
+        ):
+            self.assertEqual(self.client.post(url, json=body).status_code, 422, body)
+
+    def test_sprint_is_isolated_by_workspace_and_project(self):
+        project_a = self.project(self.team_a, "ALPHA")
+        project_b = self.project(self.team_a, "BETA")
+        sprint = self.sprint(self.team_a, project_a["id"])
+        wrong_project = (
+            f"/workspaces/{self.team_a}/projects/{project_b['id']}/sprints/{sprint['id']}"
+        )
+        self.assertEqual(self.client.get(wrong_project).status_code, 404)
+        other_workspace = (
+            f"/workspaces/{self.team_b}/projects/{project_a['id']}/sprints/{sprint['id']}"
+        )
+        self.assertEqual(self.client.get(other_workspace).status_code, 404)
+
+    def test_sprint_routes_require_service_credentials(self):
+        project = self.project(self.team_a)
+        response = self.client.get(
+            f"/workspaces/{self.team_a}/projects/{project['id']}/sprints",
+            headers=self.NO_TOKEN,
+        )
+        self.assertEqual(response.status_code, 401)
+
+
+class PlanningQueriesTests(CrudHarness):
+    def setUp(self):
+        super().setUp()
+        self.base = f"/workspaces/{self.team_a}"
+        self.project = self.client.post(
+            f"{self.base}/projects", json={"key": "FLWN", "name": "Flwn"}
+        ).json()
+        self.item = self.client.post(
+            f"{self.base}/projects/{self.project['id']}/work-items",
+            json={"title": "w", "type": "FEATURE"},
+        ).json()
+        self.tasks_url = f"{self.base}/projects/{self.project['id']}/tasks"
+
+    def task(self, **body):
+        response = self.client.post(
+            self.tasks_url, json={"work_item_id": self.item["id"], "title": "t", **body}
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
+
+    def test_project_key_cannot_be_changed(self):
+        url = f"{self.base}/projects/{self.project['id']}"
+        self.assertEqual(self.client.patch(url, json={"key": "NEW"}).status_code, 422)
+        self.assertEqual(self.client.get(url).json()["key"], "FLWN")
+        self.assertEqual(self.client.patch(url, json={"name": "Renamed"}).status_code, 200)
+
+    def test_updates_reject_null_for_required_fields(self):
+        base = f"{self.base}/projects/{self.project['id']}"
+        sprint = self.client.post(f"{base}/sprints", json={"name": "S1"}).json()
+        cases = [
+            (base, {"name": None}),
+            (f"{base}/work-items/{self.item['id']}", {"title": None}),
+            (f"{base}/work-items/{self.item['id']}", {"status": None}),
+            (f"{base}/tasks/{self.task()['id']}", {"priority": None}),
+            (f"{base}/sprints/{sprint['id']}", {"name": None}),
+        ]
+        for url, body in cases:
+            response = self.client.patch(url, json=body)
+            self.assertEqual(response.status_code, 422, (url, body, response.text))
+        # Optional fields can still be cleared.
+        task = self.client.patch(f"{base}/tasks/{self.task()['id']}", json={"due_date": None})
+        self.assertEqual(task.status_code, 200, task.text)
+
+    def test_tasks_filtered_by_work_item(self):
+        other = self.client.post(
+            f"{self.base}/projects/{self.project['id']}/work-items",
+            json={"title": "other", "type": "FEATURE"},
+        ).json()
+        mine = {self.task()["id"], self.task()["id"]}
+        self.task(work_item_id=other["id"])
+        found = self.client.get(self.tasks_url, params={"work_item_id": self.item["id"]}).json()
+        self.assertEqual({t["id"] for t in found["items"]}, mine)
+
+    def test_sub_tasks_cannot_form_a_loop(self):
+        a = self.task()
+        b = self.task(parent_task_id=a["id"])
+        c = self.task(parent_task_id=b["id"])
+        url = f"{self.tasks_url}/{a['id']}"
+        for parent in (b["id"], c["id"]):  # a child, and a grandchild, as the new parent
+            response = self.client.patch(url, json={"parent_task_id": parent})
+            self.assertEqual((response.status_code, response.json()["detail"]), (409, "task_cycle"))
+        self.assertIsNone(self.client.get(url).json()["parent_task_id"])
+        moved = self.client.patch(f"{self.tasks_url}/{c['id']}", json={"parent_task_id": a["id"]})
+        self.assertEqual(moved.status_code, 200, moved.text)
+
+    def test_task_by_key(self):
+        first, second = self.task(), self.task()
+        found = self.client.get(f"{self.base}/tasks/by-key/FLWN-2")
+        self.assertEqual((found.status_code, found.json()["id"]), (200, second["id"]))
+        self.assertEqual(found.json()["identifier"], "FLWN-2")
+        self.assertEqual(self.client.get(f"{self.base}/tasks/by-key/FLWN-9").status_code, 404)
+        self.assertEqual(self.client.get(f"{self.base}/tasks/by-key/OTHER-1").status_code, 404)
+        for bad in ("flwn-1", "FLWN-0", "FLWN-01", "FLWN1", "FLWN-"):
+            with self.subTest(key=bad):
+                self.assertEqual(
+                    self.client.get(f"{self.base}/tasks/by-key/{bad}").status_code, 422
+                )
+        other = self.client.get(f"/workspaces/{self.team_b}/tasks/by-key/FLWN-1")
+        self.assertEqual(other.status_code, 404)
+        self.assertNotEqual(first["id"], second["id"])
+
+    def test_task_filters(self):
+        ada = self.member(self.team_a)
+        sprint = self.client.post(
+            f"{self.base}/projects/{self.project['id']}/sprints", json={"name": "S1"}
+        ).json()
+        in_sprint = self.task(sprint_id=sprint["id"], assignee_id=ada)
+        backlog = self.task()
+        done = self.task(status="done")
+
+        def ids(**params):
+            rows = self.client.get(self.tasks_url, params=params).json()["items"]
+            return [row["id"] for row in rows]
+
+        self.assertEqual(ids(backlog="true"), [backlog["id"], done["id"]])
+        self.assertEqual(ids(backlog="false"), [in_sprint["id"]])
+        self.assertEqual(ids(assignee_id=ada), [in_sprint["id"]])
+        self.assertEqual(ids(status="done"), [done["id"]])
+        self.assertEqual(ids(sprint_id=sprint["id"]), [in_sprint["id"]])
+        self.assertEqual(
+            self.client.get(self.tasks_url, params={"status": "nope"}).status_code, 422
+        )
+        self.assertEqual(
+            self.client.get(self.tasks_url, params={"assignee_id": "nope"}).status_code, 422
+        )
+
+    def test_my_tasks_and_my_projects(self):
+        ada, bob = self.member(self.team_a), self.member(self.team_a)
+        mine = self.task(assignee_id=ada)
+        self.task(assignee_id=bob)
+        tasks = self.client.get(f"{self.base}/members/{ada}/tasks").json()["items"]
+        self.assertEqual([t["id"] for t in tasks], [mine["id"]])
+
+        team = self.client.post(f"{self.base}/teams", json={"key": "BE", "name": "Backend"}).json()
+        self.client.put(f"{self.base}/teams/{team['id']}/members", json={"member_ids": [ada]})
+        via_team = self.client.post(
+            f"{self.base}/projects", json={"key": "TEAM", "name": "T", "team_id": team["id"]}
+        ).json()
+        led = self.client.post(
+            f"{self.base}/projects", json={"key": "LEAD", "name": "L", "lead_id": bob}
+        ).json()
+        ada_projects = self.client.get(f"{self.base}/members/{ada}/projects").json()["items"]
+        bob_projects = self.client.get(f"{self.base}/members/{bob}/projects").json()["items"]
+        self.assertEqual([p["id"] for p in ada_projects], [via_team["id"]])
+        self.assertEqual([p["id"] for p in bob_projects], [led["id"]])
+        for what in ("tasks", "projects"):
+            missing = self.client.get(f"{self.base}/members/{uuid.uuid4()}/{what}")
+            self.assertEqual(missing.status_code, 404)
+            foreign = self.client.get(f"{self.base}/members/{self.member(self.team_b)}/{what}")
+            self.assertEqual(foreign.status_code, 404, "another workspace's member")
+
+    def test_has_more_tells_whether_a_page_follows(self):
+        for _ in range(5):
+            self.task()
+        first = self.client.get(self.tasks_url, params={"limit": 2, "offset": 0}).json()
+        self.assertEqual((len(first["items"]), first["has_more"]), (2, True))
+        last = self.client.get(self.tasks_url, params={"limit": 2, "offset": 4}).json()
+        self.assertEqual(([t["number"] for t in last["items"]], last["has_more"]), ([5], False))
+        exact = self.client.get(self.tasks_url, params={"limit": 5}).json()
+        self.assertEqual((len(exact["items"]), exact["has_more"]), (5, False))
+
+    def test_user_lookup_by_email_ignores_case(self):
+        email = f"{uuid.uuid4().hex[:8]}.Look@Example.com"
+        user = self.client.post("/users", json={"email": email, "name": "Lu"}).json()
+        self.addCleanup(self.sql, "delete from users where id = :i", i=user["id"])
+        found = self.client.get("/users", params={"email": email.upper()}).json()
+        self.assertEqual([u["id"] for u in found["items"]], [user["id"]])
+        none = self.client.get("/users", params={"email": "nobody@example.com"}).json()
+        self.assertEqual(none["items"], [])

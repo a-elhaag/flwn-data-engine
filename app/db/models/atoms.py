@@ -1,7 +1,7 @@
 """Atom configuration, immutable prompt versions, skill stores and explicit grants.
 
-An atom's member is its identity; deleting an atom or skill is a soft delete so historical
-runs and pinned skill versions remain meaningful. Connections contain references, not tokens.
+An atom's member is its identity. Deleting an atom removes it with its versions; an atom with
+approval records is killed instead. Connections contain references, not tokens.
 """
 
 import uuid
@@ -22,12 +22,12 @@ from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import (
+    ATOM_STATUSES,
     EMPTY_JSON,
     EMPTY_LIST,
     Base,
     Created,
     IdPk,
-    SoftDelete,
     Stamps,
     Tenant,
     one_of,
@@ -47,10 +47,16 @@ RESOURCE_TYPES = (
     "connection",
 )
 PERMISSION_CEILINGS = ("read", "draft", "write", "destructive")
+OWNERSHIP_SCOPES = ("workspace", "personal")
+MODEL_TIERS = ("small", "medium")
+ATOM_LEVELS = ("summary", "read", "write")
+ATOM_SOURCES = ("human", "atomizer", "self")
+CONNECTION_STATUSES = ("active", "expired", "revoked", "unknown")
+REPORTED_CONNECTION_STATUSES = ("expired", "revoked", "unknown")
 SKILL_TSV = "to_tsvector('simple', coalesce(description, '') || ' ' || coalesce(when_to_use, ''))"
 
 
-class Atom(IdPk, Tenant, Stamps, SoftDelete, Base):
+class Atom(IdPk, Tenant, Stamps, Base):
     __tablename__ = "atoms"
 
     member_id: Mapped[uuid.UUID]
@@ -68,9 +74,9 @@ class Atom(IdPk, Tenant, Stamps, SoftDelete, Base):
     __table_args__ = (
         tenant_unique(),
         UniqueConstraint("member_id"),
-        one_of("kind", "workspace", "personal"),
-        one_of("status", "draft", "active", "paused", "killed"),
-        one_of("model_tier", "small", "medium"),
+        one_of("kind", *OWNERSHIP_SCOPES),
+        one_of("status", *ATOM_STATUSES),
+        one_of("model_tier", *MODEL_TIERS),
         CheckConstraint(
             "(kind = 'personal' and owner_member_id is not null)"
             " or (kind = 'workspace' and owner_member_id is null)",
@@ -82,9 +88,11 @@ class Atom(IdPk, Tenant, Stamps, SoftDelete, Base):
             name="nonnegative_caps",
         ),
         CheckConstraint(
-            "status <> 'active' or (active_version_id is not null and deleted_at is null)",
+            "status <> 'active' or active_version_id is not null",
             name="active_version_required",
         ),
+        # The atom's member is its identity. Delete the atom (which takes its versions), then its
+        # member; deleting the member first is refused (no action), like a personal owner.
         tfk("member_id", "members"),
         tfk("owner_member_id", "members"),
         # The version must belong to this atom, not just to the same workspace.
@@ -118,7 +126,7 @@ class AtomVersion(IdPk, Tenant, Created, Base):
         CheckConstraint("jsonb_typeof(policy) = 'object'", name="policy_object"),
         CheckConstraint("jsonb_typeof(tools) = 'array'", name="tools_array"),
         CheckConstraint("jsonb_typeof(eval) = 'object'", name="eval_object"),
-        one_of("source", "human", "atomizer", "self"),
+        one_of("source", *ATOM_SOURCES),
         one_of("status", "candidate", "active", "rolled_back", "rejected"),
         tfk("atom_id", "atoms", "cascade"),
         tfk("created_by", "members"),
@@ -146,7 +154,7 @@ def _skill_constraints():
     )
 
 
-class Skill(IdPk, Tenant, Stamps, SoftDelete, SkillContent, Base):
+class Skill(IdPk, Tenant, Stamps, SkillContent, Base):
     __tablename__ = "skills"
 
     scope: Mapped[str]
@@ -156,7 +164,7 @@ class Skill(IdPk, Tenant, Stamps, SoftDelete, SkillContent, Base):
         tenant_unique(),
         UniqueConstraint("workspace_id", "name", "version"),
         UniqueConstraint("workspace_id", "id", "version"),
-        one_of("scope", "workspace", "personal"),
+        one_of("scope", *OWNERSHIP_SCOPES),
         CheckConstraint(
             "(scope = 'personal' and owner_member_id is not null)"
             " or (scope = 'workspace' and owner_member_id is null)",
@@ -167,7 +175,7 @@ class Skill(IdPk, Tenant, Stamps, SoftDelete, SkillContent, Base):
     )
 
 
-class CatalogSkill(IdPk, Stamps, SoftDelete, SkillContent, Base):
+class CatalogSkill(IdPk, Stamps, SkillContent, Base):
     __tablename__ = "catalog_skills"
 
     __table_args__ = (
@@ -204,15 +212,18 @@ class AtomSkill(IdPk, Tenant, Created, Base):
         UniqueConstraint("atom_id", "catalog_skill_id"),
         CheckConstraint("num_nonnulls(skill_id, catalog_skill_id) = 1", name="one_skill"),
         CheckConstraint("skill_version > 0", name="positive_version"),
-        one_of("added_by", "human", "atomizer", "self"),
+        one_of("added_by", *ATOM_SOURCES),
         tfk("atom_id", "atoms", "cascade"),
         tfk("added_by_member_id", "members"),
         ForeignKeyConstraint(
             ["workspace_id", "skill_id", "skill_version"],
             ["skills.workspace_id", "skills.id", "skills.version"],
+            ondelete="CASCADE",  # a deleted skill detaches from the atoms that used it
         ),
         ForeignKeyConstraint(
-            ["catalog_skill_id", "skill_version"], ["catalog_skills.id", "catalog_skills.version"]
+            ["catalog_skill_id", "skill_version"],
+            ["catalog_skills.id", "catalog_skills.version"],
+            ondelete="CASCADE",
         ),
     )
 
@@ -261,7 +272,7 @@ class AtomConnection(IdPk, Tenant, Stamps, Base):
     __table_args__ = (
         tenant_unique(),
         one_of("permission_ceiling", *PERMISSION_CEILINGS),
-        one_of("status", "active", "expired", "revoked", "unknown"),
+        one_of("status", *CONNECTION_STATUSES),
         CheckConstraint(
             "btrim(toolkit) <> '' and btrim(composio_user_id) <> ''", name="connection_identity"
         ),
@@ -302,7 +313,7 @@ class AtomGrant(IdPk, Tenant, Stamps, Base):
             "atom_id", "resource_type", "resource_id", postgresql_nulls_not_distinct=True
         ),
         one_of("resource_type", *RESOURCE_TYPES),
-        one_of("level", "summary", "read", "write"),
+        one_of("level", *ATOM_LEVELS),
         CheckConstraint("jsonb_typeof(constraints) = 'object'", name="constraints_object"),
         tfk("atom_id", "atoms", "cascade"),
         Index("ix_atom_grants_lookup", "workspace_id", "atom_id", "resource_type"),

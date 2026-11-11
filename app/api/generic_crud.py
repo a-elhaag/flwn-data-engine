@@ -2,7 +2,8 @@
 
 Each table's request and response models are built from its columns, so they cannot drift from the
 database. Full CRUD for the child tables in CRUD_TABLES; read-only (list and get) for the engine-
-written and security-sensitive tables in READ_TABLES. Composite keys are addressed by their parts,
+written, security-sensitive and domain-owned tables in READ_TABLES. Tables with a hand-written route
+or service rule never get generic writes. Composite keys are addressed by their parts,
 for example DELETE /workspaces/{ws}/team-members/{team_id}/{member_id}.
 
 Access follows ACCESS: a token with the table's read or write scope (the area's scopes, locked to
@@ -18,7 +19,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 from fastapi import Path as PathParam
 from pydantic import ConfigDict, Field, create_model
 from sqlalchemy import select
@@ -26,29 +27,27 @@ from sqlalchemy.exc import IntegrityError
 
 import app.db.models  # noqa: F401  (registers every model on Base.metadata)
 from app.api import auth, tokens
-from app.api.examples import EXAMPLES
+from app.api.errors import api_error
+from app.api.route_kinds import INTERNAL_TABLES
 from app.db.base import Base
 from app.db.session import session_for
+from app.openapi.examples import EXAMPLES
 
+# Writable through generic routes: child tables with no hand-written route and no service that writes
+# them. Tables with a domain route or service rule are read-only below; tables whose hand-written
+# route duplicates the generic one (team_members, channel_members, doc_blocks) have no generic
+# routes at all (issue #29).
 CRUD_TABLES = {
     "links",
     "favorites",
     "labels",
-    "notifications",
     "subscriptions",
-    "team_members",
-    "backlogs",
     "collections",
     "folders",
     "milestones",
     "project_updates",
     "saved_views",
-    "channel_members",
-    "memory_links",
-    "doc_blocks",
     "doc_versions",
-    "meeting_participants",
-    "transcripts",
     "work_item_labels",
     "task_labels",
     "task_relations",
@@ -68,13 +67,18 @@ READ_TABLES = {
     "atom_schedules",
     "atom_connections",
     "atom_skills",
-    "invitations",
     "decisions",
     "catalog_skills",
+    # Read-only because a domain route or service owns their writes (issue #18).
+    "meeting_participants",  # POST /meetings/{id}/participants
+    "transcripts",  # PUT /meetings/{id}/transcript
+    "memory_links",  # /memories
+    "backlogs",  # created by the planning service with each project
+    "notifications",  # created by the approvals service
 }
 # Never sent by clients or returned in full: the database or search machinery owns them.
 HIDDEN = {"tsv", "embedding"}
-SERVER_SET = {"id", "workspace_id", "created_at", "updated_at", "deleted_at"}
+SERVER_SET = {"id", "workspace_id", "created_at", "updated_at"}
 # Set from the caller's token, never from the body: a client cannot claim to be someone else.
 AUTHOR = {"created_by", "last_edited_by"}
 
@@ -89,10 +93,11 @@ FILES = (tokens.SCOPE_FILES_READ, tokens.SCOPE_FILES_WRITE)
 ATOMS = (tokens.SCOPE_ATOMS_READ, None)  # engine-written: read only
 ACCESS = {
     **dict.fromkeys(
-        ("backlogs", "milestones", "project_updates", "labels", "saved_views", "task_labels")
+        ("milestones", "project_updates", "labels", "saved_views", "task_labels")
         + ("task_relations", "work_item_labels"),
         PLANNING,
     ),
+    "backlogs": (tokens.SCOPE_PLANNING_READ, None),  # read-only: see READ_TABLES
     "collections": COLLAB,
     **dict.fromkeys(("folders", "file_derivatives"), FILES),
     **dict.fromkeys(("atom_grants", "atom_versions", "atom_schedules", "atom_skills"), ATOMS),
@@ -203,8 +208,12 @@ def _error(exc: Exception):
     if isinstance(exc, IntegrityError):
         text = str(exc.orig).lower()
         if "check constraint" in text:
-            raise HTTPException(422, "a value breaks a database rule") from None
-        raise HTTPException(409, "resource conflicts with an existing record") from None
+            raise api_error(
+                422, "database_rule_violated", "a value breaks a database rule"
+            ) from None
+        raise api_error(
+            409, "conflict_record", "resource conflicts with an existing record"
+        ) from None
     raise exc
 
 
@@ -216,7 +225,6 @@ def _register(table, models: dict) -> dict:
     key_path = "/".join("{" + name + "}" for name in key_names)
     base = _path(table.name)
     scoped = "workspace_id" in table.columns  # catalog_skills is shared: no workspace column
-    has_deleted = "deleted_at" in table.columns
     has_created = "created_at" in table.columns
     has_actor = "created_by" in table.columns
     has_editor = "last_edited_by" in table.columns
@@ -236,6 +244,8 @@ def _register(table, models: dict) -> dict:
         for name in key_names
     ]
     label = table.name.replace("_", " ")
+    public = table.name not in INTERNAL_TABLES  # engine tables: service key only, hidden (#18)
+    one = table.name[:-1] if table.name.endswith("s") else table.name  # operation ids
     read_scope, write_scope = ACCESS.get(table.name, (None, None))
     read_guard = auth.allow(read_scope)
     write_guard = auth.allow(write_scope)  # no write scope: the service key only, never a token
@@ -246,21 +256,16 @@ def _register(table, models: dict) -> dict:
             query = query.where(model.workspace_id == workspace_id)
         for name, value in keys.items():
             query = query.where(getattr(model, name) == value)
-        if has_deleted:
-            query = query.where(model.deleted_at.is_(None))
         row = session.scalar(query)
         if row is None:
-            raise HTTPException(404, f"{label} not found")
+            raise api_error(404, f"{one}_not_found", f"{label} not found")
         return row
 
-    # ---- list ------------------------------------------------------------------------------
     def list_rows(workspace_id, request, limit: int = 50, offset: int = 0):
         with session_for(str(workspace_id)) as session:
             query = select(model)
             if scoped:
                 query = query.where(model.workspace_id == workspace_id)
-            if has_deleted:
-                query = query.where(model.deleted_at.is_(None))
             order = (
                 [model.created_at, *[getattr(model, n) for n in key_names]]
                 if has_created
@@ -291,17 +296,17 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         base,
         list_rows,
+        name=f"list_{table.name}",
         methods=["GET"],
         response_model=models["page"],
         dependencies=[read_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"GET /workspaces/{{workspace_id}}{base}"] = (
         f"List {label}",
         "Paginated with `limit` and `offset`.",
     )
 
-    # ---- get one ---------------------------------------------------------------------------
     def get_row(workspace_id, request, **keys):
         with session_for(str(workspace_id)) as session:
             row = lookup(session, workspace_id, keys)
@@ -311,10 +316,11 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         f"{base}/{key_path}",
         get_row,
+        name=f"get_{one}",
         methods=["GET"],
         response_model=models["out"],
         dependencies=[read_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"GET /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Get one {label[:-1] if label.endswith('s') else label}",
@@ -324,7 +330,6 @@ def _register(table, models: dict) -> dict:
     if table.name not in CRUD_TABLES:
         return summaries
 
-    # ---- create ----------------------------------------------------------------------------
     def create_row(workspace_id, request, body):
         data = body.model_dump(exclude_unset=True)
         if has_actor:
@@ -348,18 +353,18 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         base,
         create_row,
+        name=f"create_{one}",
         methods=["POST"],
         status_code=201,
         response_model=models["out"],
         dependencies=[write_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"POST /workspaces/{{workspace_id}}{base}"] = (
         f"Create {label}",
         "Missing required fields are a 422.",
     )
 
-    # ---- update ----------------------------------------------------------------------------
     def update_row(workspace_id, request, body, **keys):
         changes = body.model_dump(exclude_unset=True)
         with session_for(str(workspace_id)) as session:
@@ -385,24 +390,21 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         f"{base}/{key_path}",
         update_row,
+        name=f"update_{one}",
         methods=["PATCH"],
         response_model=models["out"],
         dependencies=[write_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"PATCH /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Update {label}",
         "Only the fields you send change.",
     )
 
-    # ---- delete ----------------------------------------------------------------------------
     def delete_row(workspace_id, request, **keys):
         with session_for(str(workspace_id)) as session:
             row = lookup(session, workspace_id, keys)
-            if has_deleted:
-                row.deleted_at = datetime.now().astimezone()
-            else:
-                session.delete(row)
+            session.delete(row)
             session.flush()
         return Response(status_code=204)
 
@@ -410,14 +412,15 @@ def _register(table, models: dict) -> dict:
     router.add_api_route(
         f"{base}/{key_path}",
         delete_row,
+        name=f"delete_{one}",
         methods=["DELETE"],
         status_code=204,
         dependencies=[write_guard],
-        tags=[label],
+        include_in_schema=public,
     )
     summaries[f"DELETE /workspaces/{{workspace_id}}{base}/{key_path}"] = (
         f"Delete {label}",
-        "Soft delete: the row is kept and hidden." if has_deleted else "Hard delete. Returns 204.",
+        "Hard delete. Returns 204.",
     )
     return summaries
 
@@ -432,7 +435,9 @@ def build() -> dict:
         models = _models(table)
         for model in models.values():
             setattr(module, model.__name__, model)
-        summaries.update(_register(table, models))
+        registered = _register(table, models)
+        if table.name not in INTERNAL_TABLES:
+            summaries.update(registered)
     return summaries
 
 

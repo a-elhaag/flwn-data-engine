@@ -63,10 +63,6 @@ class Stamps(Created):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
-class SoftDelete:
-    deleted_at: Mapped[datetime | None]
-
-
 def tenant_unique() -> UniqueConstraint:
     """Lets other tables reference (workspace_id, id)."""
     return UniqueConstraint("workspace_id", "id")
@@ -78,8 +74,13 @@ def project_unique() -> UniqueConstraint:
 
 
 def tfk(col: str, target: str, ondelete: str | None = None) -> ForeignKeyConstraint:
-    """(workspace_id, col) -> target(workspace_id, id). ondelete: 'cascade' | 'set null'."""
-    action = {"cascade": "CASCADE", "set null": f"SET NULL ({col})", None: None}[ondelete]
+    """(workspace_id, col) -> target(workspace_id, id). ondelete: cascade, set null or restrict."""
+    action = {
+        "cascade": "CASCADE",
+        "set null": f"SET NULL ({col})",
+        "restrict": "RESTRICT",
+        None: None,
+    }[ondelete]
     return ForeignKeyConstraint(
         ["workspace_id", col],
         [f"{target}.workspace_id", f"{target}.id"],
@@ -105,3 +106,15 @@ def one_of(col: str, *values: str) -> CheckConstraint:
 
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
 WORK_STATUSES = ("backlog", "todo", "in_progress", "in_review", "done", "canceled")
+PROJECT_STATUSES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled")
+WORK_ITEM_TYPES = ("FEATURE", "STORY", "BUG")
+MEMBER_ROLES = ("owner", "admin", "member", "viewer")
+MEMBER_STATUSES = ("active", "suspended")
+CHANNEL_TYPES = ("team", "project", "group", "dm", "agent")
+MESSAGE_KINDS = ("text", "voice_note", "image", "file", "system", "agent_report")
+ATOM_STATUSES = ("draft", "active", "paused", "killed")
+MEMBER_TYPES = ("HUMAN", "AI")
+INVITATION_ROLES = ("admin", "member", "viewer")
+TEAM_ROLES = ("lead", "member")
+COMMENT_TARGET_TYPES = ("task", "work_item", "project", "project_update", "sprint", "doc")
+MEETING_STATUSES = ("scheduled", "live", "ended", "canceled")

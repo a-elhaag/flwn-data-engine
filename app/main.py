@@ -8,23 +8,25 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
 
 from app.api import errors
-from app.api import explorer as explorer_page
-from app.api.business_spec import business_openapi
-from app.api.examples import EXAMPLES
-from app.api.field_docs import COMMON, FIELD_DOCS
-from app.api.operations import OPERATIONS
 from app.api.routes import router
-from app.config import settings
-from app.mcp_tools.server import build_app, create_mcp
-from app.storage import indexer
-from app.storage.blobs import get_storage
+from app.core.config import settings
+from app.domain.error_codes import CODES
+from app.domain.storage import indexer
+from app.domain.storage.blobs import get_storage
+from app.integrations.mcp.server import build_app, create_mcp
+from app.openapi import explorer as explorer_page
+from app.openapi.business_spec import business_openapi
+from app.openapi.examples import EXAMPLES
+from app.openapi.field_docs import COMMON, FIELD_DOCS
+from app.openapi.operations import OPERATIONS
 
-DESCRIPTION = """
+DESCRIPTION = (
+    """
 REST API for the flwn data engine: workspace memory, files, meetings, atoms, planning and collaboration.
 
 **Authentication.** Two kinds of caller:
 
-- **Agents** send `Authorization: Bearer <token>`. Mint a token with `POST /auth/tokens`; its scopes
+- **Agents** send `Authorization: Bearer <token>`, a token signed by the backend; its scopes
   decide which endpoints it may call, and it is locked to one workspace.
 - **The trusted backend** sends the service key in `X-Data-Api-Key`, and `X-Acting-Member-Id` to act
   for a member. Endpoints marked "Trusted backend only" accept nothing else.
@@ -33,6 +35,16 @@ REST API for the flwn data engine: workspace memory, files, meetings, atoms, pla
 endpoint, to see its parameters, an example request body and the response schemas.
 All request and response models are listed under **Schemas** at the bottom.
 """
+    + f"""
+**Errors.** Every error body is `{{"detail", "code", "fields"}}`. `detail` is the English message
+for people; `code` is a stable machine code, so match on `code`, never on `detail`. `fields` maps
+each failing input (a body or query field, or a header) to its message on a 422, and is `null`
+otherwise. A 404 means the resource in the URL is missing; a 422 means a bad field, or an id in the
+body or a header that does not exist. The codes:
+
+{", ".join(f"`{code}`" for code in CODES)}
+"""
+)
 
 TAGS = [
     {"name": "System", "description": "Health checks and token minting."},
@@ -59,6 +71,11 @@ TAGS = [
     {
         "name": "Collaboration",
         "description": "Comments, docs and blocks, channels and messages. Trusted backend only.",
+    },
+    {
+        "name": "Raw tables",
+        "description": "Generic list, get, create, update and delete over single tables. "
+        "Child tables with no domain route of their own; domain-owned tables are read-only.",
     },
 ]
 
@@ -118,6 +135,10 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="flwn-data-engine",
+        # Short, stable operation ids in Python style (create_task, list_member_tasks): the route's
+        # function name. Clients such as the Go one name their functions from these ids; they do
+        # not have to match Go style, they only have to stay short and unique.
+        generate_unique_id_function=lambda route: route.name,
         lifespan=lifespan,
         description=DESCRIPTION,
         openapi_tags=TAGS,

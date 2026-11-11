@@ -1,6 +1,6 @@
 """Test doubles shared by the file tests."""
 
-from app.storage.blobs import BlobInfo
+from app.domain.storage.blobs import BlobInfo
 
 
 class FakeBlobs:
@@ -22,7 +22,7 @@ class FakeBlobs:
         return self.stored.get((container, path))
 
     def download(self, container, path, max_bytes):
-        from app.storage.errors import Unindexable
+        from app.domain.storage.errors import Unindexable
 
         info = self.stored[(container, path)]
         if info.size > max_bytes:
@@ -33,8 +33,8 @@ class FakeBlobs:
         if self.fail_deletes:
             raise RuntimeError("storage is down")
         self.deleted.append((container, path))
-        self.stored.pop((container, path), None)
         self.data.pop((container, path), None)
+        return self.stored.pop((container, path), None) is not None
 
     def upload(self, ticket, size=None, content_type="application/octet-stream", data=None):
         """What the client does: PUT the bytes to the ticket's URL."""

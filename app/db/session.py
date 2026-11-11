@@ -7,10 +7,11 @@ every query.
 DATABASE_URL is the application's connection and must use a role WITHOUT superuser or BYPASSRLS
 (a managed server's admin role usually has BYPASSRLS, which silently turns the policies off).
 DATABASE_ADMIN_URL, used only to install the schema, may be that admin role. Both are read
-here, not in app.config, so installing works without the API's other settings.
+here, not in app.core.config, so installing works without the API's other settings.
 """
 
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -18,6 +19,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
+
+from app.db.atom_access import AtomAccessError, current_context
 
 
 class _DatabaseSettings(BaseSettings):
@@ -39,6 +42,21 @@ def admin_database_url() -> str:
     return _DatabaseSettings().DATABASE_ADMIN_URL.strip() or database_url()
 
 
+# The member a request is limited to: None means no per-member limit (the service key, an admin,
+# background work). A string, even an empty one, turns on the member_private policies for the
+# request; "" matches no member, so a caller we cannot name sees none of the private rows.
+_viewer: ContextVar[str | None] = ContextVar("viewer", default=None)
+
+
+@contextmanager
+def bind_viewer(member_id: str | None):
+    token = _viewer.set(member_id)
+    try:
+        yield
+    finally:
+        _viewer.reset(token)
+
+
 @lru_cache
 def engine() -> Engine:
     return create_engine(database_url(), pool_pre_ping=True, pool_size=5, max_overflow=10)
@@ -50,9 +68,8 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
 
     `service=True` lifts the workspace restriction for trusted admin work that spans workspaces.
     """
-    from app.atoms.access import AtomAccessError, current_context
-
     atom = current_context()
+    viewer = None if service else _viewer.get()
     if atom and (service or str(workspace_id) != str(atom.workspace_id)):
         raise AtomAccessError("Atom context cannot cross workspaces or enable service mode")
     with sessionmaker(bind, expire_on_commit=False)() as session, session.begin():
@@ -64,7 +81,9 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
                 "set_config('app.run_id', :run, true), "
                 "set_config('app.member_id', :member, true), "
                 "set_config('app.ctx', :ctx, true), "
-                "set_config('app.atom_aggregate', 'off', true)"
+                "set_config('app.atom_aggregate', 'off', true), "
+                "set_config('app.member_private', :private, true), "
+                "set_config('app.viewer_id', :viewer, true)"
             ),
             {
                 "ws": str(workspace_id),
@@ -73,6 +92,8 @@ def workspace_session(bind: Engine, workspace_id: str, service: bool = False):
                 "run": str(atom.run_id) if atom else "",
                 "member": str(atom.member_id) if atom else "",
                 "ctx": atom.ctx if atom else "",
+                "private": "off" if viewer is None else "on",
+                "viewer": viewer or "",
             },
         )
         yield session

@@ -1,0 +1,473 @@
+"""Who did it: tokens carry a member, the trusted backend can name one, and writes record it."""
+
+import json
+import uuid
+
+import signing
+from harness import CrudHarness, MemoryHarness
+
+from app.api import tokens
+from app.api import tokens as t
+
+ASSERT_NO_SERVICE_KEY = {"X-Data-API-Key": ""}
+MCP_HEADERS = {"Accept": "application/json, text/event-stream"}
+
+
+class IdentityTests(MemoryHarness):
+    def agent(self, member=None, workspace=None, scopes=None):
+        token, _ = signing.mint(
+            workspace or self.team_a, scopes or tokens.AGENT_SCOPES, "agent", 600, member
+        )
+        return {"Authorization": f"Bearer {token}", **ASSERT_NO_SERVICE_KEY}
+
+    def remember(self, headers=None, workspace=None):
+        return self.client.post(
+            f"/workspaces/{workspace or self.team_a}/memories",
+            json={"text": "t", "source": "chat", "agent": "planner"},
+            headers=headers,
+        )
+
+    def test_a_token_without_a_member_still_works_and_records_no_author(self):
+        memory_id = self.remember(self.agent()).json()["point_id"]
+        self.assertIsNone(self.row(memory_id)["created_by"])
+
+    def test_a_memory_records_the_member_in_the_token(self):
+        ghost = self.member(self.team_a, kind="AI")
+        memory_id = self.remember(self.agent(ghost)).json()["point_id"]
+        self.assertEqual(str(self.row(memory_id)["created_by"]), ghost)
+        (event,) = [e for e in self.events(self.team_a, "memory") if e["action"] == "created"]
+        self.assertEqual((str(event["actor_id"]), str(event["entity_id"])), (ghost, memory_id))
+
+    def test_the_trusted_backend_can_name_the_human_it_acts_for(self):
+        ana = self.member(self.team_a)
+        response = self.remember(headers={"X-Acting-Member-Id": ana})
+        memory_id = response.json()["point_id"]
+        self.assertEqual(str(self.row(memory_id)["created_by"]), ana)
+
+    def test_the_service_cannot_name_a_member_who_is_not_active_here(self):
+        for member in (
+            self.member(self.team_b),
+            self.member(self.team_a, status="suspended"),
+            "junk",
+        ):
+            response = self.remember(headers={"X-Acting-Member-Id": member})
+            self.assertEqual(response.status_code, 422, member)
+        self.assertEqual(self.count(self.team_a), 0)  # nothing was written
+
+    def test_an_agent_cannot_act_as_someone_else_by_sending_the_header(self):
+        ghost, ana = self.member(self.team_a, kind="AI"), self.member(self.team_a)
+        headers = {**self.agent(ghost), "X-Acting-Member-Id": ana}
+        memory_id = self.remember(headers).json()["point_id"]
+        self.assertEqual(str(self.row(memory_id)["created_by"]), ghost)  # the signed token wins
+
+    def test_a_member_from_another_workspace_cannot_be_smuggled_into_a_token(self):
+        foreign = self.member(self.team_b)
+        # a token is only minted through the API, which checks; a forged claim fails the live check
+        headers = self.agent(foreign)  # signed directly, bypassing the mint check
+        self.assertEqual(self.remember(headers).status_code, 403)
+        self.assertEqual(self.count(self.team_a), 0)
+
+    def test_suspending_a_member_stops_their_existing_token_at_once(self):
+        ghost = self.member(self.team_a, kind="AI")
+        headers = self.agent(ghost)
+        self.assertEqual(self.remember(headers).status_code, 200)
+        self.sql("update members set status = 'suspended' where id = :i", i=ghost)
+        refused = self.remember(headers)
+        self.assertEqual(
+            (refused.status_code, refused.json()["detail"]),
+            (403, "Member is not active in this workspace"),
+        )
+        self.sql("update members set status = 'active' where id = :i", i=ghost)
+        self.assertEqual(self.remember(headers).status_code, 200)  # reactivated: works again
+
+    def test_a_removed_member_stops_working_too(self):
+        ghost = self.member(self.team_a, kind="AI")
+        headers = self.agent(ghost)
+        self.sql("delete from members where id = :i", i=ghost)
+        self.assertEqual(self.remember(headers).status_code, 403)
+
+    def test_every_memory_change_leaves_an_event_with_its_actor(self):
+        ana = self.member(self.team_a)
+        headers = {"X-Acting-Member-Id": ana}
+        base = f"/workspaces/{self.team_a}/memories"
+        memory_id = self.remember(headers).json()["point_id"]
+        self.client.patch(f"{base}/{memory_id}", json={"text": "better"}, headers=headers)
+        self.client.put(f"{base}/{memory_id}/pin", json={"pinned": True}, headers=headers)
+        self.client.put(f"{base}/{memory_id}/pin", json={"pinned": False}, headers=headers)
+        self.client.delete(f"{base}/{memory_id}", headers=headers)
+        self.client.delete(f"{base}/{memory_id}", headers=headers)  # already gone: no second event
+        events = self.events(self.team_a, "memory")
+        self.assertEqual(
+            [e["action"] for e in events], ["created", "updated", "pinned", "unpinned", "deleted"]
+        )
+        self.assertEqual({str(e["actor_id"]) for e in events}, {ana})
+
+    def test_a_purge_and_a_sweep_are_recorded(self):
+        old = self.remember().json()["point_id"]
+        self.age(old, 60)
+        self.client.post(f"/workspaces/{self.team_a}/memories/cleanup", json={})
+        self.remember()
+        self.client.delete(f"/workspaces/{self.team_a}/memories?confirm={self.team_a}")
+        actions = [e["action"] for e in self.events(self.team_a, "workspace")]
+        self.assertEqual(actions, ["memories_swept", "memories_purged"])
+
+    def test_events_stay_inside_their_workspace(self):
+        self.remember()
+        self.remember(workspace=self.team_b)
+        self.assertEqual(len(self.events(self.team_a)), 1)
+        self.assertEqual(len(self.events(self.team_b)), 1)
+
+    def test_a_failed_write_leaves_no_event(self):
+        ghost = str(__import__("uuid").uuid4())
+        self.remember(workspace=ghost)  # unknown workspace: 404
+        self.assertEqual(self.events(self.team_a), [])
+
+    def call(self, tool, arguments, headers):
+        response = self.client.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": tool, "arguments": arguments},
+            },
+            headers={**MCP_HEADERS, **headers},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["result"]
+
+    def test_mcp_tools_act_as_the_token_member_and_refuse_a_suspended_one(self):
+        ghost = self.member(self.team_a, kind="AI")
+        headers = self.agent(ghost)
+        result = self.call(
+            "memory_remember", {"text": "t", "source": "chat", "agent": "p"}, headers
+        )
+        memory_id = json.loads(result["content"][0]["text"])["id"]
+        self.assertEqual(str(self.row(memory_id)["created_by"]), ghost)
+        self.sql("update members set status = 'suspended' where id = :i", i=ghost)
+        refused = self.call("memory_recall", {"query": "q", "agent": "p"}, headers)
+        self.assertTrue(refused["isError"])
+
+
+class IdentityApiTests(CrudHarness):
+    def test_member_crud_links_human_profile_to_user(self):
+        response = self.client.post(
+            f"/workspaces/{self.team_a}/members",
+            json={
+                "type": "HUMAN",
+                "name": "Ada Lovelace",
+                "email": "ada@example.com",
+                "role": "member",
+            },
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        member = response.json()
+        member_id = member["id"]
+        self.assertEqual(
+            (member["name"], member["email"], member["type"]),
+            ("Ada Lovelace", "ada@example.com", "HUMAN"),
+        )
+        self.assertIsNotNone(member["user_id"])
+
+        updated = self.client.patch(
+            f"/workspaces/{self.team_a}/members/{member_id}",
+            json={"role": "admin", "status": "suspended"},
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual((updated.json()["role"], updated.json()["status"]), ("admin", "suspended"))
+        self.assertEqual(
+            self.client.get(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 200
+        )
+        self.assertEqual(
+            self.client.delete(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 204
+        )
+        self.assertEqual(
+            self.client.get(f"/workspaces/{self.team_a}/members/{member_id}").status_code, 404
+        )
+
+    def test_a_deleted_account_frees_its_email(self):
+        base = f"/workspaces/{self.team_a}/members"
+        first = self.client.post(
+            base, json={"type": "HUMAN", "name": "Gone", "email": "gone@example.com"}
+        ).json()
+        self.assertEqual(self.client.delete(f"{base}/{first['id']}").status_code, 204)
+        # the user account is deleted too, so the address is free for a new account
+        user_id = first["user_id"]
+        self.assertEqual(self.client.delete(f"/users/{user_id}").status_code, 204)
+        again = self.client.post(
+            base,
+            json={"type": "HUMAN", "name": "Back", "email": "gone@example.com"},
+        )
+        self.assertEqual(again.status_code, 201, again.text)
+        self.assertNotEqual(again.json()["user_id"], user_id)
+
+    def test_member_update_cannot_change_the_user_account(self):
+        base = f"/workspaces/{self.team_a}/members"
+        person = self.client.post(
+            base, json={"type": "HUMAN", "name": "Ada", "email": "ada2@example.com"}
+        ).json()
+        for body in ({"name": "Eve"}, {"email": "eve@example.com"}, {"avatar_url": "http://x/y"}):
+            response = self.client.patch(f"{base}/{person['id']}", json=body)
+            self.assertEqual(response.status_code, 422, (body, response.text))
+        again = self.client.get(f"{base}/{person['id']}").json()
+        self.assertEqual((again["name"], again["email"]), ("Ada", "ada2@example.com"))
+
+        # AI members keep their name and avatar on the member, so those stay editable
+        agent = self.client.post(
+            base, json={"type": "AI", "name": "Ghost", "agent_kind": "ghost_engineer"}
+        ).json()
+        changed = self.client.patch(
+            f"{base}/{agent['id']}", json={"name": "Spirit", "avatar_url": "http://x/a.png"}
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["name"], "Spirit")
+        self.assertEqual(
+            self.client.patch(f"{base}/{agent['id']}", json={"email": "a@b.co"}).status_code, 422
+        )
+
+    def test_duplicate_member_and_foreign_team_member_are_rejected(self):
+        member_body = {
+            "type": "HUMAN",
+            "name": "Ada Lovelace",
+            "email": "ada@example.com",
+        }
+        first = self.client.post(f"/workspaces/{self.team_a}/members", json=member_body)
+        self.assertEqual(first.status_code, 201, first.text)
+        duplicate = self.client.post(f"/workspaces/{self.team_a}/members", json=member_body)
+        self.assertEqual(duplicate.status_code, 409, duplicate.text)
+
+        team = self.client.post(
+            f"/workspaces/{self.team_a}/teams", json={"key": "ENG", "name": "Engineering"}
+        )
+        self.assertEqual(team.status_code, 201, team.text)
+        foreign = self.member(self.team_b)
+        response = self.client.put(
+            f"/workspaces/{self.team_a}/teams/{team.json()['id']}/members",
+            json={"member_ids": [foreign]},
+        )
+        self.assertEqual(response.status_code, 422, response.text)
+
+    def test_team_crud_and_member_assignment(self):
+        member_id = self.member(self.team_a)
+        response = self.client.post(
+            f"/workspaces/{self.team_a}/teams",
+            json={"key": "ENG", "name": "Engineering"},
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        team_id = response.json()["id"]
+
+        assigned = self.client.put(
+            f"/workspaces/{self.team_a}/teams/{team_id}/members",
+            json={"member_ids": [member_id]},
+        )
+        self.assertEqual(assigned.status_code, 200, assigned.text)
+        self.assertEqual(
+            self.sql(
+                "select count(*) as n from team_members where workspace_id = :w and team_id = :t",
+                w=self.team_a,
+                t=team_id,
+            )[0]["n"],
+            1,
+        )
+        updated = self.client.patch(
+            f"/workspaces/{self.team_a}/teams/{team_id}", json={"name": "Platform"}
+        )
+        self.assertEqual(updated.json()["name"], "Platform")
+        self.assertEqual(
+            self.client.delete(f"/workspaces/{self.team_a}/teams/{team_id}").status_code, 204
+        )
+        self.assertEqual(
+            self.client.get(f"/workspaces/{self.team_a}/teams/{team_id}").status_code, 404
+        )
+
+    def test_member_routes_require_service_credentials(self):
+        response = self.client.get(f"/workspaces/{self.team_a}/members", headers=self.NO_TOKEN)
+        self.assertEqual(response.status_code, 401)
+
+
+class UsersApiTests(CrudHarness):
+    def email(self):
+        return f"{uuid.uuid4().hex[:10]}@example.com"
+
+    def make(self, **body):
+        response = self.client.post("/users", json={"email": self.email(), "name": "Ada", **body})
+        self.assertEqual(response.status_code, 201, response.text)
+        self.addCleanup(self.sql, "delete from users where id = :i", i=response.json()["id"])
+        return response.json()
+
+    def test_user_crud_and_delete(self):
+        user = self.make(settings={"theme": "dark"})
+        self.assertEqual(user["settings"], {"theme": "dark"})
+        updated = self.client.patch(f"/users/{user['id']}", json={"name": "Ada Byron"})
+        self.assertEqual((updated.status_code, updated.json()["name"]), (200, "Ada Byron"))
+        self.assertIn(user["id"], [u["id"] for u in self.client.get("/users").json()["items"]])
+        self.assertEqual(self.client.delete(f"/users/{user['id']}").status_code, 204)
+        self.assertEqual(self.client.get(f"/users/{user['id']}").status_code, 404)
+
+    def test_email_is_unique_ignoring_case_and_validated(self):
+        user = self.make()
+        clash = self.client.post("/users", json={"email": user["email"].upper(), "name": "Other"})
+        self.assertEqual(clash.status_code, 409, clash.text)
+        bad = self.client.post("/users", json={"email": "not-an-email", "name": "X"})
+        self.assertEqual(bad.status_code, 422)
+        other = self.make()
+        taken = self.client.patch(f"/users/{other['id']}", json={"email": user["email"]})
+        self.assertEqual(taken.status_code, 409)
+        self.assertEqual(self.client.patch(f"/users/{user['id']}", json={}).status_code, 422)
+
+    def test_user_routes_are_backend_only(self):
+        user = self.make()
+        admin = self.token_headers(self.team_a, t.SCOPE_ADMIN)
+        for method, path in (("get", "/users"), ("get", f"/users/{user['id']}")):
+            response = getattr(self.client, method)(path, headers=admin)
+            self.assertEqual(response.status_code, 401, response.text)
+        self.assertEqual(self.client.get("/users", headers=self.NO_TOKEN).status_code, 401)
+
+
+class WorkspacesApiTests(CrudHarness):
+    def owner(self) -> str:
+        """A user to own new workspaces; deleted after the workspaces (cleanups run in reverse)."""
+        (user,) = self.sql(
+            "insert into users (email, name) values (:e, 'Owner') returning id",
+            e=f"{uuid.uuid4().hex[:10]}@example.com",
+        )
+        self.addCleanup(self.sql, "delete from users where id = :i", i=user["id"])
+        self.addCleanup(self.sql, "delete from workspaces where created_by = :i", i=user["id"])
+        return str(user["id"])
+
+    def test_workspace_crud_and_delete(self):
+        owner = self.owner()
+        created = self.client.post(
+            "/workspaces",
+            json={
+                "name": "Research",
+                "slug": "research-team",
+                "description": "Initial",
+                "owner_user_id": owner,
+            },
+        )
+        self.assertEqual(created.status_code, 201, created.text)
+        workspace = created.json()
+        workspace_id = workspace["id"]
+        self.assertEqual((workspace["name"], workspace["slug"]), ("Research", "research-team"))
+        self.assertEqual(workspace["settings"], {})
+        self.assertEqual(workspace["created_by"], owner)
+        (member,) = self.sql(
+            "select * from members where workspace_id = :w and user_id = :u",
+            w=workspace_id,
+            u=owner,
+        )
+        self.assertEqual(
+            (str(member["user_id"]), member["type"], member["role"], member["status"]),
+            (owner, "HUMAN", "owner", "active"),
+        )
+
+        self.assertEqual(self.client.get(f"/workspaces/{workspace_id}").json(), workspace)
+        self.assertIn(
+            workspace_id,
+            [item["id"] for item in self.client.get("/workspaces").json()["items"]],
+        )
+
+        updated = self.client.patch(
+            f"/workspaces/{workspace_id}",
+            json={"name": "Research Group", "description": None},
+        )
+        self.assertEqual(updated.status_code, 200, updated.text)
+        self.assertEqual(updated.json()["name"], "Research Group")
+        self.assertIsNone(updated.json()["description"])
+
+        self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
+        # the workspace and its memberships are gone, so the credential no longer reaches it
+        self.assertEqual(self.client.get(f"/workspaces/{workspace_id}").status_code, 403)
+        self.assertNotIn(
+            workspace_id,
+            [item["id"] for item in self.client.get("/workspaces").json()["items"]],
+        )
+        # the workspace's events are part of it, so they go too
+        self.assertEqual(self.events(workspace_id), [])
+
+    def test_workspace_delete_records_derivative_and_report_blobs_too(self):
+        owner = self.owner()
+        workspace_id = self.client.post(
+            "/workspaces",
+            json={
+                "name": "Derived",
+                "slug": f"derived-{uuid.uuid4().hex[:8]}",
+                "owner_user_id": owner,
+            },
+        ).json()["id"]
+        file_id = self.sql(
+            "insert into files (workspace_id, kind, name, container, blob_path)"
+            " values (:w, 'document', 'b.pdf', 'workspace-files', :p) returning id",
+            w=workspace_id,
+            p=f"{workspace_id}/docs/b.pdf",
+        )[0]["id"]
+        self.sql(
+            "insert into file_derivatives (workspace_id, file_id, kind, container, blob_path)"
+            " values (:w, :f, 'thumbnail', 'workspace-files', :p)",
+            w=workspace_id,
+            f=file_id,
+            p=f"{workspace_id}/thumbs/b.png",
+        )
+        self.sql(
+            "insert into agent_reports (workspace_id, kind, title, container, blob_path)"
+            " values (:w, 'plan', 'R', 'workspace-files', :p)",
+            w=workspace_id,
+            p=f"{workspace_id}/reports/r.md",
+        )
+        self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
+        purged = self.sql(
+            "select blob_path from blob_purges where workspace_id = :w", w=workspace_id
+        )
+        self.assertEqual(
+            sorted(r["blob_path"] for r in purged),
+            sorted(
+                [
+                    f"{workspace_id}/docs/b.pdf",
+                    f"{workspace_id}/thumbs/b.png",
+                    f"{workspace_id}/reports/r.md",
+                ]
+            ),
+        )
+
+    def test_workspace_delete_records_its_blobs_for_the_reaper(self):
+        owner = self.owner()
+        workspace_id = self.client.post(
+            "/workspaces",
+            json={"name": "Blobs", "slug": f"blobs-{uuid.uuid4().hex[:8]}", "owner_user_id": owner},
+        ).json()["id"]
+        blob = f"{workspace_id}/docs/a.txt"
+        self.sql(
+            "insert into files (workspace_id, kind, name, container, blob_path)"
+            " values (:w, 'document', 'a.txt', 'workspace-files', :p)",
+            w=workspace_id,
+            p=blob,
+        )
+        self.assertEqual(self.client.delete(f"/workspaces/{workspace_id}").status_code, 204)
+        purged = self.sql(
+            "select container, blob_path from blob_purges where workspace_id = :w", w=workspace_id
+        )
+        self.assertEqual(
+            [(r["container"], r["blob_path"]) for r in purged], [("workspace-files", blob)]
+        )
+        self.assertEqual(
+            self.sql("select count(*) as n from files where workspace_id = :w", w=workspace_id)[0][
+                "n"
+            ],
+            0,
+        )
+
+    def test_workspace_slug_is_case_insensitively_unique(self):
+        owner = self.owner()
+        first = self.client.post(
+            "/workspaces", json={"name": "A", "slug": "shared-slug", "owner_user_id": owner}
+        )
+        self.assertEqual(first.status_code, 201, first.text)
+        conflict = self.client.post(
+            "/workspaces", json={"name": "B", "slug": "SHARED-SLUG", "owner_user_id": owner}
+        )
+        self.assertEqual(conflict.status_code, 409, conflict.text)
+
+    def test_workspace_routes_require_service_credentials(self):
+        response = self.client.get("/workspaces", headers=self.NO_TOKEN)
+        self.assertEqual(response.status_code, 401)

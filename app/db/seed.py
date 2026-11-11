@@ -21,7 +21,7 @@ from datetime import date, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.config import settings
+from app.core.config import settings
 from app.db import session as db
 from app.db.base import PRIORITIES, WORK_STATUSES
 
@@ -94,17 +94,28 @@ class Seeder:
             raise RuntimeError(f"{method} {url} -> {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
 
-    # -- one workspace ----------------------------------------------------------------------
+    def user(self, email: str, name: str) -> str:
+        """The user with this email, created if missing (re-running the seed reuses it)."""
+        created = self.call(
+            "POST", "/users", json={"email": email, "name": name}, expect=(201, 409)
+        )
+        if created and "id" in created:
+            return created["id"]
+        return self.call("GET", "/users", params={"email": email})["items"][0]["id"]
 
     def workspace(self, spec) -> dict:
-        ws = self.call("POST", "/workspaces", json={"name": spec["name"], "slug": spec["slug"]})[
-            "id"
-        ]
+        def email_of(name):
+            return f"{name.split()[0].lower()}.{spec['slug']}@{SEED_DOMAIN}"
+
+        owner_name = PEOPLE[0][0]  # the first person owns the workspace
+        owner_user = self.user(email_of(owner_name), owner_name)
+        body = {"name": spec["name"], "slug": spec["slug"], "owner_user_id": owner_user}
+        ws = self.call("POST", "/workspaces", json=body)["id"]
         base = f"/workspaces/{ws}"
-        people = {}
-        for name, role in PEOPLE:
-            email = f"{name.split()[0].lower()}.{spec['slug']}@{SEED_DOMAIN}"
-            body = {"type": "HUMAN", "role": role, "name": name, "email": email}
+        members = self.call("GET", f"{base}/members")["items"]
+        people = {owner_name: next(m["id"] for m in members if m["user_id"] == owner_user)}
+        for name, role in PEOPLE[1:]:
+            body = {"type": "HUMAN", "role": role, "name": name, "email": email_of(name)}
             people[name] = self.call("POST", f"{base}/members", json=body)["id"]
         agents = {}
         for name, kind in AGENTS:
@@ -158,11 +169,11 @@ class Seeder:
                 json={
                     "name": "Sprint 1",
                     "goal": f"First cut of {name}",
-                    "status": "active",
                     "start_date": today.isoformat(),
                     "end_date": (today + timedelta(days=14)).isoformat(),
                 },
             )["id"]
+            acting("POST", f"/projects/{project}/sprints/{sprint}/start")
             counts["sprints"] += 1
             for number, title in enumerate(items):
                 item = acting(
