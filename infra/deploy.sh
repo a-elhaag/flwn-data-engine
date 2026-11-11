@@ -5,8 +5,8 @@
 #
 # Cost choices (UAE North, roughly $27/month on top of Postgres):
 #   ACR Basic ~$5 | 2 private endpoints ~$15 | 2 private DNS zones ~$1 | VNet free
-#   Container Apps: Consumption profile only (no base fee), 0.5 vCPU / 1 GiB, scales to zero
-#   (the file queue is in Postgres, so a restart loses nothing). Set --min-replicas 1 for prod.
+#   Container Apps: Consumption profile only (no base fee), 0.5 vCPU / 1 GiB, one replica always on
+#   (a cold start took 15-30s and timed out sign-in, so it never scales to zero).
 #   No Log Analytics workspace (`az containerapp logs show` still streams live logs).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -82,7 +82,7 @@ fi
 APP_ARGS=(
   --image "$ACR.azurecr.io/$IMAGE" --registry-server "$ACR.azurecr.io" --registry-identity "$ID_ID"
   --user-assigned "$ID_ID" --workload-profile-name Consumption
-  --cpu 0.5 --memory 1Gi --min-replicas 0 --max-replicas 1
+  --cpu 0.5 --memory 1Gi --min-replicas 1 --max-replicas 1
   --target-port 8002 --ingress external
   --secrets "database-url=$(env_val DATABASE_URL)" "foundry-key=$(env_val AZURE_FOUNDRY_KEY)" \
             "data-api-key=$(env_val DATA_API_KEY)"
