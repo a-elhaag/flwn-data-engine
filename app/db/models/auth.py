@@ -4,10 +4,10 @@ links. The backend owns the logic; these tables keep only hashes and never the r
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Identity, Index, String, func
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Identity, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, Created
+from app.db.base import Base, Created, one_of
 
 
 class RevokedToken(Base):
@@ -74,3 +74,32 @@ class RateHit(Base):
 
 
 Index("ix_rate_hits_bucket_key_hash_hit_at", RateHit.bucket, RateHit.key_hash, RateHit.hit_at)
+
+
+class AiRun(Base):
+    """A paused AI run (waiting for plan approval or human review) and its review decision.
+
+    The AI engine owns the graph state; the backend records the review. No foreign keys: a
+    stale run is harmless after its task is hard-deleted.
+    """
+
+    __tablename__ = "ai_runs"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID]
+    project_id: Mapped[uuid.UUID]
+    agent_member_id: Mapped[uuid.UUID]
+    requester_member_id: Mapped[uuid.UUID]
+    stage: Mapped[str]
+    state: Mapped[dict]
+    review_status: Mapped[str] = mapped_column(server_default="pending")
+    review_reason: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    __table_args__ = (
+        one_of("stage", "plan", "review", "resuming"),
+        one_of("review_status", "pending", "approved", "rejected"),
+    )
+
+
+Index("ix_ai_runs_workspace_id", AiRun.workspace_id)

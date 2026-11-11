@@ -564,6 +564,26 @@ OPERATIONS: dict[str, tuple[str, str]] = {
         "Clear a key's hits",
         "Trusted backend only. Deletes every hit of one bucket and key hash. Returns 204 whether or not there were any.",
     ),
+    "PUT /ai-runs/{task_id}": (
+        "Save a paused AI run",
+        "Trusted backend only. Creates the run or replaces it. Replacing resets the review to `pending` with no reason. `state` is stored as given.",
+    ),
+    "GET /ai-runs/{task_id}": (
+        "Get a paused AI run",
+        "Trusted backend only. Returns the run and its review decision. 404 `ai_run_not_found` if the run is unknown.",
+    ),
+    "POST /ai-runs/{task_id}/claim": (
+        "Claim a paused AI run to resume it",
+        "Trusted backend only. Moves the run to `resuming` if it is at `expected_stage`, in one step, so a run is claimed once. 404 `ai_run_not_found` if the run is unknown. 409 `ai_run_not_claimable` if it is at another stage or already claimed.",
+    ),
+    "PATCH /ai-runs/{task_id}/review": (
+        "Record a review decision",
+        "Trusted backend only. Stores `approved` or `rejected` with an optional reason. 404 `ai_run_not_found` if the run is unknown. 409 `ai_run_not_in_review` if the run is waiting for plan approval, not review.",
+    ),
+    "DELETE /ai-runs/{task_id}": (
+        "Delete a paused AI run",
+        "Trusted backend only. Idempotent: returns 204 whether or not the run existed.",
+    ),
 }
 
 

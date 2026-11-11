@@ -17,6 +17,7 @@ SCHEMA_MODULES = (
     "app.api.schemas.identity",
     "app.api.schemas.auth_store",
     "app.api.schemas.rate_limits",
+    "app.api.schemas.ai_runs",
     "app.api.schemas.planning",
     "app.api.schemas.collab",
     "app.domain.memory.recall",

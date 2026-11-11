@@ -410,6 +410,33 @@ FIELD_DOCS: dict[str, dict[str, str]] = {
         "window_seconds": "How far back to count hits, in seconds (1 to 86400).",
     },
     "RateCount": {"count": "Hits for this bucket and key inside the window."},
+    "AiRunIn": {
+        "workspace_id": "The workspace the run belongs to.",
+        "project_id": "The project the task belongs to.",
+        "agent_member_id": "The AI member doing the work.",
+        "requester_member_id": "The member who asked for the work. Only this member may approve or reject the review.",
+        "stage": "`plan` while waiting for plan approval, `review` while waiting for human review.",
+        "state": "The AI engine's graph state, as a JSON object. Stored as given.",
+    },
+    "AiRunOut": {
+        "task_id": "The task the run belongs to.",
+        "workspace_id": "The workspace the run belongs to.",
+        "project_id": "The project the task belongs to.",
+        "agent_member_id": "The AI member doing the work.",
+        "requester_member_id": "The member who asked for the work.",
+        "stage": "`plan` while waiting for plan approval, `review` while waiting for human review, `resuming` once a decision has claimed it.",
+        "state": "The AI engine's graph state, as a JSON object.",
+        "review_status": "`pending`, `approved` or `rejected`.",
+        "review_reason": "The reason given with the last review decision. Null if none.",
+        "updated_at": "When the run was last changed (UTC).",
+    },
+    "ClaimIn": {
+        "expected_stage": "The stage the run must be at to be claimed: `plan` or `review`."
+    },
+    "ReviewIn": {
+        "status": "`approved` or `rejected`.",
+        "reason": "Why the review was rejected or approved. Optional, up to 2000 characters.",
+    },
     "RevokeIn": {"refresh_hash": "Hash of the refresh token to revoke."},
     "RotateIn": {
         "refresh_hash": "Hash of the current refresh token.",

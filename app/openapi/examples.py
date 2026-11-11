@@ -226,6 +226,16 @@ EXAMPLES: dict[str, dict] = {
         "key_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
         "window_seconds": 900,
     },
+    "AiRunIn": {
+        "workspace_id": WS,
+        "project_id": PROJECT,
+        "agent_member_id": MEMBER,
+        "requester_member_id": "0b9d6c52-8e1f-4a37-b2c4-5d7e9f1a3c69",
+        "stage": "review",
+        "state": {"step": "executor", "attempts": 1},
+    },
+    "ClaimIn": {"expected_stage": "review"},
+    "ReviewIn": {"status": "rejected", "reason": "The tests were not run."},
     "RevokeIn": {
         "refresh_hash": "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
     },
