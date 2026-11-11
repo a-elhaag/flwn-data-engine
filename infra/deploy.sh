@@ -79,13 +79,21 @@ if [ -n "$(env_val TOKEN_JWKS)" ]; then
   TOKEN_ENV=("TOKEN_JWKS=$(env_val TOKEN_JWKS)")
 fi
 
+# Secrets live in Key Vault; the app holds references to them (see docs/SECRETS.md in flwn-backend).
+KV="${KV:-kv-flwn-uae-01}"
+vault_ref() {   # app-secret-name value -> "name=keyvaultref:..." after storing the value in the vault
+  printf %s "$2" | az keyvault secret set --vault-name "$KV" --name "$1" --file /dev/stdin --encoding utf-8 -o none
+  echo "$1=keyvaultref:https://$KV.vault.azure.net/secrets/$1,identityref:$ID_ID"
+}
+
 APP_ARGS=(
   --image "$ACR.azurecr.io/$IMAGE" --registry-server "$ACR.azurecr.io" --registry-identity "$ID_ID"
   --user-assigned "$ID_ID" --workload-profile-name Consumption
   --cpu 0.5 --memory 1Gi --min-replicas 1 --max-replicas 1
   --target-port 8002 --ingress internal
-  --secrets "database-url=$(env_val DATABASE_URL)" "foundry-key=$(env_val AZURE_FOUNDRY_KEY)" \
-            "data-api-key=$(env_val DATA_API_KEY)"
+  --secrets "$(vault_ref database-url "$(env_val DATABASE_URL)")" \
+            "$(vault_ref foundry-key "$(env_val AZURE_FOUNDRY_KEY)")" \
+            "$(vault_ref data-api-key "$(env_val DATA_API_KEY)")"
   --env-vars DATABASE_URL=secretref:database-url AZURE_FOUNDRY_KEY=secretref:foundry-key \
              DATA_API_KEY=secretref:data-api-key \
              "AZURE_FOUNDRY_ENDPOINT=$(env_val AZURE_FOUNDRY_ENDPOINT)" \
