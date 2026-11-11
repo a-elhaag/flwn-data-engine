@@ -6,7 +6,7 @@ Plain functions over a session; the route opens it with service_session().
 
 from datetime import timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 
 from app.db.models.auth import RateHit
 
@@ -28,6 +28,12 @@ def count(session, bucket: str, key_hash: str, window_seconds: int) -> int:
 
 
 def hit(session, bucket: str, key_hash: str, window_seconds: int) -> int:
+    # One hit at a time per key, held until commit, so parallel hits see each other and the
+    # returned count is exact (the caller compares it with its limit).
+    session.execute(
+        text("select pg_advisory_xact_lock(hashtextextended(:k, 0))"),
+        {"k": f"rate:{bucket}:{key_hash}"},
+    )
     session.execute(
         delete(RateHit).where(RateHit.bucket == bucket, RateHit.hit_at < func.now() - KEEP)
     )
